@@ -32,7 +32,7 @@ class _ImmichMock(BaseHTTPRequestHandler):
             "id": "asset-b",
             "originalFileName": "b.jpg",
             "type": "IMAGE",
-            "isHidden": True,
+            "visibility": "hidden",
         },
     ]
 
@@ -82,7 +82,13 @@ class _ImmichMock(BaseHTTPRequestHandler):
         body = self._read_json()
         if path == "/api/search/metadata":
             if self.album_id in (body.get("albumIds") or []):
-                items = [a for a in self.assets if not a.get("isHidden")]
+                from choice.sources.immich import _asset_visible
+
+                items = [
+                    a
+                    for a in self.assets
+                    if _asset_visible(a, exclude_archived=True)
+                ]
                 return self._json(
                     200,
                     {"assets": {"items": items, "total": len(items), "page": body.get("page", 1)}},
@@ -200,3 +206,104 @@ mount = "album:album-1"
         )
         self.assertTrue(served.etag)
         self.assertTrue(served.path or served.data)
+
+    def test_favourite_swipe_opt_in(self):
+        deck = open_config(self.cfg).decks[0]
+        self.assertNotIn("up", deck.directions)
+
+    def test_video_shows_media(self):
+        from choice.sources.immich import _item_from_asset
+
+        item = _item_from_asset(
+            {"id": "v1", "originalFileName": "clip.mov", "type": "VIDEO"}
+        )
+        self.assertTrue(item.public(None).get("media"))
+
+
+class _PagingImmichMock(_ImmichMock):
+    """Page 1: five rows, four archived; page 2: five more (one duplicate of page 1)."""
+
+    search_pool = [
+        {"id": "p1", "originalFileName": "1.jpg", "type": "IMAGE", "isArchived": True},
+        {"id": "p2", "originalFileName": "2.jpg", "type": "IMAGE", "isArchived": True},
+        {"id": "p3", "originalFileName": "3.jpg", "type": "IMAGE", "isArchived": True},
+        {"id": "p4", "originalFileName": "4.jpg", "type": "IMAGE", "isArchived": True},
+        {"id": "keep-a", "originalFileName": "a.jpg", "type": "IMAGE"},
+        {"id": "keep-b", "originalFileName": "b.jpg", "type": "IMAGE"},
+        {"id": "keep-c", "originalFileName": "c.jpg", "type": "IMAGE"},
+        {"id": "keep-d", "originalFileName": "d.jpg", "type": "IMAGE"},
+        {"id": "keep-e", "originalFileName": "e.jpg", "type": "IMAGE"},
+        {"id": "dup-a", "originalFileName": "a-again.jpg", "type": "IMAGE"},
+    ]
+
+    def do_POST(self):
+        path = urlparse(self.path).path
+        if path == "/api/search/smart":
+            self.send_response(404)
+            self.end_headers()
+            return
+        body = self._read_json()
+        if path == "/api/search/metadata" and body.get("description") == "tree":
+            page = int(body.get("page") or 1)
+            size = int(body.get("size") or 5)
+            start = (page - 1) * size
+            chunk = self.search_pool[start : start + size]
+            if page == 2 and chunk:
+                chunk = [chunk[0]] + self.search_pool[5:9]
+            return self._json(
+                200,
+                {
+                    "assets": {
+                        "items": chunk,
+                        "total": len(self.search_pool),
+                        "page": page,
+                    }
+                },
+            )
+        self.send_response(404)
+        self.end_headers()
+
+
+class ImmichPagingTests(unittest.TestCase):
+    def setUp(self):
+        os.environ["IMMICH_API_KEY"] = "test"
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp.name)
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), _PagingImmichMock)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        self.base = f"http://127.0.0.1:{self.server.server_port}"
+        self.cfg = self.tmp / "choice.toml"
+        self.cfg.write_text(
+            f"""
+[state]
+dir = "state"
+
+[[sources]]
+id = "imm"
+type = "immich"
+url = "{self.base}"
+api_key = "IMMICH_API_KEY"
+
+[[decks]]
+id = "search"
+title = "Search"
+source = "imm"
+mount = "search:tree"
+page_size = 5
+""".strip(),
+            encoding="utf-8",
+        )
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self._tmp.cleanup()
+
+    def test_search_pages_no_duplicate_ids(self):
+        deck = open_config(self.cfg).decks[0]
+        items, _ = deck.load_items()
+        ids = [item.id for item in items]
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertEqual(len(ids), 5)
+        self.assertNotIn("p1", ids)

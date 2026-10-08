@@ -139,7 +139,8 @@ class Item:
             "body": self.body,
             "chips": [{"label": k, "text": v} for k, v in self.chips],
             "reveal": [{"label": k, "text": v} for k, v in self.reveal],
-            "media": has_media and self.kind in {"image", "gallery", "card", "profile"},
+            "media": has_media
+            and self.kind in {"image", "gallery", "card", "profile", "video"},
             "media_token": self.media_token,
             "file": self.path.name if self.path else None,
             "choice": choice,

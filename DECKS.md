@@ -247,7 +247,7 @@ dir = ".choice-state"
 | --- | --- | --- | --- |
 | `folder` | Local `deck.json`, items files, or a file pile | Files on disk | Sort mode moves files (see below) |
 | `swipe` | Swipe `deck.py` plugin folders unchanged | `image_path`, `media_bytes` hook | Plugin `handle` / `undo` |
-| `immich` | Album or search (`mount` = `album:<id>` or `search:<query>`) | Streamed preview (WebP/JPEG via `/media`) | Left bins (`DELETE /api/assets`), undo restores trash; optional up favourites |
+| `immich` | Album or search (`mount` = `album:<id>` or `search:<query>`) | Streamed preview (WebP/JPEG via `/media`; videos use preview thumbnail) | Left bins (`DELETE /api/assets`), undo restores trash; optional up favourites (`favourite = true`) |
 | `rss` / `atom` | Feed URL in source `url` | Usually none | None (log only) |
 | `webdav` | Image files over WebDAV | Fetched per card | None (log only) |
 
@@ -302,7 +302,7 @@ In `choice.toml`, set `url` and `api_key` (env var name) on the source. Deck `mo
 - `search:` — recent metadata search (paged).
 - `search:beach` — smart search when the server supports it, otherwise metadata search on the text.
 
-Deck options: `page_size` (default 100), `favourite = false` to hide the up swipe, `exclude_archived = true` to skip archived assets. Hidden, locked, and trashed assets are always skipped.
+Deck options: `page_size` (default 100), `favourite = true` to enable the up swipe (off by default), `exclude_archived = true` to skip archived assets. Hidden, locked, and trashed assets are always skipped (Immich 3.x uses `visibility` as well as legacy flags).
 
 Left swipe moves assets to trash (`DELETE /api/assets`, 204). Undo calls `POST /api/trash/restore/assets`. Up swipe favourites via `PUT /api/assets` (same as `examples/immich/hook.py`). Previews use Immich's `Content-Type` (often WebP on 3.x) and Choice's phone-sized cache under `media_cache/`.
 

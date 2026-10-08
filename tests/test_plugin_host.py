@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 from choice.act import _read_log, decide, index_summary, progress, run_plugin_action
-from choice.deck_index import clear_index
+from choice.deck_index import clear_index, record_items
 from choice.open import open_config
 from choice.plugin_pool import clear_pool
 from choice.swipe_plugin import SwipePlugin
@@ -173,6 +173,23 @@ mount = "{mount}"
         from choice.httpd import _media_source
 
         self.assertEqual(_media_source(items[0], "", 0), items[0].path)
+
+    def test_index_decided_matches_log_with_or_without_snapshot(self):
+        deck = self._deck("decided_flag")
+        items, _ = deck.load_items()
+        log_path = deck.state_dir / "decisions.jsonl"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text(
+            '{"type":"decision","id":"1","item":"gone","value":"right","later":false}\n'
+            '{"type":"decision","id":"2","item":"gone2","value":"right","later":false}\n',
+            encoding="utf-8",
+        )
+        record_items(deck, items)
+        self.assertEqual(index_summary(deck)["decided"], 2)
+        clear_index(deck)
+        self.assertEqual(index_summary(deck)["decided"], 2)
+        reopened = open_config(self._config("decided_flag")).decks[0]
+        self.assertEqual(index_summary(reopened)["decided"], 2)
 
     def test_clear_index_on_bust(self):
         from choice.deck_cache import bust

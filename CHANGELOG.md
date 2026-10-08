@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.9 (2026-10-08)
+
+### Fixed
+
+- **Immich paging**: fixed page size, dedupe asset ids, stop at limit (no duplicate cards across pages).
+- **Immich visibility**: treat `visibility` of `hidden` or `locked`; favourite swipe is opt-in (`favourite = true`).
+- **Home deck counts**: `decided` always matches the decision log; fresh index and persisted counts agree after restart.
+- **Video cards**: Immich videos expose preview thumbnail on the phone (`media: true`).
+
+### Docs
+
+- README: install from release zip or wheel without polluting the app folder.
+
 ## 0.2.8 (2026-10-08)
 
 ### Fixed

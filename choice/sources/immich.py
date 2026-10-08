@@ -59,7 +59,7 @@ class ImmichSource(Source):
             "right": Direction("right", "Keep", "keep", does="label", color="#1f9d55"),
             "down": Direction("down", "Skip", "skip", later=True, does="label", color="#56607a"),
         }
-        if bool(deck_options.get("favourite", True)):
+        if bool(deck_options.get("favourite")):
             directions["up"] = Direction(
                 "up", "Favourite", "favourite", does="label", color="#c9a227"
             )
@@ -296,24 +296,35 @@ def _collect_pages(
     exclude_archived: bool,
 ) -> list[dict]:
     out: list[dict] = []
+    seen: set[str] = set()
     page = 1
-    size = min(250, max(limit, 1))
+    page_size = min(250, max(limit, 1))
     while len(out) < limit:
-        body = {**filters, "size": min(size, limit - len(out)), "page": page}
+        body = {**filters, "size": page_size, "page": page}
         data = _api_json(source._url(), source._key(), "POST", path, body)
         items = _extract_assets(data)
         if not items:
             break
+        added = 0
         for asset in items:
             if not isinstance(asset, dict):
                 continue
+            aid = str(asset.get("id") or "")
+            if aid and aid in seen:
+                continue
             if not _asset_visible(asset, exclude_archived):
                 continue
+            if aid:
+                seen.add(aid)
             out.append(asset)
+            added += 1
             if len(out) >= limit:
                 break
-        if len(items) < body["size"]:
+        if len(items) < page_size:
             break
+        if added == 0 and len(items) > 0:
+            page += 1
+            continue
         page += 1
     return out[:limit]
 
@@ -337,13 +348,12 @@ def _asset_visible(asset: dict, exclude_archived: bool) -> bool:
         return False
     if asset.get("isTrashed"):
         return False
-    if asset.get("isHidden"):
+    visibility = asset.get("visibility")
+    if asset.get("isHidden") or visibility == "hidden":
         return False
-    if asset.get("isLocked"):
+    if asset.get("isLocked") or visibility == "locked":
         return False
     if exclude_archived and asset.get("isArchived"):
-        return False
-    if asset.get("visibility") == "locked":
         return False
     return True
 

@@ -210,12 +210,18 @@ def index_summary(deck: Deck) -> dict:
         schedule_plugin_warm(deck)
         saved = persisted_summary(deck)
         if saved is not None:
-            decided_set = log_decided | saved.plugin_decided
-            decided = min(saved.total, len(decided_set))
-            left = saved.total - decided
+            decided = len(log_decided)
+            universe = saved.ids if saved.ids else frozenset()
+            if universe:
+                pile_done = (log_decided | saved.plugin_decided) & universe
+                left = max(0, len(universe) - len(pile_done))
+                total = len(universe)
+            else:
+                total = saved.total
+                left = max(0, total - len(saved.plugin_decided))
             return {
                 "ok": True,
-                "total": saved.total,
+                "total": total,
                 "decided": decided,
                 "left": left,
                 "meter": True,
@@ -231,10 +237,10 @@ def index_summary(deck: Deck) -> dict:
         }
     universe = snap.ids
     plugin_done = snap.plugin_decided
-    decided_ids = (log_decided | plugin_done) & universe
     total = len(universe)
-    decided = len(decided_ids)
-    left = total - decided
+    decided = len(log_decided)
+    pile_done = (log_decided | plugin_done) & universe
+    left = max(0, total - len(pile_done))
     return {
         "ok": True,
         "total": total,

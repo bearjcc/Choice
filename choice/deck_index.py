@@ -94,6 +94,7 @@ def _persist_counts(deck: Deck, snap: _Snapshot) -> None:
         payload = {
             "total": len(snap.ids),
             "plugin_decided": sorted(snap.plugin_decided),
+            "ids": sorted(snap.ids),
         }
         path.write_text(json.dumps(payload), encoding="utf-8")
     except OSError:
@@ -104,6 +105,7 @@ def _persist_counts(deck: Deck, snap: _Snapshot) -> None:
 class PersistedSummary:
     total: int
     plugin_decided: frozenset[str]
+    ids: frozenset[str]
 
 
 def persisted_summary(deck: Deck) -> PersistedSummary | None:
@@ -121,4 +123,9 @@ def persisted_summary(deck: Deck) -> PersistedSummary | None:
         return None
     decided_raw = data.get("plugin_decided") or []
     plugin_decided = frozenset(str(x) for x in decided_raw if x)
-    return PersistedSummary(total=total, plugin_decided=plugin_decided)
+    ids_raw = data.get("ids")
+    if isinstance(ids_raw, list) and ids_raw:
+        ids = frozenset(str(x) for x in ids_raw if x)
+    else:
+        ids = frozenset()
+    return PersistedSummary(total=total, plugin_decided=plugin_decided, ids=ids)

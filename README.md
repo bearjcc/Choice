@@ -80,6 +80,25 @@ python -m unittest discover -s tests
 python -m ruff check choice tests
 ```
 
+## Installing a release (keep the tree clean)
+
+Do not run `pip install .` from a live app folder you want to match the release zip: setuptools leaves `build/` and `choice.egg-info/` behind.
+
+From the release zip (or a git checkout):
+
+```
+python -m pip install --no-cache-dir /path/to/choice-0.2.9.zip
+```
+
+Or build a wheel once and install that (nothing written into the source tree except the wheel file you choose to keep):
+
+```
+python -m pip wheel --no-deps -w dist .
+python -m pip install --no-cache-dir dist/choice-0.2.9-*.whl
+```
+
+Run with `python -m choice --config /path/to/choice.toml`. Your config, state dir, and deck plugins stay outside the installed package.
+
 ## Licence
 
 Choice is free software under the GNU Affero General Public License, version 3. You can run it and change it. If you modify it and let other people use that version over a network, those people must be able to get the source. The running site serves the licence at `/license`. See `LICENSE`.
