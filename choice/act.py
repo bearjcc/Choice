@@ -11,6 +11,7 @@ A file outside the deck folder can be labelled and cannot be moved.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import threading
@@ -56,7 +57,14 @@ def decide(deck: Deck, item_id: str, direction: str, note: str | None) -> dict:
         }
         _apply_pick(deck, item, action, record)
         moved = None
+        plugin_result = None
         try:
+            if deck.plugin is not None:
+                plugin_result = _plugin_handle(deck, item.id, action.id, note)
+                if not plugin_result.get("ok", True):
+                    return _fail(plugin_result.get("message") or "Plugin refused the swipe.")
+                if plugin_result.get("undo_token"):
+                    record["undo_token"] = plugin_result.get("undo_token")
             if action.does in {"move", "copy"}:
                 moved = _transfer(deck, item, action.does, action.into or "")
                 record["file_op"] = moved
@@ -95,6 +103,10 @@ def undo(deck: Deck) -> dict:
         )
         reversed_op = False
         try:
+            if deck.plugin is not None and latest.get("undo_token") is not None:
+                result = _plugin_undo(deck, latest["item"], latest.get("undo_token"))
+                if not result.get("ok", True):
+                    return _fail(result.get("message") or "Plugin could not undo.")
             if latest.get("file_op"):
                 _reverse_file_op(deck, latest.get("file_op"))
                 reversed_op = True
@@ -278,17 +290,20 @@ def _transfer(deck: Deck, item: Item, does: str, into: str) -> dict:
         rel = item.path.resolve().relative_to(deck.root.resolve())
     except ValueError as exc:
         raise _OpError("Choice will not %s a file outside the deck folder." % does) from exc
-    dest = dest_root / rel
-    dest = dest.resolve()
+    into_norm = into.replace("\\", "/")
+    if "/" in into_norm or into_norm.startswith("."):
+        dest = (dest_root / rel).resolve()
+    else:
+        dest = (dest_root / rel.name).resolve()
     if not inside(deck.root, dest):
         raise _OpError("That destination leaves the deck folder.")
-    if dest.exists():
-        raise _OpError("Already a file at %s" % dest.relative_to(deck.root.resolve()).as_posix())
+    dest = _unique_dest(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
+    src = item.path.resolve()
     if does == "move":
-        shutil.move(str(item.path), str(dest))
+        _safe_move(src, dest)
     else:
-        shutil.copy2(item.path, dest)
+        _safe_copy(src, dest)
     return {
         "op": does,
         "from": rel.as_posix(),
@@ -332,6 +347,42 @@ def _reverse_file_op(deck: Deck, file_op: dict | None) -> None:
         raise _OpError("Cannot undo: %s is already back." % file_op.get("from"))
     src.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(dest), str(src))
+
+
+def _unique_dest(dest: Path) -> Path:
+    if not dest.exists():
+        return dest
+    stem, suffix = dest.stem, dest.suffix
+    parent = dest.parent
+    n = 1
+    while n < 10000:
+        candidate = parent / ("%s_%d%s" % (stem, n, suffix))
+        if not candidate.exists():
+            return candidate
+        n += 1
+    raise _OpError("Could not find a free name near %s." % dest.name)
+
+
+def _same_volume(a: Path, b: Path) -> bool:
+    try:
+        return os.stat(a).st_dev == os.stat(b.parent).st_dev
+    except OSError:
+        return True
+
+
+def _safe_move(src: Path, dest: Path) -> None:
+    if _same_volume(src, dest):
+        shutil.move(str(src), str(dest))
+        return
+    _safe_copy(src, dest)
+    src.unlink()
+
+
+def _safe_copy(src: Path, dest: Path) -> None:
+    shutil.copy2(src, dest)
+    if dest.stat().st_size != src.stat().st_size:
+        dest.unlink(missing_ok=True)
+        raise _OpError("Copy verification failed for %s." % src.name)
 
 
 def _under(root: Path, relative: str) -> Path:
@@ -443,6 +494,29 @@ def _now() -> str:
 
 def _fail(message: str) -> dict:
     return {"ok": False, "message": message}
+
+
+def _plugin_handle(deck: Deck, item_id: str, direction: str, note: str) -> dict:
+    plugin = deck.plugin
+    if hasattr(plugin, "handle"):
+        return dict(plugin.handle(item_id, direction, note=note) or {})
+    if hasattr(plugin, "obj"):
+        from choice.swipe_plugin import SwipePlugin
+
+        if isinstance(plugin, SwipePlugin):
+            return plugin.handle(item_id, direction, note=note)
+    return {"ok": True}
+
+
+def _plugin_undo(deck: Deck, item_id: str, token: str | None) -> dict:
+    plugin = deck.plugin
+    if hasattr(plugin, "undo"):
+        return dict(plugin.undo(item_id, token) or {})
+    from choice.swipe_plugin import SwipePlugin
+
+    if isinstance(plugin, SwipePlugin):
+        return plugin.undo(item_id, token)
+    return {"ok": True}
 
 
 class _OpError(Exception):

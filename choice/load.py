@@ -28,7 +28,20 @@ _TEMPLATE = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
 _HEX = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
 _DECK_KEYS = {"title", "blind", "source", "show", "directions", "buttons", "hook", "score", "contest", "story"}
 _FIELD = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-_SOURCE_KEYS = {"type", "path", "id", "recursive"}
+_SOURCE_KEYS = {
+    "type",
+    "path",
+    "id",
+    "recursive",
+    "output",
+    "output_mode",
+    "include",
+    "exclude",
+    "include_globs",
+    "exclude_globs",
+    "sort",
+    "sort_targets",
+}
 _SHOW_KEYS = {"title", "body", "chips", "reveal", "image", "pair"}
 _PAIR_SIDE_KEYS = {"body", "image", "label"}
 _DIR_KEYS = {"label", "value", "later", "does", "into", "color"}
@@ -141,6 +154,9 @@ class Deck:
     contest_kind: str | None = None
     contest_name: str = "name"
     story: dict | None = None
+    # Swipe deck.py adapter or remote media hook (see choice.swipe_plugin).
+    plugin: object | None = None
+    folder_scan: object | None = None
     # Set per request. None is the shared log.
     actor: str | None = None
 
@@ -312,12 +328,16 @@ def _implicit_records(path: Path) -> Deck:
 
 
 def _implicit_folder(folder: Path, images_only: bool) -> Deck:
+    from choice.folder_deck import default_results_directions
+
     data = {
         "title": folder.name,
-        "source": {"type": "images" if images_only else "files", "path": "."},
-        "directions": _file_directions(),
+        "source": {"type": "images" if images_only else "files", "path": ".", "output": "results"},
+        "directions": {k: v for k, v in _file_directions().items()},
     }
-    return _from_config(folder, data, warnings=[])
+    deck = _from_config(folder, data, warnings=[])
+    deck.directions = default_results_directions()
+    return deck
 
 
 def _file_directions() -> dict:
@@ -394,7 +414,7 @@ def _from_config(folder: Path, data: dict, warnings: list[str] | None = None) ->
     def load() -> tuple[list[Item], list[str]]:
         return _load_source(root, source, show, labels)
 
-    return Deck(
+    deck = Deck(
         id=deck_id,
         title=title,
         root=root,
@@ -412,6 +432,23 @@ def _from_config(folder: Path, data: dict, warnings: list[str] | None = None) ->
         contest_name=contest_name,
         story=story,
     )
+    src_kind = str(source.get("type") or "files")
+    if src_kind in {"images", "files"} and (
+        source.get("output")
+        or source.get("output_mode")
+        or source.get("sort")
+        or source.get("sort_targets")
+        or source.get("include")
+        or source.get("exclude")
+    ):
+        from choice.folder_deck import merge_folder_options, wire_sort_buttons, wire_sort_directions
+
+        scan = merge_folder_options(source, {})
+        deck.folder_scan = scan
+        if scan.output == "sort":
+            deck.directions = wire_sort_directions(deck.directions, scan.sort_targets)
+            deck.buttons = wire_sort_buttons(deck.buttons, scan.sort_targets)
+    return deck
 
 
 def _score(raw) -> tuple[str | None, list[str]]:
@@ -589,14 +626,16 @@ def _hook(raw) -> tuple[list[str] | None, bool, float, list[str]]:
 
 
 def _load_source(root: Path, source: dict, show: dict, labels: tuple[str, str] = ("A", "B")) -> tuple[list[Item], list[str]]:
+    from choice.folder_deck import items_from_folder_scan, merge_folder_options
+
     kind = source.get("type") or "files"
     rel = source.get("path") or "."
     target = _source_path(root, str(rel))
-    recursive = bool(source.get("recursive"))
     if kind in {"images", "files"}:
         if not target.is_dir():
             raise DeckProblem("source path is not a folder: %s" % rel)
-        return _items_from_files(root, target, images_only=(kind == "images"), recursive=recursive)
+        scan = merge_folder_options({**source, "type": kind}, {})
+        return items_from_folder_scan(root, target, scan), []
     if kind not in {"jsonl", "csv", "json"}:
         raise DeckProblem("source.type must be images, files, jsonl, csv, or json.")
     if not target.is_file():

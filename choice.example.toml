@@ -1,0 +1,36 @@
+# Example Choice config. Copy to choice.toml (gitignored) and edit paths.
+# Secrets are env var names, never literal keys.
+
+[state]
+dir = ".choice-state"
+# secrets_file = ".choice-secrets"
+
+[[sources]]
+id = "examples"
+type = "folder"
+path = "examples"
+
+[[sources]]
+id = "inbox"
+type = "folder"
+path = "/path/to/photos/inbox"
+
+[[decks]]
+id = "yes-no"
+title = "Yes or no"
+source = "examples"
+mount = "yes-no"
+
+# Folder source: results = log only; sort = move files into per-direction folders.
+[[decks]]
+id = "inbox-sort"
+title = "Sort inbox"
+source = "inbox"
+mount = "."
+output = "sort"
+recursive = false
+include = ["*.jpg", "*.jpeg", "*.png", "*.webp"]
+exclude = ["keep/**", "reject/**"]
+sort_right = "keep"
+sort_left = "reject"
+# sort_up = "unsure"

@@ -199,9 +199,37 @@ class ChoiceTests(unittest.TestCase):
         items, _warnings = deck.load_items()
         self.assertEqual(items[0].title, "Ready?")
 
-    def test_folder_of_photos_trashes_and_undoes(self):
+    def test_folder_of_photos_results_mode_keeps_files(self):
         (self.tmp / "one.png").write_bytes(b"png")
         (self.tmp / "two.png").write_bytes(b"png")
+        deck = resolve(self.tmp).decks[0]
+        self.assertEqual(deck.directions["left"].does, "label")
+        result = decide(deck, "one.png", "left", None)
+        self.assertTrue(result["ok"], result)
+        self.assertTrue((self.tmp / "one.png").is_file())
+        snap = progress(deck, pending=True)
+        self.assertEqual(snap["left"], 1)
+
+    def test_folder_sort_moves_and_undoes(self):
+        (self.tmp / "deck.json").write_text(
+            json.dumps(
+                {
+                    "source": {
+                        "type": "images",
+                        "path": ".",
+                        "output": "sort",
+                        "sort": {"left": ".choice/trash"},
+                    },
+                    "directions": {
+                        "right": {"label": "Keep", "value": "keep"},
+                        "left": {"label": "Trash", "value": "trash"},
+                        "down": {"label": "Skip", "value": "skip", "later": True},
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        (self.tmp / "one.png").write_bytes(b"png")
         deck = resolve(self.tmp).decks[0]
         self.assertEqual(deck.directions["left"].does, "move")
         result = decide(deck, "one.png", "left", None)
@@ -211,8 +239,6 @@ class ChoiceTests(unittest.TestCase):
         undone = undo(deck)
         self.assertTrue(undone["ok"], undone)
         self.assertTrue((self.tmp / "one.png").is_file())
-        snap = progress(deck, pending=True)
-        self.assertEqual(snap["left"], 2)
 
     def test_skip_stays_in_the_pile_and_a_later_swipe_wins(self):
         self._write_yes_no([{"id": "1", "q": "Keep it?"}])

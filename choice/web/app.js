@@ -234,7 +234,166 @@ async function showLibrary() {
     parts.push(list);
   }
   parts.push(licenceLine());
+  setupLink(parts);
   $("main").replaceChildren(...parts);
+}
+
+async function setupLink(parts) {
+  let cfg = null;
+  try {
+    cfg = await api("/api/config");
+  } catch (_err) {
+    return;
+  }
+  if (!cfg.ok || !cfg.editable) return;
+  const wrap = el("div", "setup-link");
+  const btn = el("button", null, "Sources and decks");
+  btn.type = "button";
+  btn.addEventListener("click", () => showSetup(cfg));
+  wrap.append(btn);
+  parts.push(wrap);
+}
+
+function showSetup(cfg) {
+  state.deckId = null;
+  $("title").textContent = "Add deck";
+  $("tools").hidden = true;
+  $("track").hidden = true;
+  $("actions").hidden = true;
+  $("home").hidden = false;
+  const form = el("form", "setup-form");
+  form.addEventListener("submit", (event) => event.preventDefault());
+
+  form.append(fieldLabel("Deck id"));
+  const deckId = el("input");
+  deckId.name = "deck_id";
+  deckId.required = true;
+  form.append(deckId);
+
+  form.append(fieldLabel("Title"));
+  const deckTitle = el("input");
+  deckTitle.name = "title";
+  form.append(deckTitle);
+
+  form.append(fieldLabel("Source"));
+  const sourcePick = el("select");
+  (cfg.sources || []).forEach((src) => {
+    const opt = el("option", null, src.id + " (" + src.type + ")");
+    opt.value = src.id;
+    sourcePick.append(opt);
+  });
+  form.append(sourcePick);
+
+  form.append(fieldLabel("Mount path (folder within source)"));
+  const mount = el("input");
+  mount.name = "mount";
+  mount.placeholder = ".";
+  form.append(mount);
+
+  form.append(fieldLabel("Output mode"));
+  const output = el("select");
+  [["results", "Results (log only)"], ["sort", "Sort (move to folders)"]].forEach(([value, label]) => {
+    const opt = el("option", null, label);
+    opt.value = value;
+    output.append(opt);
+  });
+  form.append(output);
+
+  form.append(fieldLabel("Recursive scan"));
+  const recursive = el("input");
+  recursive.type = "checkbox";
+  recursive.name = "recursive";
+  form.append(recursive);
+
+  form.append(fieldLabel("Include globs (comma-separated)"));
+  const include = el("input");
+  include.name = "include";
+  include.placeholder = "*.jpg, *.png";
+  form.append(include);
+
+  form.append(fieldLabel("Exclude globs"));
+  const exclude = el("input");
+  exclude.name = "exclude";
+  exclude.placeholder = "keep/**";
+  form.append(exclude);
+
+  form.append(fieldLabel("Sort folder: right swipe"));
+  const sortRight = el("input");
+  sortRight.name = "sort_right";
+  sortRight.placeholder = "keep";
+  form.append(sortRight);
+
+  form.append(fieldLabel("Sort folder: left swipe"));
+  const sortLeft = el("input");
+  sortLeft.name = "sort_left";
+  sortLeft.placeholder = "delete";
+  form.append(sortLeft);
+
+  const testBtn = el("button", null, "Test connection");
+  testBtn.type = "button";
+  const saveBtn = el("button", null, "Save");
+  saveBtn.type = "submit";
+  form.append(testBtn, saveBtn);
+
+  testBtn.addEventListener("click", async () => {
+    const src = (cfg.sources || []).find((s) => s.id === sourcePick.value);
+    if (!src) return setStatus("Pick a source.");
+    const body = {
+      mount: mount.value || ".",
+      source: Object.assign({}, src, {
+        output: output.value,
+        recursive: recursive.checked,
+        include: splitGlobs(include.value),
+        exclude: splitGlobs(exclude.value),
+        sort_right: sortRight.value,
+        sort_left: sortLeft.value,
+      }),
+    };
+    const res = await api("/api/sources/test", body);
+    if (!res.ok) return setStatus(res.message || "Test failed.");
+    const names = (res.preview || []).map((p) => p.title).join(", ");
+    setStatus(res.message + (names ? " Preview: " + names : ""));
+  });
+
+  form.addEventListener("submit", async () => {
+    const id = deckId.value.trim();
+    if (!id) return setStatus("Deck id is required.");
+    const decks = (cfg.decks || []).filter((d) => d.id !== id);
+    const entry = {
+      id,
+      title: deckTitle.value.trim() || id,
+      source: sourcePick.value,
+      mount: mount.value.trim() || ".",
+      output: output.value,
+      recursive: recursive.checked,
+    };
+    const inc = splitGlobs(include.value);
+    const exc = splitGlobs(exclude.value);
+    if (inc.length) entry.include = inc;
+    if (exc.length) entry.exclude = exc;
+    if (sortRight.value.trim()) entry.sort_right = sortRight.value.trim();
+    if (sortLeft.value.trim()) entry.sort_left = sortLeft.value.trim();
+    decks.push(entry);
+    const res = await api("/api/config", { sources: cfg.sources, decks });
+    if (!res.ok) return setStatus(res.message || "Could not save.");
+    setStatus("Saved. Restart Choice if decks do not refresh.");
+    showLibrary();
+  });
+
+  $("main").replaceChildren(form);
+  setStatus("");
+}
+
+function fieldLabel(text) {
+  const label = el("label", "setup-label", text);
+  return label;
+}
+
+function splitGlobs(text) {
+  return String(text || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 async function openDeck(id, push) {
