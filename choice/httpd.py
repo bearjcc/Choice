@@ -12,7 +12,6 @@ import gzip
 import html
 import json
 import re
-import shutil
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -21,7 +20,7 @@ from urllib.parse import parse_qs, urlparse
 from choice.act import decide, index_summary, progress, run_plugin_action, undo, view
 from choice.config import ConfigProblem, load_config, mask_secrets, save_config, write_secret
 from choice.load import DeckProblem
-from choice.media import content_type, view_path
+from choice.media import ServedMedia, prepare_bytes, prepare_file
 from choice.open import open_path
 from choice.people import assignment_warnings, load_roster, parse_users, remove_roster, save_roster
 from choice.queue import page_items
@@ -263,6 +262,8 @@ class Handler(BaseHTTPRequestHandler):
         version = (query.get("v") or [""])[0]
         n_raw = (query.get("n") or [""])[0]
         image_index = int(n_raw) if str(n_raw).isdigit() else None
+        full, width = self._media_options(query)
+        cache_dir = (deck.state_dir / "media_cache").resolve()
         try:
             flow = view(deck)
         except DeckProblem as exc:
@@ -276,35 +277,80 @@ class Handler(BaseHTTPRequestHandler):
             blob = plugin.media_bytes(item_id, item=row, index=image_index)
             if blob:
                 data, ctype = blob[0], blob[1]
-                self.send_response(200)
-                self.send_header("Content-Type", ctype)
-                self.send_header("Content-Length", str(len(data)))
-                self.send_header("Cache-Control", "private, max-age=86400")
-                if version:
-                    self.send_header("ETag", f'"{version}"')
-                self.end_headers()
-                self.wfile.write(data)
-                return
+                identity = self._media_cache_identity(
+                    deck.id, item_id, side_key, image_index, version
+                )
+                served = prepare_bytes(
+                    data,
+                    ctype,
+                    cache_dir,
+                    identity,
+                    full=full,
+                    width=width,
+                    etag_version=version,
+                )
+                return self._send_media(served)
         source = _media_source(item, side_key, image_index)
         if source is None or not source.is_file():
             return self._json(404, {"ok": False, "message": "No such image."})
-        path = view_path(source, deck.state_dir / "cache").resolve()
-        source = source.resolve()
-        cache = (deck.state_dir / "cache").resolve()
-        if path != source and cache not in path.parents:
-            path = source
+        served = prepare_file(
+            source.resolve(),
+            cache_dir,
+            full=full,
+            width=width,
+            etag_version=version,
+        )
+        cache = cache_dir
+        if served.path is not None:
+            path = served.path.resolve()
+            if path != source.resolve() and cache not in path.parents:
+                served = prepare_file(source.resolve(), cache_dir, full=True, etag_version=version)
+        return self._send_media(served)
+
+    def _media_options(self, query) -> tuple[bool, int | None]:
+        full = (query.get("full") or ["0"])[0].lower() in {"1", "true", "yes"}
+        w_raw = (query.get("w") or [""])[0]
+        if str(w_raw).isdigit() and int(w_raw) > 0:
+            return full, int(w_raw)
+        return full, None
+
+    def _media_cache_identity(
+        self,
+        deck_id: str,
+        item_id: str,
+        side_key: str,
+        image_index: int | None,
+        version: str,
+    ) -> str:
+        side = side_key or "-"
+        index = str(image_index) if image_index is not None else "-"
+        token = version or "-"
+        return f"{deck_id}|{item_id}|{side}|{index}|{token}"
+
+    def _send_media(self, served: ServedMedia) -> None:
+        if served.etag and self.headers.get("If-None-Match") == served.etag:
+            self.send_response(304)
+            self.send_header("ETag", served.etag)
+            self.send_header("Cache-Control", served.cache_control)
+            self.end_headers()
+            return
         try:
-            size = path.stat().st_size
-            handle = path.open("rb")
+            if served.data is not None:
+                payload = served.data
+            elif served.path is not None:
+                payload = served.path.read_bytes()
+            else:
+                return self._json(404, {"ok": False, "message": "No such image."})
         except OSError:
             return self._json(404, {"ok": False, "message": "That image could not be read."})
         self.send_response(200)
-        self.send_header("Content-Type", content_type(path))
-        self.send_header("Content-Length", str(size))
-        self.send_header("Cache-Control", "private, max-age=86400")
+        self.send_header("Content-Type", served.content_type)
+        self.send_header("Content-Length", str(len(payload)))
+        self.send_header("Cache-Control", served.cache_control)
+        if served.etag:
+            self.send_header("ETag", served.etag)
         self.end_headers()
-        with handle:
-            shutil.copyfileobj(handle, self.wfile)
+        self.wfile.write(payload)
 
     def _save_users(self, body):
         try:

@@ -214,7 +214,7 @@ Exit 0. On failure, Choice still keeps the swipe and says the hook failed.
 
 Bind stays on this computer unless you pass `--lan` or `--host`. See the README.
 
-HEIC is not previewed. The decision still applies to the file. If Pillow is installed, JPEG, PNG, WebP, and BMP are shrunk to 1600px and cached in `.choice/cache`. Delete that folder whenever you like.
+HEIC is not previewed. The decision still applies to the file. For the phone, `/api/decks/<id>/media` serves a resized WebP or JPEG (long edge about 1600px, or `?w=` pixels) when **Pillow** is installed (`pip install 'choice[images]'` or `pip install Pillow`). Copies live in `state.dir/<deck>/media_cache` with LRU pruning. Add `?full=1` for the original bytes. Responses send `ETag` and `Cache-Control` so the browser can reuse them.
 
 A pair of images uses that same preview, once per side. On a wide window the two pictures sit next to each other.
 

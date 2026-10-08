@@ -68,12 +68,12 @@ People, on the page, adds a name and ticks which decks that person sees. Each pe
 | `choice/load.py` | Find a deck and turn it into cards |
 | `choice/act.py` | Write the decision, move a file, undo |
 | `choice/httpd.py` | The local site |
-| `choice/media.py` | Smaller photos, if Pillow is installed |
+| `choice/media.py` | Phone-sized `/media` cache (optional Pillow via `choice[images]`) |
 | `choice/cli.py` | The command |
 | `choice/people.py` | Optional names, and which decks each one sees |
 | `choice/web/` | The page: `index.html`, `app.js`, `app.css` |
 
-No packages are required. Python 3.11 or newer. Pillow is optional: `python -m pip install pillow` makes phone-sized JPEGs for large photos. Without it, Choice sends the original file.
+No packages are required. Python 3.11 or newer. Pillow is optional (`pip install 'choice[images]'`) for WebP/JPEG copies around 1600px. Without it, `/media` sends the original file. Use `?full=1` on a media URL for the original when Pillow is installed.
 
 ```
 python -m unittest discover -s tests

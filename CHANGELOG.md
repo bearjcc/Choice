@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.7 (2026-10-08)
+
+### Added
+
+- Phone-sized `/media` (WebP/JPEG, ~1600px long edge, optional `?w=`), disk cache with LRU sweep, `?full=1` for originals.
+- Optional `images` extra (`Pillow`) for resizing; without Pillow, originals are served.
+
 ## 0.2.6 (2026-10-08)
 
 ### Fixed
