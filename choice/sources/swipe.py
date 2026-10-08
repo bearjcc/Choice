@@ -3,16 +3,16 @@
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import Any
 
 from choice.config import ConfigProblem
-from choice.load import Deck, Direction
+from choice.deck_index import list_lock, record_items
+from choice.load import Deck, DeckProblem, Direction
+from choice.plugin_pool import get_plugin
 from choice.sources.base import PreviewItem, Source
 from choice.swipe_plugin import SwipePlugin, load_swipe_class, swipe_item_to_choice
 
-_ID = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 _DIRS = ("left", "right", "up", "down")
 
 
@@ -43,7 +43,7 @@ class SwipeSource(Source):
 
     def preview(self, mount: str, limit: int = 5) -> list[PreviewItem]:
         try:
-            plugin = self._load_plugin(mount)
+            plugin = self._load_plugin(mount, "preview")
         except ConfigProblem:
             return []
         try:
@@ -72,25 +72,34 @@ class SwipeSource(Source):
         state_dir: Path,
         deck_options: dict[str, Any],
     ) -> Deck:
-        plugin = self._load_plugin(mount)
+        plugin = self._load_plugin(mount, deck_id)
         if deck_id != plugin.deck_id:
             plugin.deck_id = deck_id
         directions, buttons = _directions(plugin)
         blind = bool(getattr(plugin.obj, "blind_default", False) or deck_options.get("blind"))
         folder = self._folder(mount)
+        private_feed = bool(deck_options.get("private") or deck_options.get("notify") is False)
 
         def _load():
-            rows = plugin.list_items(filter=deck_options.get("filter"))
-            items = []
             warnings: list[str] = []
-            for row in rows:
+            with list_lock(deck_ref):
                 try:
-                    items.append(swipe_item_to_choice(row, folder, plugin))
+                    raw_items = plugin.list_items()
                 except Exception as exc:
-                    warnings.append("{}: {}".format(row.get("id"), exc))
+                    raise DeckProblem(str(exc)) from exc
+            items = []
+            for row in raw_items:
+                if not isinstance(row, dict):
+                    continue
+                item_id = str(row.get("id") or "")
+                if not item_id:
+                    warnings.append("skipped item with no id")
+                    continue
+                items.append(swipe_item_to_choice(row, folder, plugin))
+            record_items(deck_ref, items)
             return items, warnings
 
-        return Deck(
+        deck_ref = Deck(
             id=deck_id,
             title=title or plugin.title,
             root=folder,
@@ -101,21 +110,28 @@ class SwipeSource(Source):
             warnings=[],
             _load=_load,
             plugin=plugin,
+            private_feed=private_feed,
         )
+        return deck_ref
 
-    def _load_plugin(self, mount: str) -> SwipePlugin:
+    def _load_plugin(self, mount: str, deck_id: str) -> SwipePlugin:
         folder = self._folder(mount)
         deck_py = folder / "deck.py"
         if not deck_py.is_file():
             raise ConfigProblem(f"No deck.py in {folder}")
         folder_id = folder.name
-        try:
-            obj = load_swipe_class(deck_py, folder_id)
-        except Exception as exc:
-            raise ConfigProblem(f"Could not load {deck_py}: {exc}") from exc
-        return SwipePlugin(
-            obj=obj, folder=folder, deck_id=folder_id, title=str(getattr(obj, "title", folder_id))
-        )
+        pool_opts = {"mount": mount, "source": "swipe"}
+
+        def loader():
+            try:
+                return load_swipe_class(deck_py, folder_id)
+            except Exception as exc:
+                raise ConfigProblem(f"Could not load {deck_py}: {exc}") from exc
+
+        plugin = get_plugin(folder, deck_id, pool_opts, loader)
+        if plugin.title != str(getattr(plugin.obj, "title", folder_id)):
+            plugin.title = str(getattr(plugin.obj, "title", folder_id))
+        return plugin
 
 
 def _directions(plugin: SwipePlugin) -> tuple[dict[str, Direction], list[Direction]]:

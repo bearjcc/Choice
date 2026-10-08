@@ -12,6 +12,7 @@ const state = {
   busy: false,
   user: localStorage.getItem("choice.user") || "",
   picking: false,
+  galleryAt: {},
 };
 
 const $ = (id) => document.getElementById(id);
@@ -936,7 +937,11 @@ function preloadMedia() {
   for (let i = 0; i < 3 && i < items.length; i++) {
     const row = items[(state.pos + i) % items.length];
     if (!row) continue;
-    if (row.kind === "image" && row.media) urls.push(mediaSrc(row, null));
+    if (row.kind === "gallery" && row.images) {
+      const gi = galleryIndex(row);
+      const slide = row.images[gi] || row.images[0];
+      if (slide) urls.push(mediaSrc(row, null, slide.index));
+    } else if (row.kind === "image" && row.media) urls.push(mediaSrc(row, null));
     if (row.kind === "pair" && row.sides) {
       row.sides.forEach((side) => {
         if (side.media) urls.push(mediaSrc(row, side));
@@ -953,6 +958,10 @@ function preloadMedia() {
 function paintCard(card, item) {
   if (item.kind === "pair" && item.sides && item.sides.length) {
     paintPair(card, item);
+    return;
+  }
+  if (item.kind === "gallery" && item.images && item.images.length) {
+    paintGallery(card, item);
     return;
   }
   const showTitle = item.kind === "file" || (item.kind !== "image" && (!state.blind || !item.body)) || (item.kind === "image" && !state.blind);
@@ -979,6 +988,58 @@ function paintCard(card, item) {
     appendMark(pad, item);
     card.append(pad);
   }
+  appendChips(card, item);
+}
+
+function galleryIndex(item) {
+  const at = state.galleryAt[item.id];
+  if (at == null || at < 0) return 0;
+  if (!item.images || at >= item.images.length) return 0;
+  return at;
+}
+
+function setGalleryIndex(item, idx) {
+  if (!item.images || !item.images.length) return;
+  const n = ((idx % item.images.length) + item.images.length) % item.images.length;
+  state.galleryAt[item.id] = n;
+  renderDeck();
+}
+
+function paintGallery(card, item) {
+  card.classList.add("gallery-card");
+  const idx = galleryIndex(item);
+  const frame = el("div", "frame gallery");
+  const imgWrap = el("div", "gallery-view");
+  imgWrap.addEventListener("pointerdown", (event) => event.stopPropagation());
+  const slide = item.images[idx];
+  appendPhoto(imgWrap, mediaSrc(item, null, slide.index), slide.caption || item.title);
+  if (item.images.length > 1) {
+    const dots = el("div", "gallery-dots");
+    dots.setAttribute("role", "tablist");
+    item.images.forEach((row, i) => {
+      const dot = el("button", "gallery-dot" + (i === idx ? " on" : ""), String(i + 1));
+      dot.type = "button";
+      dot.setAttribute("aria-label", "Photo " + (i + 1));
+      dot.addEventListener("click", (event) => {
+        event.stopPropagation();
+        setGalleryIndex(item, i);
+      });
+      dots.append(dot);
+    });
+    imgWrap.append(dots);
+  }
+  frame.append(imgWrap);
+  const cap = el("div", "cap");
+  const showTitle = !state.blind || !item.body;
+  if (showTitle) cap.append(el("h2", null, item.title));
+  if (item.body) cap.append(el("p", "body", item.body));
+  if (slide.caption) cap.append(el("p", "fine", slide.caption));
+  const call = callText(item);
+  if (call) cap.append(el("p", "fine", "Your call: " + call));
+  appendMark(cap, item);
+  appendChips(cap, item);
+  if (cap.childNodes.length) frame.append(cap);
+  card.append(frame);
   appendChips(card, item);
 }
 
@@ -1039,10 +1100,17 @@ function sideLabel(side) {
   return side.key === "b" ? "B" : "A";
 }
 
-function mediaSrc(item, side) {
+function mediaSrc(item, side, imageIndex) {
   let url = apiPath("/api/decks/" + encodeURIComponent(state.deckId) + "/media?item=" + encodeURIComponent(item.id));
   if (side) url += "&side=" + encodeURIComponent(side.key);
-  const token = side ? side.media_token : item.media_token;
+  let token = side ? side.media_token : item.media_token;
+  if (imageIndex != null && item.images) {
+    const row = item.images.find((r) => r.index === imageIndex) || item.images[imageIndex];
+    if (row) {
+      token = row.media_token || token;
+      url += "&n=" + encodeURIComponent(String(row.index != null ? row.index : imageIndex));
+    }
+  }
   return withUser(url + "&v=" + encodeURIComponent(token || ""));
 }
 
@@ -1320,6 +1388,30 @@ async function act(direction) {
   renderDeck();
 }
 
+async function runPluginAction(spec) {
+  if (!spec || !spec.id || state.busy) return;
+  if (spec.confirm) {
+    const ok = window.confirm(spec.label + "?");
+    if (!ok) return;
+  }
+  state.busy = true;
+  let data;
+  try {
+    data = await api("/api/decks/" + encodeURIComponent(state.deckId) + "/action", {
+      action: spec.id,
+    });
+  } catch (_err) {
+    data = { ok: false, message: "Could not reach Choice." };
+  }
+  state.busy = false;
+  if (!data.ok) {
+    setStatus(data.message || "Action failed");
+    return;
+  }
+  setStatus(data.message || "Done");
+  if (await loadItems()) renderDeck();
+}
+
 async function undoLast() {
   if (state.busy || !state.payload || !state.payload.can_undo) return;
   state.busy = true;
@@ -1423,6 +1515,9 @@ async function openMenu() {
   } catch (_err) {
     /* no config mode */
   }
+  (state.payload && state.payload.actions || []).forEach((spec) => {
+    add(spec.label, () => runPluginAction(spec));
+  });
   body.append(list);
   const close = el("button", null, "Close");
   close.addEventListener("click", () => $("dialog").close());

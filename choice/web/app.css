@@ -612,6 +612,35 @@ main {
   border-color: transparent;
 }
 
+.gallery-view {
+  position: relative;
+  touch-action: pan-y;
+}
+
+.gallery-dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 0 4px;
+}
+
+.gallery-dot {
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  border: 1px solid var(--line);
+  background: var(--card);
+}
+
+.gallery-dot.on {
+  background: var(--ink);
+  color: var(--card);
+  border-color: var(--ink);
+}
+
 .setup-wizard {
   width: min(28rem, 100%);
   margin-inline: auto;

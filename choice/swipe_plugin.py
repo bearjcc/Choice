@@ -38,11 +38,26 @@ class SwipePlugin:
             return {"ok": True, "message": "Nothing to undo."}
         return dict(fn(item_id, undo_token) or {})
 
-    def media_bytes(self, item_id: str) -> tuple[bytes, str] | None:
+    def media_bytes(
+        self,
+        item_id: str,
+        item: dict | None = None,
+        index: int | None = None,
+    ) -> tuple[bytes, str] | None:
         fn = getattr(self.obj, "media_bytes", None)
         if not callable(fn):
             return None
-        result = fn(item_id)
+        row = item if item is not None else {"id": item_id}
+        result = None
+        if index is not None and _accepts(fn, "n"):
+            result = fn(row, n=index)
+        elif _accepts(fn, "item_id") and not _accepts(fn, "n") and item is None:
+            result = fn(item_id)
+        else:
+            try:
+                result = fn(row)
+            except TypeError:
+                result = fn(item_id)
         if not result:
             return None
         if isinstance(result, tuple) and len(result) == 2:
@@ -96,7 +111,9 @@ def swipe_item_to_choice(row: dict, folder: Path, plugin: SwipePlugin) -> Item:
     kind = str(row.get("kind") or "card")
     item_id = str(row.get("id") or "")
     title = str(row.get("title") or item_id)
-    body = str(row.get("body") or "")
+    subtitle = str(row.get("subtitle") or "")
+    body = str(row.get("body") or subtitle or "")
+    plugin_decided = bool(row.get("decided"))
     fields = dict(row.get("fields") or {})
     chips = []
     for key, value in fields.items():
@@ -104,13 +121,42 @@ def swipe_item_to_choice(row: dict, folder: Path, plugin: SwipePlugin) -> Item:
             chips.append((str(key), str(value)))
     path = None
     media_token = ""
+    images: list[dict] = []
+    raw_images = row.get("images") or []
+    if isinstance(raw_images, list) and raw_images:
+        for idx, img in enumerate(raw_images):
+            if not isinstance(img, dict):
+                continue
+            rel = img.get("path") or img.get("file") or ""
+            if not rel:
+                continue
+            candidate = Path(str(rel))
+            if not candidate.is_absolute():
+                candidate = folder / candidate
+            token = str(img.get("token") or img.get("media_token") or f"{idx}")
+            images.append(
+                {
+                    "path": str(candidate),
+                    "caption": str(img.get("caption") or ""),
+                    "media_token": token,
+                }
+            )
+        if images:
+            first = Path(images[0]["path"])
+            if first.is_file():
+                path = first
+                media_token = images[0]["media_token"]
     image_path = row.get("image_path")
-    if image_path:
+    if path is None and image_path:
         path = Path(str(image_path))
-    elif row.get("file"):
+        if not path.is_absolute():
+            path = folder / path
+    elif path is None and row.get("file"):
         path = folder / str(row["file"])
     if path and path.is_file():
-        media_token = path.name
+        media_token = media_token or path.name
+    if len(images) > 1 or kind == "profile":
+        kind = "gallery"
     sides: list[Side] = []
     if kind == "pair" or row.get("ab"):
         ab = row.get("ab") or {}
@@ -126,7 +172,6 @@ def swipe_item_to_choice(row: dict, folder: Path, plugin: SwipePlugin) -> Item:
             )
         kind = "pair"
     if kind == "profile":
-        kind = "card"
         fields["profile"] = True
     return Item(
         id=item_id,
@@ -139,6 +184,9 @@ def swipe_item_to_choice(row: dict, folder: Path, plugin: SwipePlugin) -> Item:
         media_token=media_token or item_id,
         fields=fields,
         sides=sides,
+        plugin_decided=plugin_decided,
+        plugin_row=dict(row),
+        images=images,
     )
 
 

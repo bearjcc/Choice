@@ -53,6 +53,8 @@ def open_config(path: Path) -> Opened:
             deck.contest_kind = "taste"
         if spec.options.get("rated"):
             deck.contest_kind = "rated"
+        if spec.options.get("private") or spec.options.get("notify") is False:
+            deck.private_feed = True
         decks.append(deck)
     return Opened(decks=decks, direct=False)
 

@@ -18,7 +18,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from choice.act import decide, progress, undo, view
+from choice.act import decide, index_summary, progress, run_plugin_action, undo, view
 from choice.config import ConfigProblem, load_config, mask_secrets, save_config, write_secret
 from choice.load import DeckProblem
 from choice.media import content_type, view_path
@@ -103,6 +103,8 @@ class Handler(BaseHTTPRequestHandler):
             )
         if parts == ["api", "index"]:
             return self._index(parse_qs(parsed.query))
+        if parts == ["api", "feed"]:
+            return self._feed(parse_qs(parsed.query))
         if parts == ["api", "config"]:
             return self._config_get()
         if parts == ["api", "source-types"]:
@@ -138,6 +140,13 @@ class Handler(BaseHTTPRequestHandler):
         if parts == ["api", "users"]:
             return self._save_users(body)
         kind = parts[3] if len(parts) == 4 and parts[:2] == ["api", "decks"] else ""
+        if kind == "action":
+            deck = self._opened(parts[2], self._requested_user(parse_qs(parsed.query), body))
+            if isinstance(deck, dict):
+                return self._reply(deck)
+            action_id = str(body.get("action") or body.get("id") or "")
+            result = run_plugin_action(deck, action_id)
+            return self._json(200 if result.get("ok") else 400, result)
         if kind not in {"decide", "undo"}:
             return self._json(404, {"ok": False, "message": "No such page."})
         deck = self._opened(parts[2], self._requested_user(parse_qs(parsed.query), body))
@@ -207,6 +216,24 @@ class Handler(BaseHTTPRequestHandler):
         payload["decks"] = _rows(chosen, deck_meta)
         self._json(200, payload)
 
+    def _feed(self, query):
+        try:
+            opened = open_path(self._library_path())
+            roster = load_roster(self.server.choice_root)
+        except DeckProblem as exc:
+            return self._json(200, {"ok": False, "message": str(exc), "decks": []})
+        deck_meta = _config_deck_meta(self.server.config_path)
+        decks = [d for d in opened.decks if not d.private_feed]
+        if roster.enabled:
+            user_id = self._requested_user(query, None)
+            person = roster.get(user_id) if user_id else None
+            if person is None:
+                return self._json(200, {"ok": True, "decks": []})
+            decks = [d for d in decks if person.sees(d.id)]
+            for deck in decks:
+                deck.actor = person.id
+        return self._json(200, {"ok": True, "decks": _rows(decks, deck_meta)})
+
     def _items(self, deck_id, query):
         deck = self._opened(deck_id, self._requested_user(query, None))
         if isinstance(deck, dict):
@@ -234,13 +261,16 @@ class Handler(BaseHTTPRequestHandler):
         item_id = (query.get("item") or [""])[0]
         side_key = (query.get("side") or [""])[0]
         version = (query.get("v") or [""])[0]
+        n_raw = (query.get("n") or [""])[0]
+        image_index = int(n_raw) if str(n_raw).isdigit() else None
         try:
             flow = view(deck)
         except DeckProblem as exc:
             return self._json(404, {"ok": False, "message": str(exc)})
         item = next((it for it in flow.items if it.id == item_id), None)
         if deck.plugin is not None and hasattr(deck.plugin, "media_bytes"):
-            blob = deck.plugin.media_bytes(item_id)
+            row = item.plugin_row if item is not None else None
+            blob = deck.plugin.media_bytes(item_id, item=row, index=image_index)
             if blob:
                 data, ctype = blob[0], blob[1]
                 self.send_response(200)
@@ -252,7 +282,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(data)
                 return
-        source = _media_source(item, side_key)
+        source = _media_source(item, side_key, image_index)
         if source is None or not source.is_file():
             return self._json(404, {"ok": False, "message": "No such image."})
         path = view_path(source, deck.state_dir / "cache").resolve()
@@ -671,7 +701,7 @@ def _rows(decks, deck_meta: dict[str, dict] | None = None) -> list[dict]:
                 }
             )
             continue
-        snap = progress(deck, pending=True)
+        snap = index_summary(deck)
         if not snap.get("ok"):
             rows.append(
                 {
@@ -688,9 +718,10 @@ def _rows(decks, deck_meta: dict[str, dict] | None = None) -> list[dict]:
             "id": deck.id,
             "title": deck.title,
             "error": None,
-            "total": snap["total"],
+            "total": snap.get("total"),
             "decided": snap["decided"],
-            "left": snap["left"],
+            "left": snap.get("left"),
+            "private": deck.private_feed,
         }
         meta = deck_meta.get(deck.id)
         if meta:
@@ -700,6 +731,8 @@ def _rows(decks, deck_meta: dict[str, dict] | None = None) -> list[dict]:
             row["count_label"] = snap["count_label"]
         if snap.get("meter") is False:
             row["meter"] = False
+        elif snap.get("meter") is True:
+            row["meter"] = True
         rows.append(row)
     return rows
 
@@ -725,7 +758,7 @@ def _base_href(base: str) -> str:
     return base.rstrip("/") + "/"
 
 
-def _media_source(item, side_key: str):
+def _media_source(item, side_key: str, image_index: int | None = None):
     """The file for this card, or for one side of a pair. Nothing else."""
     if item is None:
         return None
@@ -734,7 +767,12 @@ def _media_source(item, side_key: str):
             return None
         side = next((side for side in item.sides if side.key == side_key), None)
         return side.path if side is not None else None
-    if item.kind == "image":
+    if image_index is not None and item.images:
+        if 0 <= image_index < len(item.images):
+            from pathlib import Path
+
+            return Path(item.images[image_index]["path"])
+    if item.kind in {"image", "gallery"}:
         return item.path
     return None
 

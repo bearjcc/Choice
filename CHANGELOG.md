@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.4 (2026-10-08)
+
+### Added
+
+- Long-lived `deck.py` plugin instances (reload on `deck.py` mtime; shutdown hook on replace).
+- Cheap deck-list counts for plugin decks via cached snapshots; per-deck lock around `list_items`.
+- `media_bytes` receives the full item row; gallery cards with multiple photos; `GET /api/feed`.
+- Plugin `decided` on items, `actions` + `POST /api/decks/<id>/action`, `private` / `notify = false` feed flag.
+- Plugin errors surfaced on failed swipes without logging the decision.
+
 ## 0.2.3 (2026-10-08)
 
 ### Removed

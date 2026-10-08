@@ -124,6 +124,9 @@ class Item:
     offers: dict | None = None
     picks: dict | None = None
     pick_labels: dict | None = None
+    plugin_decided: bool = False
+    plugin_row: dict | None = None
+    images: list[dict] = field(default_factory=list)
 
     def public(self, choice: str | None) -> dict:
         out = {
@@ -133,11 +136,23 @@ class Item:
             "body": self.body,
             "chips": [{"label": k, "text": v} for k, v in self.chips],
             "reveal": [{"label": k, "text": v} for k, v in self.reveal],
-            "media": self.path is not None and self.kind == "image",
+            "media": self.path is not None and self.kind in {"image", "gallery"},
             "media_token": self.media_token,
             "file": self.path.name if self.path else None,
             "choice": choice,
         }
+        if self.images:
+            out["images"] = [
+                {
+                    "index": idx,
+                    "caption": str(img.get("caption") or ""),
+                    "media_token": str(img.get("media_token") or img.get("token") or idx),
+                }
+                for idx, img in enumerate(self.images)
+            ]
+            out["kind"] = "gallery" if len(self.images) > 1 else out["kind"]
+        if self.plugin_decided:
+            out["plugin_decided"] = True
         if self.kind == "pair":
             out["sides"] = [side.public() for side in self.sides]
         if self.offers is not None:
@@ -170,6 +185,7 @@ class Deck:
     folder_scan: object | None = None
     # Set per request. None is the shared log.
     actor: str | None = None
+    private_feed: bool = False
 
     def load_items(self) -> tuple[list[Item], list[str]]:
         if self.problem:
@@ -186,14 +202,31 @@ class Deck:
         return None
 
     def public_meta(self) -> dict:
-        return {
+        out = {
             "id": self.id,
             "title": self.title,
             "blind": self.blind,
             "warnings": self.warnings,
             "directions": [self.directions[k].public() for k in _FOUR if k in self.directions],
             "buttons": [b.public() for b in self.buttons],
+            "private": self.private_feed,
         }
+        plugin = self.plugin
+        if plugin is not None:
+            actions = getattr(getattr(plugin, "obj", plugin), "actions", None) or []
+            rows = []
+            for spec in actions:
+                if isinstance(spec, dict) and spec.get("id"):
+                    rows.append(
+                        {
+                            "id": str(spec["id"]),
+                            "label": str(spec.get("label") or spec["id"]),
+                            "confirm": bool(spec.get("confirm")),
+                        }
+                    )
+            if rows:
+                out["actions"] = rows
+        return out
 
 
 @dataclass

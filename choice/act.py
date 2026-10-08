@@ -10,6 +10,7 @@ A file outside the deck folder can be labelled and cannot be moved.
 
 from __future__ import annotations
 
+import html
 import json
 import os
 import shutil
@@ -21,6 +22,7 @@ from pathlib import Path
 
 from choice.deck_cache import bust as bust_item_cache
 from choice.deck_cache import load_items as cached_load_items
+from choice.deck_index import snapshot
 from choice.flow import Flow, arrange, report_lines
 from choice.load import Deck, DeckProblem, Item, inside
 
@@ -44,6 +46,8 @@ def decide(deck: Deck, item_id: str, direction: str, note: str | None) -> dict:
         item = _find(flow.items, item_id)
         if item is None:
             return _fail("That card is not in the pile.")
+        if _plugin_done(item):
+            return _fail("That card was already decided elsewhere.")
         prior = _choices(deck).get(item.id)
         if prior is not None:
             if (
@@ -75,9 +79,13 @@ def decide(deck: Deck, item_id: str, direction: str, note: str | None) -> dict:
         moved = None
         try:
             if deck.plugin is not None:
-                plugin_result = _plugin_handle(deck, item.id, action.id, note)
+                try:
+                    plugin_result = _plugin_handle(deck, item, action.id, note)
+                except Exception as exc:
+                    return _fail(_plugin_error_text(exc))
                 if not plugin_result.get("ok", True):
-                    return _fail(plugin_result.get("message") or "Plugin refused the swipe.")
+                    msg = _plugin_message(plugin_result.get("message")) or "Plugin refused the swipe."
+                    return _fail(msg)
                 if plugin_result.get("undo_token") is not None:
                     record["undo_token"] = plugin_result.get("undo_token")
             if action.does in {"move", "copy"}:
@@ -166,6 +174,81 @@ def view(deck: Deck, items: list[Item] | None = None) -> Flow:
     return flow
 
 
+def index_summary(deck: Deck) -> dict:
+    """Deck-list counts without calling list_items when a snapshot exists."""
+    if deck.problem:
+        return {
+            "ok": False,
+            "message": deck.problem,
+            "total": 0,
+            "decided": 0,
+            "left": 0,
+        }
+    choices = _choices(deck)
+    snap = snapshot(deck)
+    log_decided = {item_id for item_id, row in choices.items() if not row.get("later")}
+    if snap is None:
+        if deck.plugin is None:
+            snap_full = progress(deck, pending=True)
+            if not snap_full.get("ok"):
+                return {
+                    "ok": False,
+                    "message": snap_full.get("message"),
+                    "total": 0,
+                    "decided": 0,
+                    "left": 0,
+                }
+            return {
+                "ok": True,
+                "total": snap_full["total"],
+                "decided": snap_full["decided"],
+                "left": snap_full["left"],
+                "meter": snap_full.get("meter", True),
+                "count_label": snap_full.get("count_label"),
+            }
+        decided = len(log_decided)
+        return {
+            "ok": True,
+            "total": None,
+            "decided": decided,
+            "left": None,
+            "meter": False,
+            "count_label": f"{decided} decided" if decided else None,
+        }
+    universe = snap.ids
+    plugin_done = snap.plugin_decided
+    decided_ids = (log_decided | plugin_done) & universe
+    total = len(universe)
+    decided = len(decided_ids)
+    left = total - decided
+    return {
+        "ok": True,
+        "total": total,
+        "decided": decided,
+        "left": left,
+        "meter": True,
+    }
+
+
+def run_plugin_action(deck: Deck, action_id: str) -> dict:
+    plugin = deck.plugin
+    if plugin is None:
+        return _fail("This deck has no plugin actions.")
+    run = getattr(plugin, "run_action", None)
+    if not callable(run):
+        return _fail("This deck has no plugin actions.")
+    with _lock(deck):
+        try:
+            result = dict(run(action_id) or {})
+        except Exception as exc:
+            return _fail(_plugin_error_text(exc))
+        if not result.get("ok", True):
+            return _fail(_plugin_message(result.get("message")) or "Action failed.")
+        bust_item_cache(deck)
+        message = _plugin_message(result.get("message")) or "Done."
+        return {"ok": True, "message": message}
+
+
 def progress(deck: Deck, pending: bool, items: list[Item] | None = None) -> dict:
     """Counts, tally, and the cards still to show. Caller may pass items it already loaded."""
     try:
@@ -178,7 +261,9 @@ def progress(deck: Deck, pending: bool, items: list[Item] | None = None) -> dict
     for item in flow.items:
         choice = choices.get(item.id)
         current = choice.get("value") if choice else None
-        if choice is not None and not choice.get("later"):
+        done_elsewhere = _plugin_done(item)
+        log_done = choice is not None and not choice.get("later")
+        if done_elsewhere or log_done:
             decided += 1
             if pending:
                 continue
@@ -517,16 +602,31 @@ def _fail(message: str) -> dict:
     return {"ok": False, "message": message}
 
 
-def _plugin_handle(deck: Deck, item_id: str, direction: str, note: str) -> dict:
+def _plugin_handle(deck: Deck, item: Item, direction: str, note: str) -> dict:
     plugin = deck.plugin
+    item_id = item.id
     if hasattr(plugin, "handle"):
         return dict(plugin.handle(item_id, direction, note=note) or {})
-    if hasattr(plugin, "obj"):
-        from choice.swipe_plugin import SwipePlugin
+    from choice.swipe_plugin import SwipePlugin
 
-        if isinstance(plugin, SwipePlugin):
-            return plugin.handle(item_id, direction, note=note)
+    if isinstance(plugin, SwipePlugin):
+        return plugin.handle(item_id, direction, note=note)
     return {"ok": True}
+
+
+def _plugin_done(item: Item) -> bool:
+    return bool(item.plugin_decided or item.fields.get("plugin_decided"))
+
+
+def _plugin_message(raw) -> str:
+    if raw is None:
+        return ""
+    text = str(raw).strip()
+    return html.escape(text[:400])
+
+
+def _plugin_error_text(exc: BaseException) -> str:
+    return _plugin_message(exc) or "The plugin raised an error."
 
 
 def _plugin_undo(deck: Deck, item_id: str, token: str | None) -> dict:

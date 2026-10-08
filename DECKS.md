@@ -265,7 +265,26 @@ Moves use safe rename on collision (`name_1.ext`), same-volume move or copy-veri
 
 ### Swipe plugins
 
-Point a `swipe` source at the parent of plugin folders (a directory of `deck.py` plugin folders). Each `[[decks]]` row sets `mount` to the folder name. Choice loads `deck.py`, calls `list_items`, `handle`, `undo`, optional `media_bytes`, `stats`, and `run_action`. State stays in Choice's `state.dir`.
+Point a `swipe` source at the parent of plugin folders (a directory of `deck.py` plugin folders). Each `[[decks]]` row sets `mount` to the folder name. Choice keeps one plugin instance per deck and reloads `deck.py` only when its file changes. On reload it calls `close`, `shutdown`, or `stop` on the old instance when present. It calls `list_items`, `handle`, `undo`, optional `media_bytes`, `stats`, and `run_action`. State stays in Choice's `state.dir`.
+
+The home page does not call `list_items` for plugin decks until you open that deck (counts use a short-lived snapshot). `list_items` for one deck never runs concurrently.
+
+`media_bytes` receives the full item dict from `list_items` (same as Swipe). Optional query `n` selects an image index when the hook accepts `n`. A hook that only accepts an item id string still works.
+
+Rows may set `"decided": true` so Choice treats them as finished: hidden from the pending pile and counted as decided.
+
+Profile cards may set `"kind": "profile"` or an `images` list (`path`, optional `caption`). The UI shows a tappable photo strip that does not steal the card's left/right swipe.
+
+Plugin `actions` is a list of `{"id", "label", "confirm"?}`. The phone menu posts to `/api/decks/<id>/action` with `{"action": "<id>"}`.
+
+Per-deck options in `choice.toml` (under `[[decks]]`):
+
+| Option | Meaning |
+| --- | --- |
+| `private = true` | Omit from `GET /api/feed` summaries (integrations and future notification feeds). The deck still appears on the main index. |
+| `notify = false` | Same as `private = true`. |
+
+When a plugin `handle` raises or returns `ok: false`, the swipe is not written to the log and the page shows the plugin message (trimmed, HTML-escaped).
 
 ### Contest modes: taste and rated
 
