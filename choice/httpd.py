@@ -268,9 +268,12 @@ class Handler(BaseHTTPRequestHandler):
         except DeckProblem as exc:
             return self._json(404, {"ok": False, "message": str(exc)})
         item = next((it for it in flow.items if it.id == item_id), None)
-        if deck.plugin is not None and hasattr(deck.plugin, "media_bytes"):
-            row = item.plugin_row if item is not None else None
-            blob = deck.plugin.media_bytes(item_id, item=row, index=image_index)
+        plugin = deck.plugin
+        if plugin is not None and callable(getattr(plugin, "media_bytes", None)):
+            if item is None:
+                return self._json(404, {"ok": False, "message": "No such image."})
+            row = item.plugin_row
+            blob = plugin.media_bytes(item_id, item=row, index=image_index)
             if blob:
                 data, ctype = blob[0], blob[1]
                 self.send_response(200)
@@ -771,9 +774,13 @@ def _media_source(item, side_key: str, image_index: int | None = None):
         if 0 <= image_index < len(item.images):
             from pathlib import Path
 
-            return Path(item.images[image_index]["path"])
+            candidate = Path(item.images[image_index]["path"])
+            if candidate.is_file():
+                return candidate
+            return None
     if item.kind in {"image", "gallery"}:
-        return item.path
+        if item.path is not None and item.path.is_file():
+            return item.path
     return None
 
 

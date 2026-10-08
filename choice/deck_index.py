@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import json
+import os
 import threading
 import time
 from dataclasses import dataclass
@@ -10,9 +12,11 @@ from dataclasses import dataclass
 from choice.load import Deck, Item
 
 _INDEX_TTL = 45.0
-_list_locks: dict[str, threading.Lock] = {}
+_COUNTS_NAME = "list_counts.json"
+_list_locks: dict[str, threading.RLock] = {}
 _guard = threading.Lock()
 _index: dict[str, tuple[float, _Snapshot]] = {}
+_warm_scheduled: set[str] = set()
 
 
 @dataclass
@@ -21,11 +25,11 @@ class _Snapshot:
     plugin_decided: frozenset[str]
 
 
-def list_lock(deck: Deck) -> threading.Lock:
+def list_lock(deck: Deck) -> threading.RLock:
     key = str(deck.state_dir)
     with _guard:
         if key not in _list_locks:
-            _list_locks[key] = threading.Lock()
+            _list_locks[key] = threading.RLock()
         return _list_locks[key]
 
 
@@ -35,9 +39,10 @@ def record_items(deck: Deck, items: list[Item]) -> None:
         item.id for item in items if item.plugin_decided or item.fields.get("plugin_decided")
     )
     key = str(deck.state_dir)
+    snap = _Snapshot(ids=ids, plugin_decided=plugin_decided)
     with _guard:
-        snap = _Snapshot(ids=ids, plugin_decided=plugin_decided)
         _index[key] = (time.monotonic() + _INDEX_TTL, snap)
+    _persist_counts(deck, snap)
 
 
 def snapshot(deck: Deck) -> _Snapshot | None:
@@ -57,3 +62,63 @@ def snapshot(deck: Deck) -> _Snapshot | None:
 def clear_index(deck: Deck) -> None:
     with _guard:
         _index.pop(str(deck.state_dir), None)
+
+
+def schedule_plugin_warm(deck: Deck) -> None:
+    if os.environ.get("CHOICE_DISABLE_WARM"):
+        return
+    if deck.plugin is None or deck.problem:
+        return
+    key = str(deck.state_dir)
+    with _guard:
+        if key in _warm_scheduled:
+            return
+        _warm_scheduled.add(key)
+    threading.Thread(target=_warm_worker, args=(deck,), name=f"warm-{deck.id}", daemon=True).start()
+
+
+def _warm_worker(deck: Deck) -> None:
+    with list_lock(deck):
+        if snapshot(deck) is not None:
+            return
+        try:
+            deck.load_items()
+        except Exception:
+            return
+
+
+def _persist_counts(deck: Deck, snap: _Snapshot) -> None:
+    path = deck.state_dir / _COUNTS_NAME
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "total": len(snap.ids),
+            "plugin_decided": sorted(snap.plugin_decided),
+        }
+        path.write_text(json.dumps(payload), encoding="utf-8")
+    except OSError:
+        return
+
+
+@dataclass
+class PersistedSummary:
+    total: int
+    plugin_decided: frozenset[str]
+
+
+def persisted_summary(deck: Deck) -> PersistedSummary | None:
+    path = deck.state_dir / _COUNTS_NAME
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    total = data.get("total")
+    if not isinstance(total, int) or total < 0:
+        return None
+    decided_raw = data.get("plugin_decided") or []
+    plugin_decided = frozenset(str(x) for x in decided_raw if x)
+    return PersistedSummary(total=total, plugin_decided=plugin_decided)

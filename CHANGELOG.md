@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.6 (2026-10-08)
+
+### Fixed
+
+- Plugin image paths: inside-deck checks apply to relative paths only; absolute paths allowed.
+- Plugins with `media_bytes` keep non-file `image_path` / `images` tokens as media (as in 0.2.4).
+- Home deck list shows last-known plugin counts from `list_counts.json` and warms counts in the background.
+
 ## 0.2.5 (2026-10-08)
 
 ### Fixed

@@ -22,7 +22,7 @@ from pathlib import Path
 
 from choice.deck_cache import bust as bust_item_cache
 from choice.deck_cache import load_items as cached_load_items
-from choice.deck_index import snapshot
+from choice.deck_index import persisted_summary, schedule_plugin_warm, snapshot
 from choice.flow import Flow, arrange, report_lines
 from choice.load import Deck, DeckProblem, Item, inside
 
@@ -206,6 +206,19 @@ def index_summary(deck: Deck) -> dict:
                 "left": snap_full["left"],
                 "meter": snap_full.get("meter", True),
                 "count_label": snap_full.get("count_label"),
+            }
+        schedule_plugin_warm(deck)
+        saved = persisted_summary(deck)
+        if saved is not None:
+            decided_set = log_decided | saved.plugin_decided
+            decided = min(saved.total, len(decided_set))
+            left = saved.total - decided
+            return {
+                "ok": True,
+                "total": saved.total,
+                "decided": decided,
+                "left": left,
+                "meter": True,
             }
         decided = len(log_decided)
         return {

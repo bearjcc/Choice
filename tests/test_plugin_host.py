@@ -19,6 +19,7 @@ class PluginHostTests(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.tmp = Path(self._tmp.name)
+        os.environ["CHOICE_DISABLE_WARM"] = "1"
         clear_pool()
         os.environ.pop("INSTANCE_COUNTER_PATH", None)
         os.environ.pop("LIST_COUNTER_PATH", None)
@@ -27,6 +28,7 @@ class PluginHostTests(unittest.TestCase):
 
     def tearDown(self):
         clear_pool()
+        os.environ.pop("CHOICE_DISABLE_WARM", None)
         self._tmp.cleanup()
 
     def _config(self, mount: str, extra: str = "") -> Path:
@@ -174,7 +176,7 @@ mount = "{mount}"
 
     def test_clear_index_on_bust(self):
         from choice.deck_cache import bust
-        from choice.deck_index import snapshot
+        from choice.deck_index import persisted_summary, snapshot
 
         deck = self._deck("list_counter")
         deck.load_items()
@@ -182,6 +184,7 @@ mount = "{mount}"
         bust(deck)
         clear_index(deck)
         self.assertIsNone(snapshot(deck))
+        self.assertIsNotNone(persisted_summary(deck))
 
 
 if __name__ == "__main__":

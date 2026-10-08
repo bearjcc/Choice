@@ -127,8 +127,11 @@ class Item:
     plugin_decided: bool = False
     plugin_row: dict | None = None
     images: list[dict] = field(default_factory=list)
+    plugin_media: bool = False
 
     def public(self, choice: str | None) -> dict:
+        has_file = self.path is not None and self.path.is_file()
+        has_media = self.plugin_media or has_file or bool(self.images)
         out = {
             "id": self.id,
             "kind": self.kind,
@@ -136,7 +139,7 @@ class Item:
             "body": self.body,
             "chips": [{"label": k, "text": v} for k, v in self.chips],
             "reveal": [{"label": k, "text": v} for k, v in self.reveal],
-            "media": self.path is not None and self.kind in {"image", "gallery"},
+            "media": has_media and self.kind in {"image", "gallery", "card", "profile"},
             "media_token": self.media_token,
             "file": self.path.name if self.path else None,
             "choice": choice,
