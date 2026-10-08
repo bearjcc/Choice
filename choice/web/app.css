@@ -57,6 +57,7 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  overflow-x: clip;
   background: var(--bg);
   color: var(--text);
   font: 17px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -186,7 +187,8 @@ button:disabled:active { transform: none; }
 main {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow-x: clip;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   padding: 12px 12px 8px;
@@ -266,9 +268,13 @@ main {
   place-items: center;
   border-radius: 10px;
   background: var(--fill);
-  font-weight: 700;
-  font-size: 0.95rem;
   color: var(--muted);
+}
+
+.deck-icon-svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  display: block;
 }
 
 .deck-link {

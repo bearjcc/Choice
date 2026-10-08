@@ -16,6 +16,36 @@ const state = {
 
 const $ = (id) => document.getElementById(id);
 
+function choiceBase() {
+  const meta = document.querySelector('meta[name="choice-base"]');
+  if (!meta) return "";
+  const raw = meta.getAttribute("content") || "/";
+  if (raw === "/") return "";
+  return raw.replace(/\/$/, "");
+}
+
+function apiPath(path) {
+  const lead = path.startsWith("/") ? path : "/" + path;
+  const base = choiceBase();
+  return (base || "") + lead;
+}
+
+function appRoot() {
+  const base = choiceBase();
+  return base ? base + "/" : "/";
+}
+
+function setAppSearch(query) {
+  const qs = String(query || "").replace(/^\?/, "");
+  const url = qs ? appRoot() + "?" + qs : appRoot();
+  history.pushState(null, "", url);
+}
+
+function clearAppSearch() {
+  if (!location.search) return;
+  history.pushState(null, "", appRoot());
+}
+
 function el(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -37,7 +67,7 @@ async function api(path, body) {
     const payload = state.user ? Object.assign({ user: state.user }, body) : body;
     opts.body = JSON.stringify(payload);
   }
-  const res = await fetch(withUser(path), opts);
+  const res = await fetch(withUser(apiPath(path)), opts);
   let data = {};
   try {
     data = await res.json();
@@ -145,9 +175,37 @@ function sourceIcon(type) {
   return map[type] || "deck";
 }
 
-function deckIconChar(kind) {
-  const icons = { folder: "F", layers: "S", cloud: "I", feed: "R", remote: "W", deck: "D" };
-  return icons[kind] || "D";
+function iconPath(kind) {
+  const paths = {
+    folder: "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z",
+    layers: "M12 3 3 8l9 5 9-5-9-5zm0 7 3-1.7v3.4L12 16l-9-5v3.4l9 5 9-5v-3.4L12 10z",
+    cloud: "M7 18a4 4 0 1 1 .9-7.9A5 5 0 0 1 19 10a3 3 0 0 1 0 6H7z",
+    feed: "M4 11a8 8 0 0 1 8 8M4 4a16 16 0 0 1 16 16M5 19a1 1 0 1 1-2 0 1 1 0 0 1 2 0z",
+    remote: "M4 6h16v12H4zM8 10h8M8 14h5",
+    deck: "M5 5h14v14H5z",
+  };
+  return paths[kind] || paths.deck;
+}
+
+function appendSourceIcon(parent, type) {
+  const kind = sourceIcon(type);
+  const wrap = el("span", "deck-icon");
+  wrap.setAttribute("aria-hidden", "true");
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("class", "deck-icon-svg");
+  const path = document.createElementNS(ns, "path");
+  path.setAttribute("fill", "none");
+  path.setAttribute("stroke", "currentColor");
+  path.setAttribute("stroke-width", "1.75");
+  path.setAttribute("stroke-linecap", "round");
+  path.setAttribute("stroke-linejoin", "round");
+  path.setAttribute("d", iconPath(kind));
+  svg.append(path);
+  wrap.append(svg);
+  parent.append(wrap);
+  return wrap;
 }
 
 async function boot() {
@@ -222,7 +280,7 @@ function showProblem(message) {
 async function showLibrary() {
   state.deckId = null;
   state.payload = null;
-  if (location.search) history.pushState(null, "", location.pathname);
+  if (location.search) clearAppSearch();
   state.picking = false;
   try {
     const index = await api("/api/index");
@@ -252,14 +310,13 @@ async function showLibrary() {
     }
     const card = el("button", "deck-card deck-link");
     card.type = "button";
-    const icon = el("span", "deck-icon", deckIconChar(sourceIcon(deck.source_type || "deck")));
-    icon.setAttribute("aria-hidden", "true");
     const copy = el("span", "deck-copy");
     copy.append(el("span", "deck-name", deck.title));
     const left = deck.count_label || (deck.left + " left");
     copy.append(el("span", "deck-meta", left));
     const row = el("span", "deck-row");
-    row.append(icon, copy);
+    appendSourceIcon(row, deck.source_type || "deck");
+    row.append(copy);
     card.append(row);
     let pressTimer = null;
     let longPressed = false;
@@ -788,7 +845,7 @@ async function openDeck(id, push) {
   const stored = localStorage.getItem(blindKey(id));
   const deck = (state.index.decks || []).find((row) => row.id === id);
   if (deck && deck.error) return showProblem(deck.error);
-  if (push) history.pushState(null, "", "?deck=" + encodeURIComponent(id));
+  if (push) setAppSearch("deck=" + encodeURIComponent(id));
   const ok = await loadItems(stored);
   if (ok) renderDeck();
 }
@@ -983,7 +1040,7 @@ function sideLabel(side) {
 }
 
 function mediaSrc(item, side) {
-  let url = "/api/decks/" + encodeURIComponent(state.deckId) + "/media?item=" + encodeURIComponent(item.id);
+  let url = apiPath("/api/decks/" + encodeURIComponent(state.deckId) + "/media?item=" + encodeURIComponent(item.id));
   if (side) url += "&side=" + encodeURIComponent(side.key);
   const token = side ? side.media_token : item.media_token;
   return withUser(url + "&v=" + encodeURIComponent(token || ""));
@@ -1144,7 +1201,7 @@ function bindDrag(card, item) {
   hint.append(hintLabel);
   hint.hidden = true;
   card.append(hint);
-  card.style.touchAction = pairMobile ? "pan-x pan-y" : "none";
+  card.style.touchAction = "none";
 
   card.addEventListener("pointerdown", (event) => {
     if (event.button !== 0 || state.busy) return;
@@ -1466,7 +1523,7 @@ function licenceLine() {
   const note = el("p", "fine");
   note.append(document.createTextNode("Choice is free software. "));
   const link = el("a", null, "AGPL-3.0 licence");
-  link.href = "/license";
+  link.href = apiPath("/license");
   note.append(link);
   return note;
 }
@@ -1524,7 +1581,7 @@ function backFromPeople() {
   const wanted = new URLSearchParams(location.search).get("deck");
   const decks = (state.index && state.index.decks) || [];
   const allowed = decks.some((deck) => deck.id === wanted && !deck.error);
-  if (wanted && !allowed) history.pushState(null, "", location.pathname);
+  if (wanted && !allowed) clearAppSearch();
   route();
 }
 
@@ -1590,7 +1647,7 @@ async function chooseUser(id) {
   state.picking = false;
   state.deckId = null;
   state.payload = null;
-  if (location.search) history.pushState(null, "", location.pathname);
+  if (location.search) clearAppSearch();
   if (!(await refreshIndex())) return;
   route();
 }

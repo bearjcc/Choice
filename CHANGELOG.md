@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.1 (2026-10-08)
+
+### Added
+
+- `--base-path` (and `CHOICE_BASE_PATH`) for reverse-proxy URL prefixes; API and static assets respect the prefix.
+
+### Fixed
+
+- Swipe drag no longer scrolls the page horizontally (clipped main stage, `touch-action: none` on cards).
+- Deck list source icons use inline SVGs instead of letters.
+
 ## 0.2.0 (2026-10-08)
 
 ### Added

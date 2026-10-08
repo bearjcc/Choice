@@ -9,6 +9,7 @@ Media URLs only serve a file that is currently a card.
 from __future__ import annotations
 
 import gzip
+import html
 import json
 import re
 import shutil
@@ -33,9 +34,16 @@ _STATIC = {"app.js": "text/javascript; charset=utf-8", "app.css": "text/css; cha
 
 
 class ChoiceSite(ThreadingHTTPServer):
-    def __init__(self, address, root: Path, config_path: Path | None = None):
+    def __init__(
+        self,
+        address,
+        root: Path,
+        config_path: Path | None = None,
+        base_path: str = "",
+    ):
         self.choice_root = root
         self.config_path = config_path
+        self.base_path = normalize_base_path(base_path)
         super().__init__(address, Handler)
 
 
@@ -64,17 +72,35 @@ class Handler(BaseHTTPRequestHandler):
                 },
             )
 
+    def _route_parts(self, path: str) -> list[str] | None:
+        parts = [p for p in path.split("/") if p]
+        base = self.server.base_path
+        if not base:
+            return parts
+        base_parts = [p for p in base.split("/") if p]
+        if len(parts) < len(base_parts):
+            return None
+        if parts[: len(base_parts)] != base_parts:
+            return None
+        return parts[len(base_parts) :]
+
     def _get(self):
         parsed = urlparse(self.path)
-        parts = [p for p in parsed.path.split("/") if p]
+        parts = self._route_parts(parsed.path)
+        if parts is None:
+            return self._json(404, {"ok": False, "message": "No such page."})
         if not parts:
-            return self._static("index.html", "text/html; charset=utf-8")
+            return self._index_page()
         if len(parts) == 1 and parts[0] in _STATIC:
             return self._static(parts[0], _STATIC[parts[0]])
         if parts == ["license"]:
             return self._license()
         if parts == ["api", "health"]:
-            return self._json(200, {"ok": True, "service": "choice"})
+            base = self.server.base_path
+            return self._json(
+                200,
+                {"ok": True, "service": "choice", "base_path": base or "/"},
+            )
         if parts == ["api", "index"]:
             return self._index(parse_qs(parsed.query))
         if parts == ["api", "config"]:
@@ -97,7 +123,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def _post(self):
         parsed = urlparse(self.path)
-        parts = [p for p in parsed.path.split("/") if p]
+        parts = self._route_parts(parsed.path)
+        if parts is None:
+            return self._json(404, {"ok": False, "message": "No such page."})
         body = self._json_body()
         if body is None:
             return
@@ -342,6 +370,28 @@ class Handler(BaseHTTPRequestHandler):
             if deck.id == deck_id:
                 return deck
         return {"ok": False, "message": "No such deck."}
+
+    def _index_page(self):
+        path = _WEB / "index.html"
+        if not path.is_file():
+            return self._json(500, {"ok": False, "message": "Choice is missing its page files."})
+        text = path.read_text(encoding="utf-8")
+        base = self.server.base_path
+        content = base if base else "/"
+        href = _base_href(base)
+        inject = (
+            f'<meta name="choice-base" content="{html.escape(content, quote=True)}">\n'
+            f'<base href="{html.escape(href, quote=True)}">'
+        )
+        if "<head>" in text:
+            text = text.replace("<head>", "<head>\n" + inject, 1)
+        data = text.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        self.wfile.write(data)
 
     def _static(self, name, ctype):
         path = _WEB / name
@@ -654,6 +704,27 @@ def _rows(decks, deck_meta: dict[str, dict] | None = None) -> list[dict]:
     return rows
 
 
+def normalize_base_path(raw: str | None) -> str:
+    """URL prefix without trailing slash; '' means site root."""
+    if raw is None:
+        return ""
+    text = str(raw).strip()
+    if not text or text == "/":
+        return ""
+    if not text.startswith("/"):
+        text = "/" + text
+    parts = [p for p in text.split("/") if p]
+    if not parts:
+        return ""
+    return "/" + "/".join(parts)
+
+
+def _base_href(base: str) -> str:
+    if not base:
+        return "/"
+    return base.rstrip("/") + "/"
+
+
 def _media_source(item, side_key: str):
     """The file for this card, or for one side of a pair. Nothing else."""
     if item is None:
@@ -668,10 +739,21 @@ def _media_source(item, side_key: str):
     return None
 
 
-def serve(root: Path, host: str, port: int, config_path: Path | None = None) -> None:
+def serve(
+    root: Path,
+    host: str,
+    port: int,
+    config_path: Path | None = None,
+    base_path: str = "",
+) -> None:
     ChoiceSite.allow_reuse_address = True
     try:
-        server = ChoiceSite((host, port), root, config_path=config_path)
+        server = ChoiceSite(
+            (host, port),
+            root,
+            config_path=config_path,
+            base_path=base_path,
+        )
     except OSError as exc:
         raise SystemExit(
             f"Cannot listen on {host}:{port} ({exc.strerror or exc})."

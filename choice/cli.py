@@ -12,7 +12,7 @@ from pathlib import Path
 
 from choice import __version__
 from choice.act import tally_lines
-from choice.httpd import serve
+from choice.httpd import normalize_base_path, serve
 from choice.load import DeckProblem
 from choice.open import config_root, open_path
 from choice.people import Roster, load_roster
@@ -56,7 +56,8 @@ def main(argv=None) -> int:
 
     host = "0.0.0.0" if args.lan else args.host
     exposed = host not in {"127.0.0.1", "::1", "localhost"}
-    url = f"http://127.0.0.1:{args.port}/"
+    base_path = normalize_base_path(args.base_path)
+    url = f"http://127.0.0.1:{args.port}{_base_href(base_path)}"
     print(f"Choice {__version__}", flush=True)
     if opened.direct and len(opened.decks) == 1:
         print(f"  {opened.decks[0].title}")
@@ -69,7 +70,7 @@ def main(argv=None) -> int:
     if exposed:
         lan = _lan_ip()
         if lan and host in {"0.0.0.0", "::"}:
-            print(f"  http://{lan}:{args.port}/")
+            print(f"  http://{lan}:{args.port}{_base_href(base_path)}")
         print(
             "WARNING: listening on the network. Anyone who can reach this port "
             "can label cards and move files."
@@ -81,8 +82,20 @@ def main(argv=None) -> int:
     if args.open:
         webbrowser.open(url)
     root = config_root(path) if config_path else path.expanduser().resolve()
-    serve(root, host, args.port, config_path=config_path.resolve() if config_path else None)
+    serve(
+        root,
+        host,
+        args.port,
+        config_path=config_path.resolve() if config_path else None,
+        base_path=base_path,
+    )
     return 0
+
+
+def _base_href(base_path: str) -> str:
+    if not base_path:
+        return "/"
+    return base_path.rstrip("/") + "/"
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -124,6 +137,11 @@ def _parser() -> argparse.ArgumentParser:
         "--lan", action="store_true", help="listen on the network, so a phone can open the page"
     )
     parser.add_argument("--port", type=int, default=8741, help="port (default: 8741)")
+    parser.add_argument(
+        "--base-path",
+        default=os.environ.get("CHOICE_BASE_PATH", ""),
+        help="URL prefix when behind a reverse proxy (e.g. /choice)",
+    )
     parser.add_argument(
         "--open", action="store_true", help="open the page in this computer's browser"
     )
