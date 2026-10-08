@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "choice"
+version = "0.1.0"
+description = "Swipe through a pile and decide."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [{ name = "bearjcc" }]
+
+[project.scripts]
+choice = "choice.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["choice*"]
+
+[tool.setuptools.package-data]
+choice = ["web/*"]

@@ -1,0 +1,10 @@
+{
+  "title": "One shelter",
+  "contest": { "kind": "bracket", "name": "name" },
+  "source": { "type": "jsonl", "path": "items.jsonl" },
+  "directions": {
+    "left": { "label": "Left", "value": "left", "color": "#4a5568" },
+    "right": { "label": "Right", "value": "right", "color": "#4a5568" },
+    "down": { "label": "Skip", "value": "skip", "later": true }
+  }
+}

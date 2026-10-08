@@ -1,0 +1,17 @@
+{
+  "title": "True or false",
+  "blind": true,
+  "score": { "field": "answer" },
+  "source": { "type": "jsonl", "path": "items.jsonl" },
+  "show": {
+    "title": "{{n}}",
+    "body": "{{q}}",
+    "chips": [],
+    "reveal": ["answer"]
+  },
+  "directions": {
+    "right": { "label": "True", "value": "true" },
+    "left": { "label": "False", "value": "false" },
+    "down": { "label": "Skip", "value": "skip", "later": true }
+  }
+}

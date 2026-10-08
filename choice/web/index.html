@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f3efe8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0e1014" media="(prefers-color-scheme: dark)">
+<title>Choice</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<header class="top">
+  <div class="top-row">
+    <button id="who" type="button" hidden>People</button>
+    <button id="home" type="button" hidden>Decks</button>
+    <h1 id="title">Choice</h1>
+    <p id="count" class="count"></p>
+  </div>
+  <div class="tools" id="tools" hidden>
+    <button id="pending" type="button">Show all</button>
+    <button id="blind" type="button" aria-pressed="false">Blind</button>
+    <button id="counts" type="button">Counts</button>
+  </div>
+  <div class="track" id="track" hidden><div id="fill"></div></div>
+</header>
+<main id="main"></main>
+<p id="status" class="status" aria-live="polite"></p>
+<footer id="actions" class="actions" hidden></footer>
+<dialog id="dialog">
+  <div id="dialog-body"></div>
+</dialog>
+<script src="/app.js"></script>
+</body>
+</html>

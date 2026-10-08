@@ -1,0 +1,2 @@
+{"id": "pair-1", "context": "Shorter reply", "A": "Yes.", "B": "Yes, I think so, though it depends on what you meant by the question and also on the weather.", "real": "A"}
+{"id": "pair-2", "context": "Clearer instruction", "A": "Press the red switch, then wait.", "B": "Do the thing with the switch that is not the other one.", "real": "A"}

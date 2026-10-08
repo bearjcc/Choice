@@ -1,0 +1,16 @@
+{
+  "title": "Which one",
+  "blind": true,
+  "source": { "type": "jsonl", "path": "items.jsonl" },
+  "show": {
+    "title": "{{context}}",
+    "pair": { "a": "{{A}}", "b": "{{B}}" },
+    "reveal": ["real"]
+  },
+  "directions": {
+    "left": { "label": "A", "value": "A" },
+    "right": { "label": "B", "value": "B" },
+    "up": { "label": "Can't tell", "value": "either" },
+    "down": { "label": "Skip", "value": "skip", "later": true }
+  }
+}

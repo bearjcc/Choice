@@ -1,0 +1,15 @@
+{
+  "title": "Immich",
+  "source": { "type": "jsonl", "path": "items.jsonl" },
+  "show": {
+    "title": "{{name}}",
+    "image": "file",
+    "chips": ["kind"]
+  },
+  "directions": {
+    "right": { "label": "Keep", "value": "keep" },
+    "left": { "label": "Bin", "value": "bin" },
+    "up": { "label": "Favourite", "value": "favourite" },
+    "down": { "label": "Skip", "value": "skip", "later": true }
+  }
+}

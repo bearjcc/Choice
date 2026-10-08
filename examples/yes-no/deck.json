@@ -1,0 +1,15 @@
+{
+  "title": "Yes or no",
+  "source": { "type": "jsonl", "path": "items.jsonl" },
+  "show": {
+    "title": "{{n}}",
+    "body": "{{q}}",
+    "chips": ["topic"]
+  },
+  "directions": {
+    "right": { "label": "Yes", "value": "yes" },
+    "left": { "label": "No", "value": "no" },
+    "up": { "label": "Favourite", "value": "favourite" },
+    "down": { "label": "Skip", "value": "skip", "later": true }
+  }
+}

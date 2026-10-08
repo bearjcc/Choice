@@ -1,0 +1,10 @@
+{
+  "title": "Sample photos",
+  "source": { "type": "images", "path": "." },
+  "directions": {
+    "right": { "label": "Keep", "value": "keep" },
+    "left": { "label": "Trash", "value": "trash", "does": "move", "into": ".choice/trash" },
+    "up": { "label": "Favourite", "value": "favourite" },
+    "down": { "label": "Skip", "value": "skip", "later": true }
+  }
+}

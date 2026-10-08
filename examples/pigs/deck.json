@@ -1,0 +1,20 @@
+{
+  "title": "Three pigs",
+  "source": { "type": "jsonl", "path": "items.jsonl" },
+  "show": {
+    "title": "{{title}}",
+    "body": "{{body}}",
+    "chips": []
+  },
+  "story": {
+    "start": "road",
+    "left": "lid",
+    "right": "rid",
+    "labels": { "left": "l", "right": "r" }
+  },
+  "directions": {
+    "left": { "label": "Left", "value": "left", "color": "#4a5568" },
+    "right": { "label": "Right", "value": "right", "color": "#4a5568" },
+    "down": { "label": "Later", "value": "later", "later": true }
+  }
+}

@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.choice/
+*.egg-info/
+.venv/
+labels.jsonl
+uploads/
+uploads/
