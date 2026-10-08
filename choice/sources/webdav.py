@@ -108,7 +108,12 @@ class _WebDavMedia:
         self.mount = mount
         self.obj = self
 
-    def media_bytes(self, item_id: str) -> tuple[bytes, str] | None:
+    def media_bytes(
+        self,
+        item_id: str,
+        item: dict | None = None,
+        index: int | None = None,
+    ) -> tuple[bytes, str] | None:
         href = item_id if item_id.startswith("/") else "/" + item_id
         url = self.source._base() + href
         req = urllib.request.Request(url, headers={"Authorization": self.source._auth_header()})

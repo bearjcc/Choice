@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 .choice/
+examples/**/.choice/
 *.egg-info/
 .venv/
 labels.jsonl

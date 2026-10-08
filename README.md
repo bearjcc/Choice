@@ -23,7 +23,7 @@ cp choice.example.toml choice.toml
 python -m choice --config choice.toml
 ```
 
-Sources can be local folders, Swipe `deck.py` plugins, Immich, RSS, or WebDAV. State and decisions live under `state.dir` from the config, not inside the source. See [DECKS.md](DECKS.md) for every field.
+Sources can be local folders (`type = "images"` for photo piles), Swipe `deck.py` plugins, Immich 3.x, RSS, or WebDAV. State, decisions, and media cache live under `[state] dir` in the config (see `choice.example.toml`), not inside the source. See [DECKS.md](DECKS.md) for every field, including `sort_right`, `sort_left`, `sort_up`, and `sort_down`.
 
 With the UI running in config mode, open **Sources and decks** on the library page to add a folder deck, set sort targets, and test a connection.
 

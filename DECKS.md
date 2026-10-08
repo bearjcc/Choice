@@ -232,7 +232,14 @@ python -m choice --config choice.toml
 
 Set `CHOICE_CONFIG` to the same path if you prefer. Copy `choice.example.toml` to `choice.toml` (gitignored). Secrets are **env var names** in the config, never values. Optional `state.secrets_file` (default `.choice-secrets` next to the config) holds `NAME=value` lines; the add-deck UI writes there when you paste a key.
 
-Per-deck state (decisions, ratings) lives under `state.dir/<deck-id>/`, not inside the source. Read-only sources (RSS, remote APIs) work because nothing is written back to them.
+Per-deck state (decisions, ratings, media cache) lives under **`[state] dir`** in config, in a subfolder per deck: `<state.dir>/<deck-id>/`. That path is not inside your photo folders or Immich. Read-only sources (RSS, remote APIs) work because nothing is written back to them.
+
+Example:
+
+```toml
+[state]
+dir = ".choice-state"
+```
 
 ### Source types
 
@@ -240,7 +247,7 @@ Per-deck state (decisions, ratings) lives under `state.dir/<deck-id>/`, not insi
 | --- | --- | --- | --- |
 | `folder` | Local `deck.json`, items files, or a file pile | Files on disk | Sort mode moves files (see below) |
 | `swipe` | Swipe `deck.py` plugin folders unchanged | `image_path`, `media_bytes` hook | Plugin `handle` / `undo` |
-| `immich` | Album or search feed (`mount` = `album:<id>` or `search:`) | Streamed preview | Left swipe trashes in Immich (undo restores) |
+| `immich` | Album or search (`mount` = `album:<id>` or `search:<query>`) | Streamed preview (WebP/JPEG via `/media`) | Left bins (`DELETE /api/assets`), undo restores trash; optional up favourites |
 | `rss` / `atom` | Feed URL in source `url` | Usually none | None (log only) |
 | `webdav` | Image files over WebDAV | Fetched per card | None (log only) |
 
@@ -252,12 +259,13 @@ On a `folder` source or in `deck.json` `source`:
 
 | Field | Default | Meaning |
 | --- | --- | --- |
+| `type` | `files` | `files`: any files. `images`: image extensions only (same as pointing at a photo folder) |
 | `output` / `output_mode` | `results` | `results`: log only, files stay put. `sort`: each direction can move into a subfolder |
 | `recursive` | `false` | When true, scan subfolders |
 | `include` / `include_globs` | (all) | Glob list; match file name or relative path |
 | `exclude` / `exclude_globs` | (none) | Glob list; excluded paths are skipped |
 | `sort` / `sort_targets` | (none) | Map direction id → folder name, e.g. `{ "right": "keep", "left": "delete" }` |
-| `sort_right`, `sort_left`, … | (none) | Shorthand per direction in `choice.toml` |
+| `sort_right`, `sort_left`, `sort_up`, `sort_down`, … | (none) | Shorthand per swipe in `choice.toml` (`sort_<direction>` → folder for that direction) |
 
 In **sort** mode, files already sitting inside a sort target folder are never listed, even when `recursive` is true. In **results** mode, decided cards drop off the pending pile (same as other decks).
 
@@ -285,6 +293,18 @@ Per-deck options in `choice.toml` (under `[[decks]]`):
 | `notify = false` | Same as `private = true`. |
 
 When a plugin `handle` raises or returns `ok: false`, the swipe is not written to the log and the page shows the plugin message (trimmed, HTML-escaped).
+
+### Immich source (3.x)
+
+In `choice.toml`, set `url` and `api_key` (env var name) on the source. Deck `mount`:
+
+- `album:<uuid>` — loads assets via `POST /api/search/metadata` with `albumIds` (Immich 3.2+ no longer embeds assets on `GET /api/albums/{id}`).
+- `search:` — recent metadata search (paged).
+- `search:beach` — smart search when the server supports it, otherwise metadata search on the text.
+
+Deck options: `page_size` (default 100), `favourite = false` to hide the up swipe, `exclude_archived = true` to skip archived assets. Hidden, locked, and trashed assets are always skipped.
+
+Left swipe moves assets to trash (`DELETE /api/assets`, 204). Undo calls `POST /api/trash/restore/assets`. Up swipe favourites via `PUT /api/assets` (same as `examples/immich/hook.py`). Previews use Immich's `Content-Type` (often WebP on 3.x) and Choice's phone-sized cache under `media_cache/`.
 
 ### Contest modes: taste and rated
 

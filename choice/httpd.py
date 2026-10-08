@@ -25,8 +25,9 @@ from choice.open import open_path
 from choice.people import assignment_warnings, load_roster, parse_users, remove_roster, save_roster
 from choice.queue import page_items
 from choice.sources.registry import build_source, source_types
+from choice.web_paths import web_root
 
-_WEB = Path(__file__).resolve().parent / "web"
+_WEB = web_root()
 _LICENSE = Path(__file__).resolve().parents[1] / "LICENSE"
 _ID = re.compile(r"[a-z0-9_-]+")
 _STATIC = {"app.js": "text/javascript; charset=utf-8", "app.css": "text/css; charset=utf-8"}

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.8 (2026-10-08)
+
+### Fixed
+
+- **Immich 3.2+**: album listing via metadata search, correct trash/restore APIs, WebP content types, `media_bytes` contract, `plugin_media`, smart/metadata search paging, asset filters.
+- Release zips exclude egg-info and caches; example `.choice` state removed from the repo.
+
+### Added
+
+- `choice/web_paths.py` for frozen-friendly static assets; `tests/test_release_zip.py` guards release contents.
+
 ## 0.2.7 (2026-10-08)
 
 ### Added
