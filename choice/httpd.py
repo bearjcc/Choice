@@ -849,9 +849,7 @@ def serve(
             base_path=base_path,
         )
     except OSError as exc:
-        raise SystemExit(
-            f"Cannot listen on {host}:{port} ({exc.strerror or exc})."
-        ) from exc
+        raise SystemExit(f"Cannot listen on {host}:{port} ({exc.strerror or exc}).") from exc
     try:
         server.serve_forever()
     except KeyboardInterrupt:

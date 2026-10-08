@@ -24,7 +24,6 @@ from choice.deck_cache import bust as bust_item_cache
 from choice.deck_cache import load_items as cached_load_items
 from choice.deck_index import (
     plugin_pile_counts,
-    persisted_summary,
     refresh_persisted_summary,
     schedule_plugin_warm,
     snapshot,
@@ -236,9 +235,7 @@ def index_summary(deck: Deck) -> dict:
             "meter": False,
             "count_label": f"{decided} decided" if decided else None,
         }
-    total, decided, left, list_size = plugin_pile_counts(
-        log_decided, snap.ids, snap.plugin_decided
-    )
+    total, decided, left, list_size = plugin_pile_counts(log_decided, snap.ids, snap.plugin_decided)
     return {
         "ok": True,
         "total": total,

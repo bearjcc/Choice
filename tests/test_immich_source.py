@@ -84,11 +84,7 @@ class _ImmichMock(BaseHTTPRequestHandler):
             if self.album_id in (body.get("albumIds") or []):
                 from choice.sources.immich import _asset_visible
 
-                items = [
-                    a
-                    for a in self.assets
-                    if _asset_visible(a, exclude_archived=True)
-                ]
+                items = [a for a in self.assets if _asset_visible(a, exclude_archived=True)]
                 return self._json(
                     200,
                     {"assets": {"items": items, "total": len(items), "page": body.get("page", 1)}},
@@ -214,9 +210,7 @@ mount = "album:album-1"
     def test_video_shows_media(self):
         from choice.sources.immich import _item_from_asset
 
-        item = _item_from_asset(
-            {"id": "v1", "originalFileName": "clip.mov", "type": "VIDEO"}
-        )
+        item = _item_from_asset({"id": "v1", "originalFileName": "clip.mov", "type": "VIDEO"})
         self.assertTrue(item.public(None).get("media"))
 
 

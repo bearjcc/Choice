@@ -74,7 +74,10 @@ mount = "{mount}"
 
     def test_hides_decided_from_list(self):
         deck = self._deck("hides_decided")
-        gone = [f'{{"type":"decision","id":"{i}","item":"gone-{i}","value":"right","later":false}}' for i in range(5)]
+        gone = [
+            f'{{"type":"decision","id":"{i}","item":"gone-{i}","value":"right","later":false}}'
+            for i in range(5)
+        ]
         self._write_log(deck, gone)
         deck.load_items()
         snap = index_summary(deck)
