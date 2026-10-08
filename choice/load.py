@@ -170,6 +170,8 @@ class Deck:
     folder_scan: object | None = None
     # Set per request. None is the shared log.
     actor: str | None = None
+    # Read-only Swipe events.jsonl (see choice.swipe_log).
+    legacy_log_path: Path | None = None
 
     def load_items(self) -> tuple[list[Item], list[str]]:
         if self.problem:

@@ -267,6 +267,14 @@ Moves use safe rename on collision (`name_1.ext`), same-volume move or copy-veri
 
 Point a `swipe` source at the parent of plugin folders (`C:\cub\swipe\decks` style). Each `[[decks]]` row sets `mount` to the folder name. Choice loads `deck.py`, calls `list_items`, `handle`, `undo`, optional `media_bytes`, `stats`, and `run_action`. State stays in Choice's `state.dir`, not Swipe's `state\`.
 
+**Swipe history (cutover).** Set `legacy_log` on a deck to the read-only Swipe file (`state\<deck>.events.jsonl`). Choice merges that log when counting and hiding decided cards; it never writes to the Swipe file. New swipes go to Choice's log only. To copy history once:
+
+```
+python -m choice import --config choice.toml
+```
+
+Re-running import skips lines that are already present (`swipe:<seq>` ids).
+
 ### Contest modes: taste and rated
 
 `contest.kind` can be `robin`, `bracket`, `taste`, or `rated`.

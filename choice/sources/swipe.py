@@ -90,6 +90,8 @@ class SwipeSource(Source):
                     warnings.append("{}: {}".format(row.get("id"), exc))
             return items, warnings
 
+        legacy_path = _legacy_log_path(self.app_config.path.parent, deck_options)
+
         return Deck(
             id=deck_id,
             title=title or plugin.title,
@@ -101,6 +103,7 @@ class SwipeSource(Source):
             warnings=[],
             _load=_load,
             plugin=plugin,
+            legacy_log_path=legacy_path,
         )
 
     def _load_plugin(self, mount: str) -> SwipePlugin:
@@ -116,6 +119,16 @@ class SwipeSource(Source):
         return SwipePlugin(
             obj=obj, folder=folder, deck_id=folder_id, title=str(getattr(obj, "title", folder_id))
         )
+
+
+def _legacy_log_path(config_parent: Path, deck_options: dict[str, Any]) -> Path | None:
+    raw = deck_options.get("legacy_log")
+    if not raw:
+        return None
+    path = Path(str(raw)).expanduser()
+    if not path.is_absolute():
+        path = (config_parent / path).resolve()
+    return path
 
 
 def _directions(plugin: SwipePlugin) -> tuple[dict[str, Direction], list[Direction]]:

@@ -44,6 +44,21 @@ def decide(deck: Deck, item_id: str, direction: str, note: str | None) -> dict:
         item = _find(flow.items, item_id)
         if item is None:
             return _fail("That card is not in the pile.")
+        choice_only = _choices_from_log(deck)
+        prior = choice_only.get(item.id)
+        if prior is not None:
+            if (
+                prior.get("direction") == action.id
+                and (prior.get("note") or "") == note
+                and not prior.get("later")
+            ):
+                return {
+                    "ok": True,
+                    "message": "{}: {} (already recorded)".format(
+                        prior.get("label") or action.label, item.title
+                    ),
+                    "can_undo": _has_undo(deck),
+                }
         token = uuid.uuid4().hex
         record = {
             "type": "decision",
@@ -59,13 +74,12 @@ def decide(deck: Deck, item_id: str, direction: str, note: str | None) -> dict:
         }
         _apply_pick(deck, item, action, record)
         moved = None
-        plugin_result = None
         try:
             if deck.plugin is not None:
                 plugin_result = _plugin_handle(deck, item.id, action.id, note)
                 if not plugin_result.get("ok", True):
                     return _fail(plugin_result.get("message") or "Plugin refused the swipe.")
-                if plugin_result.get("undo_token"):
+                if plugin_result.get("undo_token") is not None:
                     record["undo_token"] = plugin_result.get("undo_token")
             if action.does in {"move", "copy"}:
                 moved = _transfer(deck, item, action.does, action.into or "")
@@ -257,11 +271,19 @@ def _tally(deck: Deck, choices: dict[str, dict]) -> list[dict]:
 
 
 def _choices(deck: Deck) -> dict[str, dict]:
-    """Latest decision per item that has not been undone.
+    """Latest decision per item (Choice log plus optional read-only Swipe log)."""
+    choice = _choices_from_log(deck)
+    path = deck.legacy_log_path
+    if path is None:
+        return choice
+    from choice.swipe_log import choices_from_swipe_log, merge_swipe_and_choice
 
-    Undo marks one decision id as dead. An earlier decision for that card
-    counts again. The log itself is never rewritten.
-    """
+    swipe = choices_from_swipe_log(deck, path)
+    return merge_swipe_and_choice(swipe, choice)
+
+
+def _choices_from_log(deck: Deck) -> dict[str, dict]:
+    """Latest decision per item from Choice's log only."""
     records = _read_log(deck)
     dead = {record.get("ref") for record in records if record.get("type") == "undo"}
     latest: dict[str, dict] = {}
@@ -272,6 +294,19 @@ def _choices(deck: Deck) -> dict[str, dict]:
         if item:
             latest[str(item)] = record
     return latest
+
+
+def import_swipe_legacy(deck: Deck) -> tuple[int, int]:
+    """Copy a Swipe events log into Choice's log (idempotent). Never writes the Swipe file."""
+    path = deck.legacy_log_path
+    if path is None:
+        raise DeckProblem("This deck has no legacy_log path.")
+    from choice.swipe_log import import_events
+
+    with _lock(deck):
+        added, skipped = import_events(deck, path, lambda: _read_log(deck), _append)
+        bust_item_cache(deck)
+    return added, skipped
 
 
 def _has_undo(deck: Deck) -> bool:

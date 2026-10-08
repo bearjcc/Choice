@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.2 (2026-10-08)
+
+### Added
+
+- Swipe event log support for `swipe` decks: `legacy_log` (read-only merge during side-by-side) and `python -m choice import` (one-shot, idempotent copy into Choice's log).
+- Plugin `handle`/`undo` idempotency: repeating the same Choice decision does not call the plugin twice.
+
+### Fixed
+
+- Decided counts and pending queues honour Swipe `swipe`/`undo` replay semantics (undone swipes drop out; last live swipe per item wins).
+
 ## 0.2.1 (2026-10-08)
 
 ### Added
