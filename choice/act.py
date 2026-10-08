@@ -22,7 +22,13 @@ from pathlib import Path
 
 from choice.deck_cache import bust as bust_item_cache
 from choice.deck_cache import load_items as cached_load_items
-from choice.deck_index import persisted_summary, schedule_plugin_warm, snapshot
+from choice.deck_index import (
+    plugin_pile_counts,
+    persisted_summary,
+    refresh_persisted_summary,
+    schedule_plugin_warm,
+    snapshot,
+)
 from choice.flow import Flow, arrange, report_lines
 from choice.load import Deck, DeckProblem, Item, inside
 
@@ -208,22 +214,17 @@ def index_summary(deck: Deck) -> dict:
                 "count_label": snap_full.get("count_label"),
             }
         schedule_plugin_warm(deck)
-        saved = persisted_summary(deck)
-        if saved is not None:
-            decided = len(log_decided)
-            universe = saved.ids if saved.ids else frozenset()
-            if universe:
-                pile_done = (log_decided | saved.plugin_decided) & universe
-                left = max(0, len(universe) - len(pile_done))
-                total = len(universe)
-            else:
-                total = saved.total
-                left = max(0, total - len(saved.plugin_decided))
+        saved = refresh_persisted_summary(deck)
+        if saved is not None and saved.ids:
+            total, decided, left, list_size = plugin_pile_counts(
+                log_decided, saved.ids, saved.plugin_decided
+            )
             return {
                 "ok": True,
                 "total": total,
                 "decided": decided,
                 "left": left,
+                "list_size": list_size,
                 "meter": True,
             }
         decided = len(log_decided)
@@ -235,17 +236,15 @@ def index_summary(deck: Deck) -> dict:
             "meter": False,
             "count_label": f"{decided} decided" if decided else None,
         }
-    universe = snap.ids
-    plugin_done = snap.plugin_decided
-    total = len(universe)
-    decided = len(log_decided)
-    pile_done = (log_decided | plugin_done) & universe
-    left = max(0, total - len(pile_done))
+    total, decided, left, list_size = plugin_pile_counts(
+        log_decided, snap.ids, snap.plugin_decided
+    )
     return {
         "ok": True,
         "total": total,
         "decided": decided,
         "left": left,
+        "list_size": list_size,
         "meter": True,
     }
 

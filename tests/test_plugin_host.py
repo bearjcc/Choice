@@ -185,11 +185,17 @@ mount = "{mount}"
             encoding="utf-8",
         )
         record_items(deck, items)
-        self.assertEqual(index_summary(deck)["decided"], 2)
+        snap = index_summary(deck)
+        self.assertEqual(snap["decided"], 3)
+        self.assertEqual(snap["total"], snap["decided"] + snap["left"])
         clear_index(deck)
-        self.assertEqual(index_summary(deck)["decided"], 2)
+        snap2 = index_summary(deck)
+        self.assertEqual(snap2["decided"], 3)
+        self.assertEqual(snap2["total"], snap2["decided"] + snap2["left"])
         reopened = open_config(self._config("decided_flag")).decks[0]
-        self.assertEqual(index_summary(reopened)["decided"], 2)
+        snap3 = index_summary(reopened)
+        self.assertEqual(snap3["decided"], 3)
+        self.assertEqual(snap3["total"], snap3["decided"] + snap3["left"])
 
     def test_clear_index_on_bust(self):
         from choice.deck_cache import bust

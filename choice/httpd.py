@@ -773,6 +773,8 @@ def _rows(decks, deck_meta: dict[str, dict] | None = None) -> list[dict]:
             "left": snap.get("left"),
             "private": deck.private_feed,
         }
+        if snap.get("list_size") is not None:
+            row["list_size"] = snap["list_size"]
         meta = deck_meta.get(deck.id)
         if meta:
             row["source"] = meta.get("source")

@@ -108,6 +108,36 @@ class PersistedSummary:
     ids: frozenset[str]
 
 
+def plugin_pile_counts(
+    log_decided: set[str],
+    universe: frozenset[str],
+    plugin_decided: frozenset[str],
+) -> tuple[int, int, int, int]:
+    """Return total, decided, left, list_size for plugin home rows."""
+    in_list = plugin_decided & universe
+    pile_done = (log_decided | in_list) & universe
+    left = len(universe) - len(pile_done)
+    decided = len(log_decided | in_list)
+    total = decided + left
+    return total, decided, left, len(universe)
+
+
+def refresh_persisted_summary(deck: Deck) -> PersistedSummary | None:
+    """Reload the plugin list when persisted counts lack ids (pre-0.2.9 file)."""
+    saved = persisted_summary(deck)
+    if saved is None or saved.ids:
+        return saved
+    with list_lock(deck):
+        saved = persisted_summary(deck)
+        if saved is not None and saved.ids:
+            return saved
+        try:
+            deck.load_items()
+        except Exception:
+            return saved
+    return persisted_summary(deck)
+
+
 def persisted_summary(deck: Deck) -> PersistedSummary | None:
     path = deck.state_dir / _COUNTS_NAME
     if not path.is_file():

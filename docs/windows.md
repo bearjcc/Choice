@@ -5,13 +5,14 @@ Run Choice on the machine that holds your photos or config. Bind to loopback onl
 ## Install
 
 1. Install [Python 3.11+](https://www.python.org/downloads/windows/) and tick **Add python.exe to PATH**.
-2. Unzip `choice-0.2.1.zip` to a folder, e.g. `C:\Apps\choice`.
-3. Open **Command Prompt** or PowerShell:
+2. Unzip the release archive (e.g. `choice-0.2.10.zip`) to a folder such as `C:\Apps\choice`.
+3. Open **Command Prompt** or PowerShell and install without writing `build\` or `choice.egg-info` into that folder:
 
 ```text
-cd C:\Apps\choice
-python -m pip install .
+python -m pip install --no-cache-dir C:\Apps\choice\choice-0.2.10.zip
 ```
+
+Use the path to the zip you downloaded. Config, state, and deck plugins stay beside the install, not inside the package.
 
 Copy `choice.example.toml` to `choice.toml`, edit sources and decks, then store secrets outside the config if needed.
 

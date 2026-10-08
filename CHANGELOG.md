@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.10 (2026-10-08)
+
+### Fixed
+
+- Plugin home rows: `total = decided + left` always; `decided` is log decisions plus plugin-decided items in the current list; `list_size` is the raw pile length.
+- Upgrades old `list_counts.json` (no `ids`) by reloading the plugin list on first index read.
+
+### Docs
+
+- `docs/windows.md`: install from release zip with `pip install --no-cache-dir`.
+
 ## 0.2.9 (2026-10-08)
 
 ### Fixed
