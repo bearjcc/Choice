@@ -133,7 +133,12 @@ class _ImmichAdapter:
         if not token:
             return {"ok": True, "message": "Undone."}
         try:
-            _api_post(self.source._url(), self.source._key(), "/api/assets/trash/restore", {"ids": [token]})
+            _api_post(
+                self.source._url(),
+                self.source._key(),
+                "/api/assets/trash/restore",
+                {"ids": [token]},
+            )
         except Exception as exc:
             return {"ok": False, "message": str(exc)}
         return {"ok": True, "message": "Restored from trash."}
@@ -143,7 +148,7 @@ class _ImmichAdapter:
             data, ctype = _api_get_raw(
                 self.source._url(),
                 self.source._key(),
-                "/api/assets/%s/thumbnail?size=preview" % item_id,
+                f"/api/assets/{item_id}/thumbnail?size=preview",
             )
             return data, ctype
         except Exception:
@@ -154,7 +159,7 @@ def _list_assets(source: ImmichSource, mount: str, limit: int) -> list[dict]:
     mount = (mount or "").strip()
     if mount.startswith("album:"):
         album_id = mount.split(":", 1)[1].strip()
-        data = _api_get(source._url(), source._key(), "/api/albums/%s" % album_id)
+        data = _api_get(source._url(), source._key(), f"/api/albums/{album_id}")
         assets = data.get("assets") or []
         return [a for a in assets if isinstance(a, dict)][:limit]
     query = mount or "search:"
@@ -190,9 +195,9 @@ def _raw_request(base: str, key: str, method: str, path: str, body: bytes | None
         with urllib.request.urlopen(req, timeout=_FETCH_TIMEOUT) as resp:
             data = resp.read(_MAX_BODY + 1)
     except urllib.error.HTTPError as exc:
-        raise DeckProblem("Immich HTTP %s" % exc.code) from exc
+        raise DeckProblem(f"Immich HTTP {exc.code}") from exc
     except urllib.error.URLError as exc:
-        raise DeckProblem("Immich unreachable (%s)" % exc.reason) from exc
+        raise DeckProblem(f"Immich unreachable ({exc.reason})") from exc
     if len(data) > _MAX_BODY:
         raise DeckProblem("Immich response too large.")
     return data

@@ -32,14 +32,14 @@ class SwipeSource(Source):
         try:
             folder.relative_to(root)
         except ValueError:
-            raise ConfigProblem("Mount %r escapes swipe decks root." % mount)
+            raise ConfigProblem(f"Mount {mount!r} escapes swipe decks root.")
         return folder
 
     def test(self) -> tuple[bool, str]:
         root = self._root()
         if not root.is_dir():
-            return False, "Decks folder not found: %s" % root
-        return True, "OK (%s)" % root
+            return False, f"Decks folder not found: {root}"
+        return True, f"OK ({root})"
 
     def preview(self, mount: str, limit: int = 5) -> list[PreviewItem]:
         try:
@@ -87,7 +87,7 @@ class SwipeSource(Source):
                 try:
                     items.append(swipe_item_to_choice(row, folder, plugin))
                 except Exception as exc:
-                    warnings.append("%s: %s" % (row.get("id"), exc))
+                    warnings.append("{}: {}".format(row.get("id"), exc))
             return items, warnings
 
         return Deck(
@@ -107,13 +107,15 @@ class SwipeSource(Source):
         folder = self._folder(mount)
         deck_py = folder / "deck.py"
         if not deck_py.is_file():
-            raise ConfigProblem("No deck.py in %s" % folder)
+            raise ConfigProblem(f"No deck.py in {folder}")
         folder_id = folder.name
         try:
             obj = load_swipe_class(deck_py, folder_id)
         except Exception as exc:
-            raise ConfigProblem("Could not load %s: %s" % (deck_py, exc)) from exc
-        return SwipePlugin(obj=obj, folder=folder, deck_id=folder_id, title=str(getattr(obj, "title", folder_id)))
+            raise ConfigProblem(f"Could not load {deck_py}: {exc}") from exc
+        return SwipePlugin(
+            obj=obj, folder=folder, deck_id=folder_id, title=str(getattr(obj, "title", folder_id))
+        )
 
 
 def _directions(plugin: SwipePlugin) -> tuple[dict[str, Direction], list[Direction]]:

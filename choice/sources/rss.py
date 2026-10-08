@@ -31,7 +31,7 @@ class RssSource(Source):
         try:
             data = _fetch(url)
             if b"<rss" in data[:500] or b"<feed" in data[:500]:
-                return True, "Feed fetched (%d bytes)." % len(data)
+                return True, f"Feed fetched ({len(data)} bytes)."
             return False, "Response does not look like RSS or Atom."
         except Exception as exc:
             return False, str(exc)
@@ -43,7 +43,11 @@ class RssSource(Source):
             return []
         out: list[PreviewItem] = []
         for entry in entries[:limit]:
-            out.append(PreviewItem(id=entry["id"], title=entry["title"], kind="card", body=entry["body"][:200]))
+            out.append(
+                PreviewItem(
+                    id=entry["id"], title=entry["title"], kind="card", body=entry["body"][:200]
+                )
+            )
         return out
 
     def open_deck(
@@ -89,14 +93,16 @@ class RssSource(Source):
 
 
 def _fetch(url: str) -> bytes:
-    req = urllib.request.Request(url, headers={"User-Agent": "Choice/0.2 (+https://github.com/bearjcc/choice)"})
+    req = urllib.request.Request(
+        url, headers={"User-Agent": "Choice/0.2 (+https://github.com/bearjcc/choice)"}
+    )
     try:
         with urllib.request.urlopen(req, timeout=_FETCH_TIMEOUT) as resp:
             data = resp.read(_MAX_FEED + 1)
     except urllib.error.URLError as exc:
-        raise ConfigProblem("Feed fetch failed (%s)" % exc.reason) from exc
+        raise ConfigProblem(f"Feed fetch failed ({exc.reason})") from exc
     if len(data) > _MAX_FEED:
-        raise ConfigProblem("Feed is larger than %d bytes." % _MAX_FEED)
+        raise ConfigProblem(f"Feed is larger than {_MAX_FEED} bytes.")
     return data
 
 
@@ -116,22 +122,22 @@ def _parse_feed(data: bytes) -> list[dict]:
 
 
 def _rss_item(node: ET.Element, idx: int) -> dict:
-    title = _text(node, "title") or ("Item %d" % idx)
+    title = _text(node, "title") or (f"Item {idx}")
     link = _text(node, "link")
     body = _text(node, "description") or ""
-    guid = _text(node, "guid") or link or ("item-%d" % idx)
+    guid = _text(node, "guid") or link or (f"item-{idx}")
     return {"id": _slug_id(guid), "title": title, "body": _plain(body), "link": link}
 
 
 def _atom_entry(node: ET.Element, idx: int) -> dict:
-    title = _text(node, "title") or ("Entry %d" % idx)
+    title = _text(node, "title") or (f"Entry {idx}")
     link = ""
     for child in node:
         if child.tag.split("}")[-1] == "link" and child.get("href"):
             link = child.get("href") or ""
             break
     body = _text(node, "summary") or _text(node, "content") or ""
-    entry_id = _text(node, "id") or link or ("entry-%d" % idx)
+    entry_id = _text(node, "id") or link or (f"entry-{idx}")
     return {"id": _slug_id(entry_id), "title": title, "body": _plain(body), "link": link}
 
 

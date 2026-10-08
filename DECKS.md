@@ -220,4 +220,58 @@ A pair of images uses that same preview, once per side. On a wide window the two
 
 ## Keys
 
-Arrow keys match the directions. U undoes. I opens Details. Blind, Counts, and Show all sit above the card.
+Arrow keys match the directions. On an A/B card, A and B pick the left and right side; on a wide screen you can click a side. U undoes. I opens Details. Blind, Counts, and Show all sit above the card.
+
+## Config and deck sources (0.2)
+
+Choice can run from a config file instead of a single folder:
+
+```
+python -m choice --config choice.toml
+```
+
+Set `CHOICE_CONFIG` to the same path if you prefer. Copy `choice.example.toml` to `choice.toml` (gitignored). Secrets are **env var names** in the config, never values. Optional `state.secrets_file` (default `.choice-secrets` next to the config) holds `NAME=value` lines; the add-deck UI writes there when you paste a key.
+
+Per-deck state (decisions, ratings) lives under `state.dir/<deck-id>/`, not inside the source. Read-only sources (RSS, remote APIs) work because nothing is written back to them.
+
+### Source types
+
+| Type | Role | Media | Destructive actions |
+| --- | --- | --- | --- |
+| `folder` | Local `deck.json`, items files, or a file pile | Files on disk | Sort mode moves files (see below) |
+| `swipe` | Swipe `deck.py` plugin folders unchanged | `image_path`, `media_bytes` hook | Plugin `handle` / `undo` |
+| `immich` | Album or search feed (`mount` = `album:<id>` or `search:`) | Streamed preview | Left swipe trashes in Immich (undo restores) |
+| `rss` / `atom` | Feed URL in source `url` | Usually none | None (log only) |
+| `webdav` | Image files over WebDAV | Fetched per card | None (log only) |
+
+`GET /api/source-types` lists types. `POST /api/sources/test` with a source object and `mount` previews items. `GET /api/config` returns sources and decks with secrets masked (`***`).
+
+### Folder source fields
+
+On a `folder` source or in `deck.json` `source`:
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `output` / `output_mode` | `results` | `results`: log only, files stay put. `sort`: each direction can move into a subfolder |
+| `recursive` | `false` | When true, scan subfolders |
+| `include` / `include_globs` | (all) | Glob list; match file name or relative path |
+| `exclude` / `exclude_globs` | (none) | Glob list; excluded paths are skipped |
+| `sort` / `sort_targets` | (none) | Map direction id → folder name, e.g. `{ "right": "keep", "left": "delete" }` |
+| `sort_right`, `sort_left`, … | (none) | Shorthand per direction in `choice.toml` |
+
+In **sort** mode, files already sitting inside a sort target folder are never listed, even when `recursive` is true. In **results** mode, decided cards drop off the pending pile (same as other decks).
+
+Moves use safe rename on collision (`name_1.ext`), same-volume move or copy-verify-delete across volumes, and `file_op` lines in the log for undo.
+
+### Swipe plugins
+
+Point a `swipe` source at the parent of plugin folders (`C:\cub\swipe\decks` style). Each `[[decks]]` row sets `mount` to the folder name. Choice loads `deck.py`, calls `list_items`, `handle`, `undo`, optional `media_bytes`, `stats`, and `run_action`. State stays in Choice's `state.dir`, not Swipe's `state\`.
+
+### Contest modes: taste and rated
+
+`contest.kind` can be `robin`, `bracket`, `taste`, or `rated`.
+
+- **taste**: stage 1 is yes/no (or like/dislike) on every row. Stage 2 ranks the likes: bracket or robin for small sets, rated pairs for larger sets.
+- **rated**: Glicko-style ratings; each card is a pairwise A/B match. The count label shows confidence (e.g. `Rated 42%`). Export via `GET /api/decks/<id>/export` includes `decisions` and any `ranking` report.
+
+Examples: `examples/taste`, `examples/rated`.

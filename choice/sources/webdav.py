@@ -31,7 +31,7 @@ class WebDavSource(Source):
         password = resolve_secret(str(pass_ref), self.app_config)
         if not user:
             return ""
-        token = base64.b64encode(("%s:%s" % (user, password)).encode("utf-8")).decode("ascii")
+        token = base64.b64encode((f"{user}:{password}").encode()).decode("ascii")
         return "Basic " + token
 
     def test(self) -> tuple[bool, str]:

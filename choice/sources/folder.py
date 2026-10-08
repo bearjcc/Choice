@@ -35,27 +35,32 @@ class FolderSource(Source):
         mount = self.resolve_mount(mount)
         target = (root / mount).resolve()
         if not inside(root, target) and target != root.resolve():
-            raise ConfigProblem("Mount %r escapes source folder." % mount)
+            raise ConfigProblem(f"Mount {mount!r} escapes source folder.")
         return target
 
     def test(self) -> tuple[bool, str]:
         root = self._root()
         if not root.is_dir():
-            return False, "Folder not found: %s" % root
-        return True, "OK (%s)" % root
+            return False, f"Folder not found: {root}"
+        return True, f"OK ({root})"
 
     def preview(self, mount: str, limit: int = 5) -> list[PreviewItem]:
         try:
             import tempfile
 
-            deck = self.open_deck("preview", "Preview", mount, Path(tempfile.gettempdir()) / "choice-preview", {})
+            deck = self.open_deck(
+                "preview", "Preview", mount, Path(tempfile.gettempdir()) / "choice-preview", {}
+            )
         except (ConfigProblem, DeckProblem):
             return []
         try:
             items, _warnings = deck.load_items()
         except DeckProblem:
             return []
-        return [PreviewItem(id=i.id, title=i.title, kind=i.kind, body=i.body[:200]) for i in items[:limit]]
+        return [
+            PreviewItem(id=i.id, title=i.title, kind=i.kind, body=i.body[:200])
+            for i in items[:limit]
+        ]
 
     def open_deck(
         self,
@@ -72,7 +77,7 @@ class FolderSource(Source):
             except DeckProblem as exc:
                 raise ConfigProblem(str(exc)) from exc
             if len(opened.decks) != 1:
-                raise ConfigProblem("Mount %r is a library, not a single deck." % mount)
+                raise ConfigProblem(f"Mount {mount!r} is a library, not a single deck.")
             deck = opened.decks[0]
             deck.id = deck_id
             deck.title = title or deck.title
@@ -80,7 +85,9 @@ class FolderSource(Source):
             deck.root = path.resolve()
             data = json.loads((path / "deck.json").read_text(encoding="utf-8"))
             src = data.get("source") if isinstance(data.get("source"), dict) else {}
-            scan = merge_folder_options({**src, **deck_options, "type": src.get("type") or "files"}, deck_options)
+            scan = merge_folder_options(
+                {**src, **deck_options, "type": src.get("type") or "files"}, deck_options
+            )
             deck.folder_scan = scan
             if scan.output == "sort":
                 deck.directions = wire_sort_directions(deck.directions, scan.sort_targets)

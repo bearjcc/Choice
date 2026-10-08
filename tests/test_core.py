@@ -36,7 +36,18 @@ class ChoiceTests(unittest.TestCase):
         self.assertFalse(opened.direct)
         self.assertEqual(
             sorted(deck.id for deck in opened.decks),
-            ["immich", "knockout", "photos", "pigs", "round-robin", "true-false", "which-one", "yes-no"],
+            [
+                "immich",
+                "knockout",
+                "photos",
+                "pigs",
+                "rated",
+                "round-robin",
+                "taste",
+                "true-false",
+                "which-one",
+                "yes-no",
+            ],
         )
         immich = next(deck for deck in opened.decks if deck.id == "immich")
         photos, photo_warnings = immich.load_items()
@@ -86,7 +97,9 @@ class ChoiceTests(unittest.TestCase):
         self.assertEqual(pig_warnings, [])
         opening = arrange(pigs, scenes, {})
         self.assertEqual([item.id for item in opening.items], ["road"])
-        self.assertEqual(opening.items[0].offers, {"left": "Stay together", "right": "Split the tools"})
+        self.assertEqual(
+            opening.items[0].offers, {"left": "Stay together", "right": "Split the tools"}
+        )
         self.assertEqual(opening.count_label, "Scene 1")
         self.assertFalse(opening.meter)
 
@@ -105,12 +118,14 @@ class ChoiceTests(unittest.TestCase):
         self.assertEqual(kept.returncode, 0)
         binned = subprocess.run(
             [sys.executable, str(script)],
-            input=json.dumps({
-                "action": "decide",
-                "item": "asset-id-1",
-                "value": "bin",
-                "decision_id": "d1",
-            }).encode(),
+            input=json.dumps(
+                {
+                    "action": "decide",
+                    "item": "asset-id-1",
+                    "value": "bin",
+                    "decision_id": "d1",
+                }
+            ).encode(),
             capture_output=True,
             cwd=self.tmp,
             env=env,
@@ -127,21 +142,23 @@ class ChoiceTests(unittest.TestCase):
             encoding="utf-8",
         )
         (self.tmp / "deck.json").write_text(
-            json.dumps({
-                "title": "Pair",
-                "source": {"type": "jsonl", "path": "items.jsonl"},
-                "show": {
-                    "title": "{{note}}",
-                    "pair": {
-                        "a": {"image": "before", "label": "Earlier"},
-                        "b": {"image": "after", "body": "{{note}}"},
+            json.dumps(
+                {
+                    "title": "Pair",
+                    "source": {"type": "jsonl", "path": "items.jsonl"},
+                    "show": {
+                        "title": "{{note}}",
+                        "pair": {
+                            "a": {"image": "before", "label": "Earlier"},
+                            "b": {"image": "after", "body": "{{note}}"},
+                        },
                     },
-                },
-                "directions": {
-                    "left": {"label": "Before", "value": "before"},
-                    "right": {"label": "After", "value": "after"},
-                },
-            }),
+                    "directions": {
+                        "left": {"label": "Before", "value": "before"},
+                        "right": {"label": "After", "value": "after"},
+                    },
+                }
+            ),
             encoding="utf-8",
         )
         deck = resolve(self.tmp).decks[0]
@@ -164,10 +181,10 @@ class ChoiceTests(unittest.TestCase):
         try:
             index = self._get(port, "/api/index")
             deck_id = index["decks"][0]["id"]
-            left = self._open(port, "/api/decks/%s/media?item=1&side=a" % deck_id)
-            right = self._open(port, "/api/decks/%s/media?item=1&side=b" % deck_id)
-            bare = self._open(port, "/api/decks/%s/media?item=1" % deck_id)
-            other = self._open(port, "/api/decks/%s/media?item=1&side=nope" % deck_id)
+            left = self._open(port, f"/api/decks/{deck_id}/media?item=1&side=a")
+            right = self._open(port, f"/api/decks/{deck_id}/media?item=1&side=b")
+            bare = self._open(port, f"/api/decks/{deck_id}/media?item=1")
+            other = self._open(port, f"/api/decks/{deck_id}/media?item=1&side=nope")
             self.assertEqual(left.status, 200)
             self.assertEqual(left.body, "aaa-png")
             self.assertEqual(right.body, "bbb-png")
@@ -180,10 +197,12 @@ class ChoiceTests(unittest.TestCase):
     def test_pair_needs_both_sides(self):
         (self.tmp / "items.jsonl").write_text('{"id":"1","A":"one"}\n', encoding="utf-8")
         (self.tmp / "deck.json").write_text(
-            json.dumps({
-                "source": {"type": "jsonl", "path": "items.jsonl"},
-                "show": {"pair": {"a": "{{A}}"}},
-            }),
+            json.dumps(
+                {
+                    "source": {"type": "jsonl", "path": "items.jsonl"},
+                    "show": {"pair": {"a": "{{A}}"}},
+                }
+            ),
             encoding="utf-8",
         )
         with self.assertRaises(DeckProblem):
@@ -256,7 +275,9 @@ class ChoiceTests(unittest.TestCase):
 
     def test_bad_into_is_refused(self):
         (self.tmp / "deck.json").write_text(
-            json.dumps({"directions": {"left": {"label": "Out", "does": "move", "into": "../out"}}}),
+            json.dumps(
+                {"directions": {"left": {"label": "Out", "does": "move", "into": "../out"}}}
+            ),
             encoding="utf-8",
         )
         with self.assertRaises(DeckProblem):
@@ -269,10 +290,14 @@ class ChoiceTests(unittest.TestCase):
         deck_dir = self.tmp / "deck"
         deck_dir.mkdir()
         (deck_dir / "deck.json").write_text(
-            json.dumps({
-                "source": {"type": "files", "path": str(src)},
-                "directions": {"left": {"label": "Trash", "does": "move", "into": ".choice/trash"}},
-            }),
+            json.dumps(
+                {
+                    "source": {"type": "files", "path": str(src)},
+                    "directions": {
+                        "left": {"label": "Trash", "does": "move", "into": ".choice/trash"}
+                    },
+                }
+            ),
             encoding="utf-8",
         )
         deck = resolve(deck_dir).decks[0]
@@ -292,10 +317,15 @@ class ChoiceTests(unittest.TestCase):
     def test_required_hook_failure_writes_nothing(self):
         (self.tmp / "items.jsonl").write_text('{"id":"1","q":"A"}\n', encoding="utf-8")
         (self.tmp / "deck.json").write_text(
-            json.dumps({
-                "source": {"type": "jsonl", "path": "items.jsonl"},
-                "hook": {"command": [sys.executable, "-c", "import sys; sys.exit(1)"], "required": True},
-            }),
+            json.dumps(
+                {
+                    "source": {"type": "jsonl", "path": "items.jsonl"},
+                    "hook": {
+                        "command": [sys.executable, "-c", "import sys; sys.exit(1)"],
+                        "required": True,
+                    },
+                }
+            ),
             encoding="utf-8",
         )
         deck = resolve(self.tmp).decks[0]
@@ -359,8 +389,12 @@ class ChoiceTests(unittest.TestCase):
         self._beat(deck, "Ash", "Copper")
         self._beat(deck, "Brine", "Copper")
         ranked = progress(deck, pending=True)
-        self.assertEqual([row["name"] for row in ranked["report"]["places"]], ["Ash", "Brine", "Copper"])
-        self.assertEqual([row["note"] for row in ranked["report"]["places"]], ["2 wins", "1 win", "0 wins"])
+        self.assertEqual(
+            [row["name"] for row in ranked["report"]["places"]], ["Ash", "Brine", "Copper"]
+        )
+        self.assertEqual(
+            [row["note"] for row in ranked["report"]["places"]], ["2 wins", "1 win", "0 wins"]
+        )
         self.assertNotIn("playoff", ranked["report"]["detail"].lower())
 
         cycle = self.tmp / "cycle"
@@ -378,7 +412,9 @@ class ChoiceTests(unittest.TestCase):
         self._beat(deck, "Brine", "Copper")
         self._beat(deck, "Ash", "Brine")
         ranked = progress(deck, pending=True)
-        self.assertEqual([row["name"] for row in ranked["report"]["places"]], ["Ash", "Brine", "Copper"])
+        self.assertEqual(
+            [row["name"] for row in ranked["report"]["places"]], ["Ash", "Brine", "Copper"]
+        )
         self.assertIn("playoff", ranked["report"]["detail"].lower())
 
     def test_bracket_drops_a_loser_and_names_a_winner(self):
@@ -421,13 +457,17 @@ class ChoiceTests(unittest.TestCase):
         first = progress(deck, pending=True)
         self.assertEqual(first["count_label"], "Round 1")
         self.assertEqual(len(first["items"]), 1)
-        self.assertEqual(sorted(side["body"] for side in first["items"][0]["sides"]), ["East", "South"])
+        self.assertEqual(
+            sorted(side["body"] for side in first["items"][0]["sides"]), ["East", "South"]
+        )
         self._beat(deck, "South", "East")
         last = progress(deck, pending=True)
         self.assertEqual(last["count_label"], "Final")
         self._beat(deck, "North", "South")
         placed = progress(deck, pending=True)
-        self.assertEqual([row["name"] for row in placed["report"]["places"]], ["North", "South", "East"])
+        self.assertEqual(
+            [row["name"] for row in placed["report"]["places"]], ["North", "South", "East"]
+        )
 
     def test_story_follows_one_branch_to_an_ending(self):
         self._write_rows(
@@ -483,21 +523,25 @@ class ChoiceTests(unittest.TestCase):
     def test_score_contest_and_story_do_not_combine(self):
         (self.tmp / "items.jsonl").write_text('{"id":"1","name":"Ash"}\n', encoding="utf-8")
         (self.tmp / "deck.json").write_text(
-            json.dumps({
-                "source": {"type": "jsonl", "path": "items.jsonl"},
-                "score": {"field": "name"},
-                "contest": {"kind": "robin"},
-            }),
+            json.dumps(
+                {
+                    "source": {"type": "jsonl", "path": "items.jsonl"},
+                    "score": {"field": "name"},
+                    "contest": {"kind": "robin"},
+                }
+            ),
             encoding="utf-8",
         )
         with self.assertRaises(DeckProblem):
             resolve(self.tmp)
         (self.tmp / "deck.json").write_text(
-            json.dumps({
-                "source": {"type": "jsonl", "path": "items.jsonl"},
-                "story": {"left": "lid", "right": "rid"},
-                "directions": {"up": {"label": "Keep", "value": "keep"}},
-            }),
+            json.dumps(
+                {
+                    "source": {"type": "jsonl", "path": "items.jsonl"},
+                    "story": {"left": "lid", "right": "rid"},
+                    "directions": {"up": {"label": "Keep", "value": "keep"}},
+                }
+            ),
             encoding="utf-8",
         )
         with self.assertRaises(DeckProblem):
@@ -524,13 +568,15 @@ class ChoiceTests(unittest.TestCase):
         self.assertFalse(load_roster(self.tmp).enabled)
         (self.tmp / ".choice").mkdir()
         (self.tmp / ".choice" / "users.json").write_text(
-            json.dumps({
-                "users": [
-                    {"name": "Ada", "decks": ["yes-no"]},
-                    {"id": "bea", "name": "Bea", "decks": "*"},
-                ],
-                "extra": True,
-            }),
+            json.dumps(
+                {
+                    "users": [
+                        {"name": "Ada", "decks": ["yes-no"]},
+                        {"id": "bea", "name": "Bea", "decks": "*"},
+                    ],
+                    "extra": True,
+                }
+            ),
             encoding="utf-8",
         )
         roster = load_roster(self.tmp)
@@ -570,10 +616,16 @@ class ChoiceTests(unittest.TestCase):
         thread.start()
         port = server.server_address[1]
         try:
-            made = self._post(port, "/api/users", {"users": [
-                {"name": "Ada", "decks": ["yes-no"]},
-                {"name": "Bea", "decks": ["pigs"]},
-            ]})
+            made = self._post(
+                port,
+                "/api/users",
+                {
+                    "users": [
+                        {"name": "Ada", "decks": ["yes-no"]},
+                        {"name": "Bea", "decks": ["pigs"]},
+                    ]
+                },
+            )
             self.assertEqual(made.status, 200, made.body)
             saved = json.loads(made.body)
             self.assertEqual([user["id"] for user in saved["users"]], ["ada", "bea"])
@@ -583,15 +635,23 @@ class ChoiceTests(unittest.TestCase):
             self.assertEqual(sorted(row["id"] for row in picker["library"]), ["pigs", "yes-no"])
             ada = self._get(port, "/api/index?user=ada")
             self.assertEqual([row["id"] for row in ada["decks"]], ["yes-no"])
-            missing = self._post(port, "/api/decks/yes-no/decide", {"item": "1", "direction": "right"})
+            missing = self._post(
+                port, "/api/decks/yes-no/decide", {"item": "1", "direction": "right"}
+            )
             self.assertEqual(missing.status, 400, missing.body)
-            denied = self._post(port, "/api/decks/yes-no/decide", {"item": "1", "direction": "right", "user": "bea"})
+            denied = self._post(
+                port, "/api/decks/yes-no/decide", {"item": "1", "direction": "right", "user": "bea"}
+            )
             self.assertEqual(denied.status, 403, denied.body)
-            kept = self._post(port, "/api/decks/yes-no/decide", {"item": "1", "direction": "right", "user": "ada"})
+            kept = self._post(
+                port, "/api/decks/yes-no/decide", {"item": "1", "direction": "right", "user": "ada"}
+            )
             self.assertEqual(kept.status, 200, kept.body)
             pigs = self._get(port, "/api/decks/pigs/items?pending=1&user=bea")
             self.assertEqual(pigs["left"], 1)
-            self.assertTrue((self.tmp / "yes-no" / ".choice" / "users" / "ada" / "decisions.jsonl").is_file())
+            self.assertTrue(
+                (self.tmp / "yes-no" / ".choice" / "users" / "ada" / "decisions.jsonl").is_file()
+            )
             self.assertFalse((self.tmp / "yes-no" / ".choice" / "decisions.jsonl").exists())
             bad = self._post(port, "/api/users", {"users": [{"name": "Ada", "decks": ["gone"]}]})
             self.assertEqual(bad.status, 400, bad.body)
@@ -617,17 +677,26 @@ class ChoiceTests(unittest.TestCase):
             index = self._get(port, "/api/index")
             self.assertTrue(index["ok"])
             self.assertEqual(index["decks"][0]["left"], 1)
-            page = urllib.request.urlopen("http://127.0.0.1:%s/" % port)
+            page = urllib.request.urlopen(f"http://127.0.0.1:{port}/")
             self.assertIn(b"Choice", page.read())
-            denied = self._post(port, "/api/decks/yes-no/decide", {"item": "1", "direction": "right"}, ctype="text/plain")
+            denied = self._post(
+                port,
+                "/api/decks/yes-no/decide",
+                {"item": "1", "direction": "right"},
+                ctype="text/plain",
+            )
             self.assertEqual(denied.status, 415)
             # The folder slug is the temp directory name, not yes-no.
             deck_id = index["decks"][0]["id"]
-            saved = self._post(port, "/api/decks/%s/decide" % deck_id, {"item": "1", "direction": "right", "note": "ok"})
+            saved = self._post(
+                port,
+                f"/api/decks/{deck_id}/decide",
+                {"item": "1", "direction": "right", "note": "ok"},
+            )
             self.assertEqual(saved.status, 200, saved.body)
-            items = self._get(port, "/api/decks/%s/items?pending=1" % deck_id)
+            items = self._get(port, f"/api/decks/{deck_id}/items?pending=1")
             self.assertEqual(items["left"], 0)
-            media = self._open(port, "/api/decks/%s/media?item=.." % deck_id)
+            media = self._open(port, f"/api/decks/{deck_id}/media?item=..")
             self.assertEqual(media.status, 404)
         finally:
             server.shutdown()
@@ -635,7 +704,7 @@ class ChoiceTests(unittest.TestCase):
 
     def _open(self, port, path):
         try:
-            with urllib.request.urlopen("http://127.0.0.1:%s%s" % (port, path)) as res:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}{path}") as res:
                 return _Response(res.status, res.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             return _Response(exc.code, exc.read().decode("utf-8"))
@@ -669,7 +738,7 @@ class ChoiceTests(unittest.TestCase):
             result = decide(deck, item["id"], direction, None)
             self.assertTrue(result["ok"], result)
             return
-        self.fail("no match %s vs %s" % (winner, loser))
+        self.fail(f"no match {winner} vs {loser}")
 
     def _two_decks(self):
         for name in ("yes-no", "pigs"):
@@ -677,11 +746,13 @@ class ChoiceTests(unittest.TestCase):
             folder.mkdir()
             (folder / "items.jsonl").write_text('{"id":"1","q":"Ready?"}\n', encoding="utf-8")
             (folder / "deck.json").write_text(
-                json.dumps({
-                    "title": name,
-                    "source": {"type": "jsonl", "path": "items.jsonl"},
-                    "show": {"body": "{{q}}"},
-                }),
+                json.dumps(
+                    {
+                        "title": name,
+                        "source": {"type": "jsonl", "path": "items.jsonl"},
+                        "show": {"body": "{{q}}"},
+                    }
+                ),
                 encoding="utf-8",
             )
 
@@ -691,26 +762,28 @@ class ChoiceTests(unittest.TestCase):
             encoding="utf-8",
         )
         (self.tmp / "deck.json").write_text(
-            json.dumps({
-                "title": "Yes or no",
-                "source": {"type": "jsonl", "path": "items.jsonl"},
-                "show": {"body": "{{q}}"},
-                "directions": {
-                    "right": {"label": "Yes", "value": "yes"},
-                    "left": {"label": "No", "value": "no"},
-                    "down": {"label": "Skip", "value": "skip", "later": True},
-                },
-            }),
+            json.dumps(
+                {
+                    "title": "Yes or no",
+                    "source": {"type": "jsonl", "path": "items.jsonl"},
+                    "show": {"body": "{{q}}"},
+                    "directions": {
+                        "right": {"label": "Yes", "value": "yes"},
+                        "left": {"label": "No", "value": "no"},
+                        "down": {"label": "Skip", "value": "skip", "later": True},
+                    },
+                }
+            ),
             encoding="utf-8",
         )
 
     def _get(self, port, path):
-        with urllib.request.urlopen("http://127.0.0.1:%s%s" % (port, path)) as res:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}{path}") as res:
             return json.load(res)
 
     def _post(self, port, path, payload, ctype="application/json"):
         req = urllib.request.Request(
-            "http://127.0.0.1:%s%s" % (port, path),
+            f"http://127.0.0.1:{port}{path}",
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": ctype},
         )

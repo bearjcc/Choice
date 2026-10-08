@@ -148,6 +148,12 @@ function route() {
     return;
   }
   if (peopleOn() && !currentPerson()) return showPeople();
+  if (new URLSearchParams(location.search).get("setup") === "1") {
+    return api("/api/config").then((cfg) => {
+      if (cfg.ok && cfg.editable) showSetup(cfg);
+      else showLibrary();
+    });
+  }
   if (wanted) return openDeck(wanted, false);
   const decks = state.index.decks || [];
   if (state.index.direct && decks.length === 1 && !decks[0].error) return openDeck(decks[0].id, false);
@@ -329,6 +335,19 @@ function showSetup(cfg) {
   sortLeft.placeholder = "delete";
   form.append(sortLeft);
 
+  form.append(fieldLabel("Secret env name (e.g. IMMICH_API_KEY)"));
+  const secretName = el("input");
+  secretName.name = "secret_name";
+  secretName.placeholder = "IMMICH_API_KEY";
+  form.append(secretName);
+
+  form.append(fieldLabel("Secret value (stored in secrets file, not config)"));
+  const secretValue = el("input");
+  secretValue.type = "password";
+  secretValue.name = "secret_value";
+  secretValue.autocomplete = "off";
+  form.append(secretValue);
+
   const testBtn = el("button", null, "Test connection");
   testBtn.type = "button";
   const saveBtn = el("button", null, "Save");
@@ -374,6 +393,13 @@ function showSetup(cfg) {
     if (sortRight.value.trim()) entry.sort_right = sortRight.value.trim();
     if (sortLeft.value.trim()) entry.sort_left = sortLeft.value.trim();
     decks.push(entry);
+    const sname = secretName.value.trim();
+    const sval = secretValue.value;
+    if (sname && sval) {
+      const sec = await api("/api/secrets", { name: sname, value: sval });
+      if (!sec.ok) return setStatus(sec.message || "Could not store secret.");
+      secretValue.value = "";
+    }
     const res = await api("/api/config", { sources: cfg.sources, decks });
     if (!res.ok) return setStatus(res.message || "Could not save.");
     setStatus("Saved. Restart Choice if decks do not refresh.");
@@ -467,6 +493,27 @@ function renderDeck() {
   }
   paintCard(card, item);
   bindDrag(card);
+  preloadMedia();
+}
+
+function preloadMedia() {
+  const items = (state.payload && state.payload.items) || [];
+  const urls = [];
+  for (let i = 0; i < 3 && i < items.length; i++) {
+    const row = items[(state.pos + i) % items.length];
+    if (!row) continue;
+    if (row.kind === "image" && row.media) urls.push(mediaSrc(row, null));
+    if (row.kind === "pair" && row.sides) {
+      row.sides.forEach((side) => {
+        if (side.media) urls.push(mediaSrc(row, side));
+      });
+    }
+  }
+  urls.forEach((url) => {
+    const img = new Image();
+    img.decoding = "async";
+    img.src = url;
+  });
 }
 
 function paintCard(card, item) {
@@ -517,6 +564,16 @@ function paintPair(card, item) {
   const sides = el("div", media ? "sides media" : "sides");
   item.sides.forEach((side) => {
     const pane = el("section", side.media ? "side has-media" : "side");
+    pane.setAttribute("role", "button");
+    pane.tabIndex = 0;
+    const pick = side.key === "b" ? "right" : "left";
+    pane.addEventListener("click", () => act(pick));
+    pane.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        act(pick);
+      }
+    });
     if (side.media) {
       const frame = el("div", "frame");
       appendPhoto(frame, mediaSrc(item, side), sideLabel(side));
@@ -883,6 +940,19 @@ function onKey(event) {
     if ($("dialog").open) $("dialog").close();
     act(map[event.key]);
     return;
+  }
+  const item = current();
+  if (item && item.kind === "pair") {
+    if (event.key === "a" || event.key === "A") {
+      event.preventDefault();
+      act("left");
+      return;
+    }
+    if (event.key === "b" || event.key === "B") {
+      event.preventDefault();
+      act("right");
+      return;
+    }
   }
   if (event.key === "u" || event.key === "U") undoLast();
   if (event.key === "i" || event.key === "I") openDetails();

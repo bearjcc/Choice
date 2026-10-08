@@ -71,11 +71,11 @@ def load_roster(root: Path) -> Roster:
     try:
         raw = path.read_text(encoding="utf-8")
     except OSError as exc:
-        raise DeckProblem("Cannot read users.json (%s)" % (exc.strerror or exc)) from exc
+        raise DeckProblem(f"Cannot read users.json ({exc.strerror or exc})") from exc
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as exc:
-        raise DeckProblem("users.json is not valid JSON (%s)" % exc.msg) from exc
+        raise DeckProblem(f"users.json is not valid JSON ({exc.msg})") from exc
     if not isinstance(data, dict) or "users" not in data:
         raise DeckProblem("users.json needs a users list.")
     rows = data.get("users")
@@ -84,7 +84,7 @@ def load_roster(root: Path) -> Roster:
     warnings = []
     for key in data:
         if key != "users":
-            warnings.append("users.json: unknown key '%s' (ignored)" % key)
+            warnings.append(f"users.json: unknown key '{key}' (ignored)")
     people: list[Person] = []
     seen: set[str] = set()
     for row in rows:
@@ -94,7 +94,7 @@ def load_roster(root: Path) -> Roster:
             warnings.append(str(exc))
             continue
         if person.id in seen:
-            warnings.append("%s: duplicate id '%s' (ignored)" % (person.name, person.id))
+            warnings.append(f"{person.name}: duplicate id '{person.id}' (ignored)")
             continue
         seen.add(person.id)
         people.append(person)
@@ -108,7 +108,7 @@ def assignment_warnings(people: list[Person], deck_ids: set[str]) -> list[str]:
             continue
         for deck_id in person.decks:
             if deck_id not in deck_ids:
-                notes.append("%s: no deck '%s'" % (person.name, deck_id))
+                notes.append(f"{person.name}: no deck '{deck_id}'")
     return notes
 
 
@@ -126,7 +126,7 @@ def remove_roster(root: Path) -> None:
             if path.is_file():
                 path.unlink()
         except OSError as exc:
-            raise DeckProblem("Cannot update users.json (%s)" % (exc.strerror or exc)) from exc
+            raise DeckProblem(f"Cannot update users.json ({exc.strerror or exc})") from exc
 
 
 def parse_users(raw: list, known: set[str]) -> list[Person]:
@@ -138,7 +138,7 @@ def parse_users(raw: list, known: set[str]) -> list[Person]:
     for row in raw:
         person = _person(row, warnings=None, known=known)
         if person.id in seen:
-            raise DeckProblem("%s is already here." % person.name)
+            raise DeckProblem(f"{person.name} is already here.")
         seen.add(person.id)
         people.append(person)
     return people
@@ -151,17 +151,17 @@ def _person(row, warnings: list[str] | None, known: set[str] | None) -> Person:
     if strict:
         for key in row:
             if key not in {"id", "name", "decks"}:
-                raise DeckProblem("Unknown field '%s'." % key)
+                raise DeckProblem(f"Unknown field '{key}'.")
     name = row.get("name")
     if not isinstance(name, str) or not name.strip():
         raise DeckProblem("Each person needs a name.")
     name = " ".join(name.split())
     if len(name) > _NAME_LIMIT:
-        raise DeckProblem("Name is longer than %d characters." % _NAME_LIMIT)
+        raise DeckProblem(f"Name is longer than {_NAME_LIMIT} characters.")
     if warnings is not None:
         for key in row:
             if key not in {"id", "name", "decks"}:
-                warnings.append("%s: unknown key '%s' (ignored)" % (name, key))
+                warnings.append(f"{name}: unknown key '{key}' (ignored)")
     given = row.get("id")
     if given in (None, ""):
         person_id = slug(name)
@@ -169,7 +169,7 @@ def _person(row, warnings: list[str] | None, known: set[str] | None) -> Person:
             person_id = "person"
     else:
         if not isinstance(given, str) or not _ID_OK.fullmatch(given):
-            raise DeckProblem("%s: bad id." % name)
+            raise DeckProblem(f"{name}: bad id.")
         person_id = given
     if "decks" not in row:
         decks = None
@@ -182,16 +182,16 @@ def _decks(raw, name: str, known: set[str] | None, warnings: list[str] | None) -
     if raw is None or raw == "*":
         return None
     if not isinstance(raw, list):
-        raise DeckProblem("%s: decks must be a list or '*'." % name)
+        raise DeckProblem(f"{name}: decks must be a list or '*'.")
     decks: list[str] = []
     for item in raw:
         if not isinstance(item, str) or not _ID_OK.fullmatch(item):
             if warnings is None:
-                raise DeckProblem("%s: bad deck id." % name)
-            warnings.append("%s: ignored deck '%s'" % (name, item))
+                raise DeckProblem(f"{name}: bad deck id.")
+            warnings.append(f"{name}: ignored deck '{item}'")
             continue
         if known is not None and item not in known:
-            raise DeckProblem("No such deck '%s'." % item)
+            raise DeckProblem(f"No such deck '{item}'.")
         if item not in decks:
             decks.append(item)
     return decks
@@ -205,4 +205,4 @@ def _write(path: Path, text: str) -> None:
             tmp.write_text(text, encoding="utf-8")
             tmp.replace(path)
         except OSError as exc:
-            raise DeckProblem("Cannot update users.json (%s)" % (exc.strerror or exc)) from exc
+            raise DeckProblem(f"Cannot update users.json ({exc.strerror or exc})") from exc

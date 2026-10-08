@@ -70,7 +70,7 @@ class SwipePlugin:
 def load_swipe_class(deck_py: Path, folder_id: str) -> Any:
     spec = importlib.util.spec_from_file_location("choice_swipe_" + folder_id, deck_py)
     if spec is None or spec.loader is None:
-        raise RuntimeError("Could not load %s" % deck_py)
+        raise RuntimeError(f"Could not load {deck_py}")
     mod = importlib.util.module_from_spec(spec)
     parent = str(deck_py.parent)
     sys.path.insert(0, parent)
@@ -89,7 +89,7 @@ def load_swipe_class(deck_py: Path, folder_id: str) -> Any:
             and hasattr(value, "handle")
         ):
             return value()
-    raise RuntimeError("No Deck class in %s" % deck_py)
+    raise RuntimeError(f"No Deck class in {deck_py}")
 
 
 def swipe_item_to_choice(row: dict, folder: Path, plugin: SwipePlugin) -> Item:

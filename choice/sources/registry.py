@@ -29,14 +29,16 @@ def source_types() -> list[dict[str, str]]:
         if cls in seen:
             continue
         seen.add(cls)
-        out.append({"type": key, "label": cls.__doc__.split("\n")[0].strip() if cls.__doc__ else key})
+        out.append(
+            {"type": key, "label": cls.__doc__.split("\n")[0].strip() if cls.__doc__ else key}
+        )
     return out
 
 
 def build_source(spec: SourceSpec, config: AppConfig) -> Source:
     cls = _TYPES.get(spec.type)
     if cls is None:
-        raise ConfigProblem("Unknown source type %r." % spec.type)
+        raise ConfigProblem(f"Unknown source type {spec.type!r}.")
     return cls(spec.id, config, dict(spec.options))
 
 

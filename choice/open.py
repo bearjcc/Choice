@@ -25,7 +25,7 @@ def open_config(path: Path) -> Opened:
     for spec in config.decks:
         source = sources.get(spec.source)
         if source is None:
-            raise ConfigProblem("Deck %r: unknown source %r." % (spec.id, spec.source))
+            raise ConfigProblem(f"Deck {spec.id!r}: unknown source {spec.source!r}.")
         state_dir = config.state_dir / spec.id
         state_dir.mkdir(parents=True, exist_ok=True)
         try:

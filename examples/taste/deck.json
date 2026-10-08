@@ -1,0 +1,11 @@
+{
+  "title": "Taste test (filter then rank)",
+  "source": { "type": "jsonl", "path": "items.jsonl" },
+  "show": { "title": "{{name}}", "body": "{{note}}" },
+  "contest": { "kind": "taste" },
+  "directions": {
+    "right": { "label": "Like", "value": "yes" },
+    "left": { "label": "No", "value": "no" },
+    "down": { "label": "Skip", "value": "skip", "later": true }
+  }
+}

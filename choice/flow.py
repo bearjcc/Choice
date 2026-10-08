@@ -87,14 +87,14 @@ def report_lines(report: dict | None) -> list[str]:
     if detail:
         lines.append(detail)
     for row in report.get("places") or []:
-        note = " (%s)" % row["note"] if row.get("note") else ""
-        lines.append("%s. %s%s" % (row.get("place"), row.get("name"), note))
+        note = " ({})".format(row["note"]) if row.get("note") else ""
+        lines.append("{}. {}{}".format(row.get("place"), row.get("name"), note))
     for row in report.get("lines") or []:
         prefix = {"right": "Correct", "wrong": "Missed"}.get(row.get("mark") or "", "")
         text = row.get("text") or ""
-        note = " (%s)" % row["note"] if row.get("note") else ""
+        note = " ({})".format(row["note"]) if row.get("note") else ""
         if prefix:
-            lines.append("%s: %s%s" % (prefix, text, note))
+            lines.append(f"{prefix}: {text}{note}")
         elif text:
             lines.append(text)
     return lines
@@ -111,7 +111,7 @@ def _score(deck: Deck, items: list[Item], choices: dict) -> Flow:
     for item in items:
         answer = str(item.fields.get(field_name) or "").strip()
         if not answer:
-            warnings.append("score: '%s' has no answer" % item.id)
+            warnings.append(f"score: '{item.id}' has no answer")
             continue
         scored += 1
         choice = choices.get(item.id)
@@ -123,7 +123,7 @@ def _score(deck: Deck, items: list[Item], choices: dict) -> Flow:
         if right:
             correct += 1
         mark = "right" if right else "wrong"
-        note = "Answer: %s" % answer
+        note = f"Answer: {answer}"
         marks[item.id] = {"mark": mark, "note": note}
         lines.append({"text": item.body or item.title, "mark": mark, "note": note})
     report = None
@@ -131,7 +131,7 @@ def _score(deck: Deck, items: list[Item], choices: dict) -> Flow:
     if scored and not pending:
         report = {
             "kind": "score",
-            "heading": "%d of %d" % (correct, scored),
+            "heading": f"{correct} of {scored}",
             "detail": "One point for each correct answer.",
             "lines": lines,
         }
@@ -147,7 +147,7 @@ def _story(deck: Deck, items: list[Item], choices: dict) -> Flow:
     warnings = []
     start = spec.get("start") or items[0].id
     if start not in by_id:
-        warnings.append("story: start '%s' is not a card. Starting at the first row." % start)
+        warnings.append(f"story: start '{start}' is not a card. Starting at the first row.")
         start = items[0].id
 
     path: list[Item] = []
@@ -159,12 +159,12 @@ def _story(deck: Deck, items: list[Item], choices: dict) -> Flow:
     while node:
         if node in seen:
             looped = node
-            warnings.append("story: '%s' loops back." % node)
+            warnings.append(f"story: '{node}' loops back.")
             break
         item = by_id.get(node)
         if item is None:
             missing = node
-            warnings.append("story: next scene '%s' is not in the pile." % node)
+            warnings.append(f"story: next scene '{node}' is not in the pile.")
             break
         seen.add(node)
         _offer(deck, item)
@@ -181,11 +181,13 @@ def _story(deck: Deck, items: list[Item], choices: dict) -> Flow:
         if node:
             continue
         missing = item.id
-        warnings.append("story: '%s' does not name a next scene." % item.id)
+        warnings.append(f"story: '{item.id}' does not name a next scene.")
         break
 
     if ending is None and not missing and not looped:
-        return Flow(path, warnings=warnings, count_label="Scene %d" % len(path), meter=False, replay=True)
+        return Flow(
+            path, warnings=warnings, count_label=f"Scene {len(path)}", meter=False, replay=True
+        )
 
     report = _story_report(ending, missing, looped, path, choices)
     label = ending.title if ending is not None else report["heading"]
@@ -209,13 +211,23 @@ def _story_report(ending, missing: str, looped: str, path: list[Item], choices: 
         if choice and not choice.get("later"):
             lines.append({"text": choice.get("label") or choice.get("value") or item.title})
     if ending is not None:
-        return {"kind": "story", "heading": ending.title or "The end", "detail": ending.body, "lines": lines}
+        return {
+            "kind": "story",
+            "heading": ending.title or "The end",
+            "detail": ending.body,
+            "lines": lines,
+        }
     if missing:
-        return {"kind": "story", "heading": "That scene is missing", "detail": missing, "lines": lines}
+        return {
+            "kind": "story",
+            "heading": "That scene is missing",
+            "detail": missing,
+            "lines": lines,
+        }
     return {
         "kind": "story",
         "heading": "This path loops",
-        "detail": "Scene %s points back at an earlier scene." % looped,
+        "detail": f"Scene {looped} points back at an earlier scene.",
         "lines": lines,
     }
 
@@ -351,7 +363,7 @@ def _bracket(deck: Deck, items: list[Item], choices: dict) -> Flow:
         losers = []
         pending = False
         for a, b in pairs:
-            game = _Game(_mid("b:r%d" % round_no, a, b), a, b, label, round_label=label)
+            game = _Game(_mid(f"b:r{round_no}", a, b), a, b, label, round_label=label)
             known.append(game)
             winner = _winner(choices.get(game.id), a, b)
             if not winner:
@@ -381,18 +393,22 @@ def _bracket(deck: Deck, items: list[Item], choices: dict) -> Flow:
     next_place = 2
     for label, losers in reversed(groups):
         for loser in losers:
-            places.append({
-                "place": str(next_place),
-                "name": by_id[loser].name,
-                "note": _out_note(label),
-            })
+            places.append(
+                {
+                    "place": str(next_place),
+                    "name": by_id[loser].name,
+                    "note": _out_note(label),
+                }
+            )
         next_place += len(losers)
     return Flow(
         [_match_item(game, by_id) for game in known],
         report={
             "kind": "rank",
             "heading": by_id[champion].name,
-            "detail": "Lose a match and you are out. Names that lost in the same round share a place.",
+            "detail": (
+                "Lose a match and you are out. Names that lost in the same round share a place."
+            ),
             "places": places,
         },
         total=games_total,
@@ -459,7 +475,9 @@ def _rank_units(order: list[str], wins: dict, results: list[tuple[str, str, str]
                 used_playoff = True
             units.append(unit)
     if used_playoff:
-        split_h2h = any(len(group) > 1 and not _still_tied(group, results) for group in buckets.values())
+        split_h2h = any(
+            len(group) > 1 and not _still_tied(group, results) for group in buckets.values()
+        )
     return units, used_playoff, split_h2h
 
 
@@ -546,11 +564,13 @@ def _stitch(units, orders: dict, by_id: dict, wins: dict) -> list[dict]:
         placed.append(unit)
     rows = []
     for index, pid in enumerate(placed, start=1):
-        rows.append({
-            "place": str(index),
-            "name": by_id[pid].name,
-            "note": _win_note(wins.get(pid, 0)),
-        })
+        rows.append(
+            {
+                "place": str(index),
+                "name": by_id[pid].name,
+                "note": _win_note(wins.get(pid, 0)),
+            }
+        )
     return rows
 
 
@@ -579,20 +599,20 @@ def _round_label(n_matches: int, n_byes: int, round_no: int) -> str:
         return "Semi-final"
     if n_matches == 4 and n_byes == 0:
         return "Quarter-final"
-    return "Round %d" % round_no
+    return f"Round {round_no}"
 
 
 def _out_note(label: str) -> str:
     if label in {"Final", "Semi-final", "Quarter-final"}:
-        return "Out in the %s" % label.lower()
+        return f"Out in the {label.lower()}"
     lowered = label[:1].lower() + label[1:]
-    return "Out in %s" % lowered
+    return f"Out in {lowered}"
 
 
 def _win_note(count: int) -> str:
     if count == 1:
         return "1 win"
-    return "%d wins" % count
+    return f"{count} wins"
 
 
 def _winner(choice: dict | None, a: str, b: str) -> str:
@@ -622,17 +642,19 @@ def _match_item(game: _Game, by_id: dict) -> Item:
 
 def _side(key: str, player: _Player) -> Side:
     if player.path is not None:
-        return Side(key=key, label=player.name, body="", path=player.path, media_token=player.media_token)
+        return Side(
+            key=key, label=player.name, body="", path=player.path, media_token=player.media_token
+        )
     return Side(key=key, label="", body=player.name)
 
 
 def _mid(prefix: str, a: str, b: str) -> str:
     x, y = (a, b) if str(a) <= str(b) else (b, a)
-    return "%s:%s:%s" % (prefix, _tag(x), _tag(y))
+    return f"{prefix}:{_tag(x)}:{_tag(y)}"
 
 
 def _tag(text: str) -> str:
-    return "%d.%s" % (len(str(text)), text)
+    return f"{len(str(text))}.{text}"
 
 
 def _group_key(ids: list[str]) -> str:
@@ -671,7 +693,13 @@ def _taste(deck: Deck, items: list[Item], choices: dict) -> Flow:
             _load=lambda: (likes, []),
         )
         if len(likes) <= 2:
-            return Flow(likes, report={"heading": "Likes", "places": [{"place": i + 1, "name": it.title} for i, it in enumerate(likes)]})
+            return Flow(
+                likes,
+                report={
+                    "heading": "Likes",
+                    "places": [{"place": i + 1, "name": it.title} for i, it in enumerate(likes)],
+                },
+            )
         if len(likes) <= 12:
             sub.contest_kind = "robin"
             return _robin(sub, likes, choices)
@@ -715,10 +743,22 @@ def _rated(deck: Deck, items: list[Item], choices: dict) -> Flow:
     if pair:
         a, b = pair
         game = _Game(id=_mid("rated", a, b), a=a, b=b, title="Which do you prefer?")
-        visible.append(_match_item(game, {pid: _Player(pid, by_id[pid].title, by_id[pid].path, by_id[pid].media_token) for pid in (a, b)}))
+        visible.append(
+            _match_item(
+                game,
+                {
+                    pid: _Player(pid, by_id[pid].title, by_id[pid].path, by_id[pid].media_token)
+                    for pid in (a, b)
+                },
+            )
+        )
     conf = confidence(players)
     places = [
-        {"place": idx + 1, "name": by_id[pid].title if pid in by_id else pid, "note": "RD %.0f" % rd}
+        {
+            "place": idx + 1,
+            "name": by_id[pid].title if pid in by_id else pid,
+            "note": f"RD {rd:.0f}",
+        }
         for idx, (pid, _rating, rd) in enumerate(ranking(players)[:10])
     ]
     report = None
@@ -729,7 +769,7 @@ def _rated(deck: Deck, items: list[Item], choices: dict) -> Flow:
         total=max(len(decided_pairs) + (1 if pair else 0), 1),
         decided=len(decided_pairs),
         left=1 if pair else 0,
-        count_label="Rated %.0f%%" % (conf * 100),
+        count_label=f"Rated {conf * 100:.0f}%",
         meter=True,
         report=report,
         choices=choices,

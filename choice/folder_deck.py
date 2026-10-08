@@ -83,7 +83,9 @@ def merge_folder_options(source: dict, deck_options: dict) -> FolderScanOptions:
     return parse_folder_options(merged)
 
 
-def wire_sort_directions(directions: dict[str, Direction], targets: dict[str, str]) -> dict[str, Direction]:
+def wire_sort_directions(
+    directions: dict[str, Direction], targets: dict[str, str]
+) -> dict[str, Direction]:
     out: dict[str, Direction] = {}
     for key, direction in directions.items():
         folder = targets.get(key)
@@ -238,7 +240,7 @@ def list_files(folder: Path, recursive: bool, skip_dirs: set[Path]) -> list[Path
     try:
         children = list(folder.iterdir())
     except OSError as exc:
-        raise DeckProblem("Cannot read %s (%s)" % (folder, exc.strerror or exc)) from exc
+        raise DeckProblem(f"Cannot read {folder} ({exc.strerror or exc})") from exc
     for path in children:
         if path.name.startswith(".") or path.name in SKIP_NAMES:
             continue

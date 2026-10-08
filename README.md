@@ -14,15 +14,28 @@ python -m choice examples
 
 Open the address it prints. Arrows decide. U undoes. I opens the card.
 
+## Config and sources (0.2)
+
+For several decks and remote piles, use a config file:
+
+```
+cp choice.example.toml choice.toml
+python -m choice --config choice.toml
+```
+
+Sources can be local folders, Swipe `deck.py` plugins, Immich, RSS, or WebDAV. State and decisions live under `state.dir` from the config, not inside the source. See [DECKS.md](DECKS.md) for every field.
+
+With the UI running in config mode, open **Sources and decks** on the library page to add a folder deck, set sort targets, and test a connection.
+
 ## Point it at your own photos
 
 ```
 python -m choice D:\camera\dump
 ```
 
-Right keeps the file where it is. Left moves it to `.choice\trash` inside that folder. It is not deleted. Down skips, and the photo comes back. Up marks a favourite. Undo puts a trashed file back.
+By default this is **results** mode: swipes are logged and files stay put. Add a `deck.json` with `"output": "sort"` and sort folders if you want copyparty-style sorting. The `examples/photos` deck still moves trashes explicitly via directions.
 
-Decisions are appended to `.choice\decisions.jsonl`. Latest line per card wins. Undo adds a line; it does not rewrite history.
+Decisions are appended to `.choice\decisions.jsonl` (or the config state dir). Latest line per card wins. Undo adds a line; it does not rewrite history.
 
 ## Your own labels
 
@@ -63,7 +76,8 @@ People, on the page, adds a name and ticks which decks that person sees. Each pe
 No packages are required. Python 3.11 or newer. Pillow is optional: `python -m pip install pillow` makes phone-sized JPEGs for large photos. Without it, Choice sends the original file.
 
 ```
-python -m unittest tests.test_core
+python -m unittest discover -s tests
+python -m ruff check choice tests
 ```
 
 ## Licence

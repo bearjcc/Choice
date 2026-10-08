@@ -8,6 +8,7 @@ Media URLs only serve a file that is currently a card.
 
 from __future__ import annotations
 
+import gzip
 import json
 import re
 import shutil
@@ -17,7 +18,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from choice.act import decide, progress, undo, view
-from choice.config import ConfigProblem, load_config, mask_secrets, save_config
+from choice.config import ConfigProblem, load_config, mask_secrets, save_config, write_secret
 from choice.load import DeckProblem
 from choice.media import content_type, view_path
 from choice.open import open_path
@@ -53,7 +54,15 @@ class Handler(BaseHTTPRequestHandler):
             fn()
         except Exception:
             traceback.print_exc()
-            self._json(500, {"ok": False, "message": "Choice hit an error. The detail is in the terminal that started it."})
+            self._json(
+                500,
+                {
+                    "ok": False,
+                    "message": (
+                        "Choice hit an error. The detail is in the terminal that started it."
+                    ),
+                },
+            )
 
     def _get(self):
         parsed = urlparse(self.path)
@@ -92,6 +101,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         if parts == ["api", "config"]:
             return self._config_save(body)
+        if parts == ["api", "secrets"]:
+            return self._secret_save(body)
         if parts == ["api", "sources", "test"] and isinstance(body.get("source"), dict):
             return self._source_test_body(body)
         if parts == ["api", "users"]:
@@ -105,18 +116,33 @@ class Handler(BaseHTTPRequestHandler):
         if kind == "undo":
             result = undo(deck)
         else:
-            result = decide(deck, str(body.get("item") or ""), str(body.get("direction") or ""), body.get("note"))
+            result = decide(
+                deck,
+                str(body.get("item") or ""),
+                str(body.get("direction") or ""),
+                body.get("note"),
+            )
         self._json(200 if result.get("ok") else 400, result)
+
+    def _library_path(self) -> Path:
+        if self.server.config_path is not None:
+            return self.server.config_path
+        return self.server.choice_root
 
     def _index(self, query):
         try:
-            opened = open_path(self.server.choice_root)
+            opened = open_path(self._library_path())
             roster = load_roster(self.server.choice_root)
         except DeckProblem as exc:
             return self._json(200, {"ok": False, "message": str(exc), "direct": True, "decks": []})
         if not roster.enabled:
-            return self._json(200, {"ok": True, "direct": opened.direct, "decks": _rows(opened.decks), "users": None})
-        library = [{"id": deck.id, "title": deck.title, "error": deck.problem} for deck in opened.decks]
+            return self._json(
+                200,
+                {"ok": True, "direct": opened.direct, "decks": _rows(opened.decks), "users": None},
+            )
+        library = [
+            {"id": deck.id, "title": deck.title, "error": deck.problem} for deck in opened.decks
+        ]
         known = {deck.id for deck in opened.decks}
         warnings = list(roster.warnings) + assignment_warnings(roster.people, known)
         user_id = self._requested_user(query, None)
@@ -186,7 +212,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("Content-Length", str(len(data)))
                 self.send_header("Cache-Control", "private, max-age=86400")
                 if version:
-                    self.send_header("ETag", '"%s"' % version)
+                    self.send_header("ETag", f'"{version}"')
                 self.end_headers()
                 self.wfile.write(data)
                 return
@@ -213,7 +239,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _save_users(self, body):
         try:
-            opened = open_path(self.server.choice_root)
+            opened = open_path(self._library_path())
         except DeckProblem as exc:
             return self._json(400, {"ok": False, "message": str(exc)})
         known = {deck.id for deck in opened.decks}
@@ -247,7 +273,11 @@ class Handler(BaseHTTPRequestHandler):
         if person is None:
             return {"ok": False, "message": "No such person.", "status": 404}
         if not person.sees(deck.id):
-            return {"ok": False, "message": "%s does not have this deck." % person.name, "status": 403}
+            return {
+                "ok": False,
+                "message": f"{person.name} does not have this deck.",
+                "status": 403,
+            }
         deck.actor = person.id
         return deck
 
@@ -297,7 +327,7 @@ class Handler(BaseHTTPRequestHandler):
         if not _ID.fullmatch(deck_id or ""):
             return {"ok": False, "message": "No such deck."}
         try:
-            opened = open_path(self.server.choice_root)
+            opened = open_path(self._library_path())
         except DeckProblem as exc:
             return {"ok": False, "message": str(exc)}
         for deck in opened.decks:
@@ -338,7 +368,10 @@ class Handler(BaseHTTPRequestHandler):
         except ConfigProblem as exc:
             return self._json(400, {"ok": False, "message": str(exc)})
         sources = [mask_secrets({"id": s.id, "type": s.type, **s.options}) for s in cfg.sources]
-        decks = [{"id": d.id, "title": d.title, "source": d.source, "mount": d.mount, **d.options} for d in cfg.decks]
+        decks = [
+            {"id": d.id, "title": d.title, "source": d.source, "mount": d.mount, **d.options}
+            for d in cfg.decks
+        ]
         return self._json(
             200,
             {
@@ -354,7 +387,9 @@ class Handler(BaseHTTPRequestHandler):
     def _config_save(self, body):
         path = self.server.config_path
         if path is None:
-            return self._json(400, {"ok": False, "message": "Server was not started with --config."})
+            return self._json(
+                400, {"ok": False, "message": "Server was not started with --config."}
+            )
         try:
             cfg = load_config(path)
         except ConfigProblem as exc:
@@ -415,7 +450,9 @@ class Handler(BaseHTTPRequestHandler):
             if data:
                 return self._json(200, {"ok": True, "stats": data})
         snap = progress(deck, pending=False)
-        return self._json(200, {"ok": True, "stats": {"tally": snap.get("tally"), "total": snap.get("total")}})
+        return self._json(
+            200, {"ok": True, "stats": {"tally": snap.get("tally"), "total": snap.get("total")}}
+        )
 
     def _export(self, deck_id, query):
         deck = self._opened(deck_id, self._requested_user(query, None))
@@ -424,14 +461,43 @@ class Handler(BaseHTTPRequestHandler):
         from choice.act import _read_log
 
         rows = _read_log(deck)
-        return self._json(200, {"ok": True, "decisions": rows})
+        snap = progress(deck, pending=False)
+        payload = {"ok": True, "decisions": rows, "deck": deck.id}
+        if snap.get("report"):
+            payload["ranking"] = snap["report"]
+        if snap.get("tally"):
+            payload["tally"] = snap["tally"]
+        return self._json(200, payload)
+
+    def _secret_save(self, body):
+        path = self.server.config_path
+        if path is None:
+            return self._json(400, {"ok": False, "message": "No config."})
+        name = str(body.get("name") or "").strip()
+        value = str(body.get("value") or "")
+        if not value:
+            return self._json(400, {"ok": False, "message": "Secret value is required."})
+        try:
+            cfg = load_config(path)
+            secret_path = write_secret(cfg, name, value)
+        except ConfigProblem as exc:
+            return self._json(400, {"ok": False, "message": str(exc)})
+        return self._json(200, {"ok": True, "name": name, "secrets_file": str(secret_path)})
 
     def _json(self, code, payload):
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        encoding = self.headers.get("Accept-Encoding", "")
+        if "gzip" in encoding and len(data) > 280:
+            data = gzip.compress(data)
+            extra = [("Content-Encoding", "gzip")]
+        else:
+            extra = []
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
+        for key, value in extra:
+            self.send_header(key, value)
         self.end_headers()
         self.wfile.write(data)
 
@@ -440,11 +506,29 @@ def _rows(decks) -> list[dict]:
     rows = []
     for deck in decks:
         if deck.problem:
-            rows.append({"id": deck.id, "title": deck.title, "error": deck.problem, "total": 0, "decided": 0, "left": 0})
+            rows.append(
+                {
+                    "id": deck.id,
+                    "title": deck.title,
+                    "error": deck.problem,
+                    "total": 0,
+                    "decided": 0,
+                    "left": 0,
+                }
+            )
             continue
         snap = progress(deck, pending=True)
         if not snap.get("ok"):
-            rows.append({"id": deck.id, "title": deck.title, "error": snap.get("message"), "total": 0, "decided": 0, "left": 0})
+            rows.append(
+                {
+                    "id": deck.id,
+                    "title": deck.title,
+                    "error": snap.get("message"),
+                    "total": 0,
+                    "decided": 0,
+                    "left": 0,
+                }
+            )
             continue
         row = {
             "id": deck.id,
@@ -481,7 +565,9 @@ def serve(root: Path, host: str, port: int, config_path: Path | None = None) -> 
     try:
         server = ChoiceSite((host, port), root, config_path=config_path)
     except OSError as exc:
-        raise SystemExit("Cannot listen on %s:%s (%s)." % (host, port, exc.strerror or exc)) from exc
+        raise SystemExit(
+            f"Cannot listen on {host}:{port} ({exc.strerror or exc})."
+        ) from exc
     try:
         server.serve_forever()
     except KeyboardInterrupt:

@@ -1,0 +1,10 @@
+{
+  "title": "Rated picks (Glicko pairs)",
+  "source": { "type": "jsonl", "path": "items.jsonl" },
+  "show": { "title": "{{name}}", "body": "{{tagline}}" },
+  "contest": { "kind": "rated", "name": "name" },
+  "directions": {
+    "left": { "label": "Left", "value": "left" },
+    "right": { "label": "Right", "value": "right" }
+  }
+}

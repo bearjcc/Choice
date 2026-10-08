@@ -40,7 +40,7 @@ def view_path(src: Path, cache_dir: Path) -> Path:
     except ImportError:
         return src
     digest = hashlib.sha256(str(src.resolve()).encode("utf-8")).hexdigest()[:16]
-    dest = cache_dir / ("%s-%d-%d.jpg" % (digest, stat.st_mtime_ns, stat.st_size))
+    dest = cache_dir / f"{digest}-{stat.st_mtime_ns}-{stat.st_size}.jpg"
     if dest.is_file():
         return dest
     try:

@@ -19,6 +19,8 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
+from choice.deck_cache import bust as bust_item_cache
+from choice.deck_cache import load_items as cached_load_items
 from choice.flow import Flow, arrange, report_lines
 from choice.load import Deck, DeckProblem, Item, inside
 
@@ -29,7 +31,7 @@ _LOCKS: dict[str, threading.Lock] = {}
 def decide(deck: Deck, item_id: str, direction: str, note: str | None) -> dict:
     action = deck.action(direction)
     if action is None:
-        return _fail("Unknown action '%s'." % direction)
+        return _fail(f"Unknown action '{direction}'.")
     note = (note or "").strip()
     if len(note) > 500:
         return _fail("Note is longer than 500 characters.")
@@ -75,16 +77,17 @@ def decide(deck: Deck, item_id: str, direction: str, note: str | None) -> dict:
                 try:
                     _reverse_file_op(deck, moved)
                 except _OpError:
-                    return _fail("%s Choice could not reverse the file change." % exc)
+                    return _fail(f"{exc} Choice could not reverse the file change.")
             return _fail(str(exc))
 
         _append(deck, record)
-        message = "%s: %s" % (record["label"], item.title)
+        bust_item_cache(deck)
+        message = "{}: {}".format(record["label"], item.title)
         if deck.hook and not deck.hook_required:
             try:
                 _run_hook(deck, _hook_body("decide", deck, item, record))
             except _OpError as exc:
-                message += " Saved here, but the hook failed: %s" % exc
+                message += f" Saved here, but the hook failed: {exc}"
         return {"ok": True, "message": message, "can_undo": True}
 
 
@@ -117,27 +120,32 @@ def undo(deck: Deck) -> dict:
                 try:
                     _reapply_file_op(deck, latest.get("file_op"))
                 except _OpError:
-                    return _fail("%s Choice could not put the file back." % exc)
+                    return _fail(f"{exc} Choice could not put the file back.")
             return _fail(str(exc))
         _append(deck, {"type": "undo", "ref": latest["id"], "item": latest["item"], "ts": _now()})
+        bust_item_cache(deck)
         if deck.hook and not deck.hook_required:
             try:
                 _run_hook(deck, _hook_body("undo", deck, item, latest))
             except _OpError as exc:
                 return {
                     "ok": True,
-                    "message": "Undone here, but the hook failed: %s" % exc,
+                    "message": f"Undone here, but the hook failed: {exc}",
                     "can_undo": _latest_undoable(deck) is not None,
                 }
         undone = latest.get("file") or latest.get("label") or item.title
-        return {"ok": True, "message": "Undone %s" % undone, "can_undo": _latest_undoable(deck) is not None}
+        return {
+            "ok": True,
+            "message": f"Undone {undone}",
+            "can_undo": _latest_undoable(deck) is not None,
+        }
 
 
 def view(deck: Deck, items: list[Item] | None = None) -> Flow:
     """The cards to show, built from the rows and the log."""
     loaded: list[str] = []
     if items is None:
-        items, loaded = deck.load_items()
+        items, loaded = cached_load_items(deck)
     choices = _choices(deck)
     flow = arrange(deck, items, choices)
     flow.warnings = list(loaded) + list(flow.warnings)
@@ -217,16 +225,18 @@ def tally_lines(deck: Deck) -> list[str]:
         counts[key] = counts.get(key, 0) + 1
         labels[key] = record.get("label") or key
     total = flow.total if flow.total is not None else len(flow.items)
-    decided = flow.decided if flow.decided is not None else sum(
-        1 for record in choices.values() if not record.get("later")
+    decided = (
+        flow.decided
+        if flow.decided is not None
+        else sum(1 for record in choices.values() if not record.get("later"))
     )
     left = flow.left if flow.left is not None else total - decided
     lines = report_lines(flow.report)
     if lines:
         lines.append("")
-    lines.append("%d cards, %d decided, %d left" % (total, decided, left))
+    lines.append(f"{total} cards, {decided} decided, {left} left")
     for key, count in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])):
-        lines.append("%s: %d" % (labels.get(key, key), count))
+        lines.append(f"{labels.get(key, key)}: {count}")
     if len(lines) == 1:
         lines.append("No decisions yet.")
     return lines
@@ -241,7 +251,9 @@ def _tally(deck: Deck, choices: dict[str, dict]) -> list[dict]:
         key = record.get("value") or "?"
         counts[key] = counts.get(key, 0) + 1
         labels.setdefault(key, record.get("label") or key)
-    return [{"value": key, "label": labels.get(key, key), "n": counts[key]} for key in sorted(counts)]
+    return [
+        {"value": key, "label": labels.get(key, key), "n": counts[key]} for key in sorted(counts)
+    ]
 
 
 def _choices(deck: Deck) -> dict[str, dict]:
@@ -278,18 +290,18 @@ def _latest_undoable(deck: Deck) -> dict | None:
 
 def _transfer(deck: Deck, item: Item, does: str, into: str) -> dict:
     if item.path is None:
-        raise _OpError("This card has no file to %s." % does)
+        raise _OpError(f"This card has no file to {does}.")
     if not item.path.is_file():
-        raise _OpError("File is already gone: %s" % item.title)
+        raise _OpError(f"File is already gone: {item.title}")
     if not inside(deck.root, item.path):
-        raise _OpError("Choice will not %s a file outside the deck folder." % does)
+        raise _OpError(f"Choice will not {does} a file outside the deck folder.")
     dest_root = (deck.root / into).resolve()
     if not inside(deck.root, dest_root):
         raise _OpError("into leaves the deck folder.")
     try:
         rel = item.path.resolve().relative_to(deck.root.resolve())
     except ValueError as exc:
-        raise _OpError("Choice will not %s a file outside the deck folder." % does) from exc
+        raise _OpError(f"Choice will not {does} a file outside the deck folder.") from exc
     into_norm = into.replace("\\", "/")
     if "/" in into_norm or into_norm.startswith("."):
         dest = (dest_root / rel).resolve()
@@ -342,9 +354,9 @@ def _reverse_file_op(deck: Deck, file_op: dict | None) -> None:
     if op != "move":
         return
     if not dest.is_file():
-        raise _OpError("Cannot undo: %s is not there any more." % file_op.get("to"))
+        raise _OpError("Cannot undo: {} is not there any more.".format(file_op.get("to")))
     if src.exists():
-        raise _OpError("Cannot undo: %s is already back." % file_op.get("from"))
+        raise _OpError("Cannot undo: {} is already back.".format(file_op.get("from")))
     src.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(dest), str(src))
 
@@ -356,11 +368,11 @@ def _unique_dest(dest: Path) -> Path:
     parent = dest.parent
     n = 1
     while n < 10000:
-        candidate = parent / ("%s_%d%s" % (stem, n, suffix))
+        candidate = parent / f"{stem}_{n}{suffix}"
         if not candidate.exists():
             return candidate
         n += 1
-    raise _OpError("Could not find a free name near %s." % dest.name)
+    raise _OpError(f"Could not find a free name near {dest.name}.")
 
 
 def _same_volume(a: Path, b: Path) -> bool:
@@ -382,7 +394,7 @@ def _safe_copy(src: Path, dest: Path) -> None:
     shutil.copy2(src, dest)
     if dest.stat().st_size != src.stat().st_size:
         dest.unlink(missing_ok=True)
-        raise _OpError("Copy verification failed for %s." % src.name)
+        raise _OpError(f"Copy verification failed for {src.name}.")
 
 
 def _under(root: Path, relative: str) -> Path:
@@ -406,12 +418,12 @@ def _run_hook(deck: Deck, body: dict) -> None:
             check=False,
         )
     except subprocess.TimeoutExpired as exc:
-        raise _OpError("hook timed out after %s seconds" % deck.hook_timeout) from exc
+        raise _OpError(f"hook timed out after {deck.hook_timeout} seconds") from exc
     except OSError as exc:
-        raise _OpError("hook could not start (%s)" % (exc.strerror or exc)) from exc
+        raise _OpError(f"hook could not start ({exc.strerror or exc})") from exc
     if result.returncode != 0:
         err = (result.stderr or result.stdout or b"").decode("utf-8", "replace").strip()
-        err = err[-400:] if err else "exit %s" % result.returncode
+        err = err[-400:] if err else f"exit {result.returncode}"
         raise _OpError(err)
 
 

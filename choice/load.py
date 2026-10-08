@@ -26,7 +26,18 @@ ITEM_FILES = ("items.jsonl", "items.csv", "items.json")
 SKIP_NAMES = {"deck.json"}
 _TEMPLATE = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
 _HEX = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
-_DECK_KEYS = {"title", "blind", "source", "show", "directions", "buttons", "hook", "score", "contest", "story"}
+_DECK_KEYS = {
+    "title",
+    "blind",
+    "source",
+    "show",
+    "directions",
+    "buttons",
+    "hook",
+    "score",
+    "contest",
+    "story",
+}
 _FIELD = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _SOURCE_KEYS = {
     "type",
@@ -221,7 +232,7 @@ def render(template: str, fields: dict) -> str:
 def resolve(path: Path) -> Opened:
     path = path.expanduser().resolve()
     if not path.exists():
-        raise DeckProblem("No such path: %s" % path)
+        raise DeckProblem(f"No such path: {path}")
     if path.is_file():
         if path.name == "deck.json":
             return Opened([_from_folder(path.parent)], direct=True)
@@ -238,7 +249,11 @@ def resolve(path: Path) -> Opened:
     if children:
         return Opened(children, direct=False)
 
-    if (path / "items.jsonl").is_file() or (path / "items.csv").is_file() or (path / "items.json").is_file():
+    if (
+        (path / "items.jsonl").is_file()
+        or (path / "items.csv").is_file()
+        or (path / "items.json").is_file()
+    ):
         return Opened([_from_folder(path)], direct=True)
 
     files = _list_files(path, recursive=False)
@@ -247,8 +262,8 @@ def resolve(path: Path) -> Opened:
         return Opened([_implicit_folder(path, images_only=images_only)], direct=True)
 
     raise DeckProblem(
-        "Nothing to swipe in %s. Point Choice at a photo folder, a data file, "
-        "or a deck. From this repo: python -m choice examples" % path
+        f"Nothing to swipe in {path}. Point Choice at a photo folder, a data file, "
+        "or a deck. From this repo: python -m choice examples"
     )
 
 
@@ -257,7 +272,7 @@ def _child_decks(path: Path) -> list[Deck]:
     try:
         names = sorted(path.iterdir(), key=lambda p: p.name.lower())
     except OSError as exc:
-        raise DeckProblem("Cannot read %s (%s)" % (path, exc.strerror or exc)) from exc
+        raise DeckProblem(f"Cannot read {path} ({exc.strerror or exc})") from exc
     for child in names:
         if not child.is_dir() or child.is_symlink() or child.name.startswith("."):
             continue
@@ -291,7 +306,7 @@ def _unique_ids(decks: list[Deck]) -> list[Deck]:
         n = seen.get(deck.id, 0) + 1
         seen[deck.id] = n
         if n > 1:
-            deck.id = "%s-%d" % (deck.id, n)
+            deck.id = f"{deck.id}-{n}"
     return decks
 
 
@@ -306,7 +321,7 @@ def _from_folder(folder: Path) -> Deck:
                 "source": {"type": _source_type_for(name), "path": name},
             }
             return _from_config(folder, data, warnings=[])
-    raise DeckProblem("%s has no deck.json or items file." % folder.name)
+    raise DeckProblem(f"{folder.name} has no deck.json or items file.")
 
 
 def _source_type_for(name: str) -> str:
@@ -353,13 +368,13 @@ def _read_json_object(path: Path, label: str) -> dict:
     try:
         raw = path.read_text(encoding="utf-8")
     except OSError as exc:
-        raise DeckProblem("Cannot read %s (%s)" % (label, exc.strerror or exc)) from exc
+        raise DeckProblem(f"Cannot read {label} ({exc.strerror or exc})") from exc
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as exc:
-        raise DeckProblem("%s is not valid JSON (%s)" % (label, exc.msg)) from exc
+        raise DeckProblem(f"{label} is not valid JSON ({exc.msg})") from exc
     if not isinstance(data, dict):
-        raise DeckProblem("%s must be a JSON object." % label)
+        raise DeckProblem(f"{label} must be a JSON object.")
     return data
 
 
@@ -367,7 +382,7 @@ def _from_config(folder: Path, data: dict, warnings: list[str] | None = None) ->
     notes = list(warnings or [])
     for key in data:
         if key not in _DECK_KEYS:
-            notes.append("deck.json: unknown key '%s' (ignored)" % key)
+            notes.append(f"deck.json: unknown key '{key}' (ignored)")
 
     title = data.get("title") or folder.name
     if not isinstance(title, str):
@@ -378,14 +393,14 @@ def _from_config(folder: Path, data: dict, warnings: list[str] | None = None) ->
         raise DeckProblem("source must be an object.")
     for key in source:
         if key not in _SOURCE_KEYS:
-            notes.append("source: unknown key '%s' (ignored)" % key)
+            notes.append(f"source: unknown key '{key}' (ignored)")
 
     show = data.get("show") or {}
     if not isinstance(show, dict):
         raise DeckProblem("show must be an object.")
     for key in show:
         if key not in _SHOW_KEYS:
-            notes.append("show: unknown key '%s' (ignored)" % key)
+            notes.append(f"show: unknown key '{key}' (ignored)")
 
     directions = _directions(data.get("directions"))
     buttons = _buttons(data.get("buttons"))
@@ -456,7 +471,7 @@ def _score(raw) -> tuple[str | None, list[str]]:
         return None, []
     if not isinstance(raw, dict):
         raise DeckProblem("score must be an object.")
-    notes = ["score: unknown key '%s' (ignored)" % key for key in raw if key != "field"]
+    notes = [f"score: unknown key '{key}' (ignored)" for key in raw if key != "field"]
     field_name = raw.get("field")
     if not isinstance(field_name, str) or not _FIELD.match(field_name):
         raise DeckProblem("score.field must be a field name.")
@@ -468,10 +483,12 @@ def _contest(raw) -> tuple[str | None, str, list[str]]:
         return None, "name", []
     if not isinstance(raw, dict):
         raise DeckProblem("contest must be an object.")
-    notes = ["contest: unknown key '%s' (ignored)" % key for key in raw if key not in {"kind", "name"}]
+    notes = [
+        f"contest: unknown key '{key}' (ignored)" for key in raw if key not in {"kind", "name"}
+    ]
     kind = raw.get("kind")
-    if kind not in {"robin", "bracket"}:
-        raise DeckProblem("contest.kind must be robin or bracket.")
+    if kind not in {"robin", "bracket", "taste", "rated"}:
+        raise DeckProblem("contest.kind must be robin, bracket, taste, or rated.")
     name = raw.get("name") or "name"
     if not isinstance(name, str) or not _FIELD.match(name):
         raise DeckProblem("contest.name must be a field name.")
@@ -484,14 +501,14 @@ def _story(raw) -> tuple[dict | None, list[str]]:
     if not isinstance(raw, dict):
         raise DeckProblem("story must be an object.")
     allowed = {"start", "labels", *_FOUR}
-    notes = ["story: unknown key '%s' (ignored)" % key for key in raw if key not in allowed]
+    notes = [f"story: unknown key '{key}' (ignored)" for key in raw if key not in allowed]
     nxt = {}
     for key in _FOUR:
         if key not in raw:
             continue
         field_name = raw.get(key)
         if not isinstance(field_name, str) or not _FIELD.match(field_name):
-            raise DeckProblem("story.%s must be a field name." % key)
+            raise DeckProblem(f"story.{key} must be a field name.")
         nxt[key] = field_name
     if not nxt:
         raise DeckProblem("story needs a left or a right field, naming the next scene.")
@@ -501,10 +518,10 @@ def _story(raw) -> tuple[dict | None, list[str]]:
     labels = {}
     for key, field_name in labels_raw.items():
         if key not in nxt:
-            notes.append("story.labels: '%s' has no next field (ignored)" % key)
+            notes.append(f"story.labels: '{key}' has no next field (ignored)")
             continue
         if not isinstance(field_name, str) or not _FIELD.match(field_name):
-            raise DeckProblem("story.labels.%s must be a field name." % key)
+            raise DeckProblem(f"story.labels.{key} must be a field name.")
         labels[key] = field_name
     start = raw.get("start") or ""
     if not isinstance(start, str):
@@ -513,10 +530,14 @@ def _story(raw) -> tuple[dict | None, list[str]]:
 
 
 def _check_modes(directions, score_field, contest_kind, story) -> None:
-    modes = [name for name, on in (("score", score_field), ("contest", contest_kind), ("story", story)) if on]
+    modes = [
+        name
+        for name, on in (("score", score_field), ("contest", contest_kind), ("story", story))
+        if on
+    ]
     if len(modes) > 1:
         raise DeckProblem("Use only one of score, contest, and story.")
-    if contest_kind:
+    if contest_kind in {"robin", "bracket", "rated"}:
         left = directions.get("left")
         right = directions.get("right")
         if left is None or right is None:
@@ -526,11 +547,12 @@ def _check_modes(directions, score_field, contest_kind, story) -> None:
     if story:
         for key in story["next"]:
             if key not in directions:
-                raise DeckProblem("story.%s needs a %s swipe." % (key, key))
+                raise DeckProblem(f"story.{key} needs a {key} swipe.")
         for key, direction in directions.items():
             if key not in story["next"] and not direction.later:
                 raise DeckProblem(
-                    "story: '%s' needs later: true, or a next field. Only a story swipe turns the page." % key
+                    f"story: '{key}' needs later: true, or a next field. "
+                    "Only a story swipe turns the page."
                 )
 
 
@@ -551,7 +573,7 @@ def _directions(raw) -> dict[str, Direction]:
     out = {}
     for key, spec in raw.items():
         if key not in _FOUR:
-            raise DeckProblem("direction '%s' is not left, right, up, or down." % key)
+            raise DeckProblem(f"direction '{key}' is not left, right, up, or down.")
         out[key] = _one_direction(key, spec)
     return out
 
@@ -567,29 +589,29 @@ def _buttons(raw) -> list[Direction]:
             raise DeckProblem("each button needs an id.")
         name = str(spec["id"])
         if name in _FOUR or name in {"undo", "note"}:
-            raise DeckProblem("button id '%s' is reserved." % name)
+            raise DeckProblem(f"button id '{name}' is reserved.")
         out.append(_one_direction(name, spec))
     return out
 
 
 def _one_direction(name: str, spec) -> Direction:
     if not isinstance(spec, dict):
-        raise DeckProblem("direction %s must be an object." % name)
+        raise DeckProblem(f"direction {name} must be an object.")
     label = spec.get("label") or name
     if not isinstance(label, str):
-        raise DeckProblem("label on %s must be a string." % name)
+        raise DeckProblem(f"label on {name} must be a string.")
     value = spec.get("value")
     if value is None:
         value = slug(label) or name
     value = str(value)
     does = spec.get("does") or "label"
     if does not in {"label", "move", "copy"}:
-        raise DeckProblem("%s: does must be label, move, or copy." % name)
+        raise DeckProblem(f"{name}: does must be label, move, or copy.")
     into = spec.get("into")
     if into is not None:
         into = str(into).replace("\\", "/").strip("/")
         if not into or into.startswith("/") or ".." in into.split("/"):
-            raise DeckProblem("%s: into must stay inside the deck folder." % name)
+            raise DeckProblem(f"{name}: into must stay inside the deck folder.")
     if does in {"move", "copy"} and not into:
         into = ".choice/out/" + slug(value)
     color = spec.get("color")
@@ -611,9 +633,13 @@ def _hook(raw) -> tuple[list[str] | None, bool, float, list[str]]:
         return None, False, 20, []
     if not isinstance(raw, dict):
         raise DeckProblem("hook must be an object with a command list.")
-    notes = ["hook: unknown key '%s' (ignored)" % k for k in raw if k not in _HOOK_KEYS]
+    notes = [f"hook: unknown key '{k}' (ignored)" for k in raw if k not in _HOOK_KEYS]
     command = raw.get("command")
-    if not isinstance(command, list) or not command or not all(isinstance(p, str) and p for p in command):
+    if (
+        not isinstance(command, list)
+        or not command
+        or not all(isinstance(p, str) and p for p in command)
+    ):
         raise DeckProblem("hook.command must be a list of strings, without a shell.")
     timeout = raw.get("timeout_seconds", 20)
     try:
@@ -625,7 +651,9 @@ def _hook(raw) -> tuple[list[str] | None, bool, float, list[str]]:
     return list(command), bool(raw.get("required")), timeout, notes
 
 
-def _load_source(root: Path, source: dict, show: dict, labels: tuple[str, str] = ("A", "B")) -> tuple[list[Item], list[str]]:
+def _load_source(
+    root: Path, source: dict, show: dict, labels: tuple[str, str] = ("A", "B")
+) -> tuple[list[Item], list[str]]:
     from choice.folder_deck import items_from_folder_scan, merge_folder_options
 
     kind = source.get("type") or "files"
@@ -633,13 +661,13 @@ def _load_source(root: Path, source: dict, show: dict, labels: tuple[str, str] =
     target = _source_path(root, str(rel))
     if kind in {"images", "files"}:
         if not target.is_dir():
-            raise DeckProblem("source path is not a folder: %s" % rel)
+            raise DeckProblem(f"source path is not a folder: {rel}")
         scan = merge_folder_options({**source, "type": kind}, {})
         return items_from_folder_scan(root, target, scan), []
     if kind not in {"jsonl", "csv", "json"}:
         raise DeckProblem("source.type must be images, files, jsonl, csv, or json.")
     if not target.is_file():
-        raise DeckProblem("source file is missing: %s" % rel)
+        raise DeckProblem(f"source file is missing: {rel}")
     rows, warnings = _read_rows(target, kind)
     return _items_from_rows(root, rows, show, str(source.get("id") or "id"), warnings, labels)
 
@@ -654,7 +682,9 @@ def _source_path(root: Path, rel: str) -> Path:
     return root / rel
 
 
-def _items_from_files(root: Path, folder: Path, images_only: bool, recursive: bool) -> tuple[list[Item], list[str]]:
+def _items_from_files(
+    root: Path, folder: Path, images_only: bool, recursive: bool
+) -> tuple[list[Item], list[str]]:
     warnings = []
     files = _list_files(folder, recursive=recursive)
     items = []
@@ -662,7 +692,7 @@ def _items_from_files(root: Path, folder: Path, images_only: bool, recursive: bo
         if images_only and not _is_image(path):
             continue
         if path.is_symlink():
-            warnings.append("skipped symlink %s" % path.name)
+            warnings.append(f"skipped symlink {path.name}")
             continue
         rel = _item_id(root, folder, path)
         kind = "image" if _is_image(path) else "file"
@@ -673,15 +703,17 @@ def _items_from_files(root: Path, folder: Path, images_only: bool, recursive: bo
         if path.suffix.lower() == ".heic":
             kind = "file"
             body = "HEIC photo. Choice will not preview it. A decision still applies to the file."
-        items.append(Item(
-            id=rel,
-            kind=kind,
-            title=title,
-            body=body,
-            path=path.resolve(),
-            media_token=str(_mtime(path)),
-            fields={"file": rel},
-        ))
+        items.append(
+            Item(
+                id=rel,
+                kind=kind,
+                title=title,
+                body=body,
+                path=path.resolve(),
+                media_token=str(_mtime(path)),
+                fields={"file": rel},
+            )
+        )
     items.sort(key=lambda item: item.id.lower())
     return items, warnings
 
@@ -706,7 +738,7 @@ def _list_files(folder: Path, recursive: bool) -> list[Path]:
     try:
         children = list(folder.iterdir())
     except OSError as exc:
-        raise DeckProblem("Cannot read %s (%s)" % (folder, exc.strerror or exc)) from exc
+        raise DeckProblem(f"Cannot read {folder} ({exc.strerror or exc})") from exc
     for path in children:
         if path.name.startswith(".") or path.name in SKIP_NAMES:
             continue
@@ -740,10 +772,10 @@ def _size_text(path: Path) -> str:
     except OSError:
         return "unreadable"
     if size < 1024:
-        return "%d bytes" % size
+        return f"{size} bytes"
     if size < 1024 * 1024:
-        return "%d KB" % (size // 1024)
-    return "%.1f MB" % (size / (1024 * 1024))
+        return f"{size // 1024} KB"
+    return f"{size / (1024 * 1024):.1f} MB"
 
 
 def _read_rows(path: Path, kind: str) -> tuple[list[dict], list[str]]:
@@ -759,17 +791,17 @@ def _read_jsonl(path: Path) -> tuple[list[dict], list[str]]:
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except OSError as exc:
-        raise DeckProblem("Cannot read %s (%s)" % (path.name, exc.strerror or exc)) from exc
+        raise DeckProblem(f"Cannot read {path.name} ({exc.strerror or exc})") from exc
     for number, line in enumerate(lines, start=1):
         if not line.strip():
             continue
         try:
             row = json.loads(line)
         except json.JSONDecodeError:
-            warnings.append("%s:%d is not valid JSON (skipped)" % (path.name, number))
+            warnings.append(f"{path.name}:{number} is not valid JSON (skipped)")
             continue
         if not isinstance(row, dict):
-            warnings.append("%s:%d is not an object (skipped)" % (path.name, number))
+            warnings.append(f"{path.name}:{number} is not an object (skipped)")
             continue
         rows.append(row)
     return rows, warnings
@@ -779,10 +811,10 @@ def _read_csv(path: Path) -> tuple[list[dict], list[str]]:
     try:
         text = path.read_text(encoding="utf-8-sig")
     except OSError as exc:
-        raise DeckProblem("Cannot read %s (%s)" % (path.name, exc.strerror or exc)) from exc
+        raise DeckProblem(f"Cannot read {path.name} ({exc.strerror or exc})") from exc
     reader = csv.DictReader(text.splitlines())
     if not reader.fieldnames:
-        raise DeckProblem("%s has no header row." % path.name)
+        raise DeckProblem(f"{path.name} has no header row.")
     rows = []
     for row in reader:
         rows.append({k: v for k, v in row.items() if k is not None})
@@ -793,19 +825,19 @@ def _read_json_rows(path: Path) -> tuple[list[dict], list[str]]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except OSError as exc:
-        raise DeckProblem("Cannot read %s (%s)" % (path.name, exc.strerror or exc)) from exc
+        raise DeckProblem(f"Cannot read {path.name} ({exc.strerror or exc})") from exc
     except json.JSONDecodeError as exc:
-        raise DeckProblem("%s is not valid JSON (%s)" % (path.name, exc.msg)) from exc
+        raise DeckProblem(f"{path.name} is not valid JSON ({exc.msg})") from exc
     if isinstance(data, dict) and isinstance(data.get("items"), list):
         data = data["items"]
     if not isinstance(data, list):
-        raise DeckProblem("%s must be a list of objects, or {\"items\": [...]}." % path.name)
+        raise DeckProblem(f'{path.name} must be a list of objects, or {{"items": [...]}}.')
     rows, warnings = [], []
     for number, row in enumerate(data, start=1):
         if isinstance(row, dict):
             rows.append(row)
         else:
-            warnings.append("%s item %d is not an object (skipped)" % (path.name, number))
+            warnings.append(f"{path.name} item {number} is not an object (skipped)")
     return rows, warnings
 
 
@@ -835,7 +867,7 @@ def _items_from_rows(
             item_id = str(index)
         item_id = str(item_id)
         if item_id in seen:
-            warnings.append("duplicate id '%s' (skipped the later row)" % item_id)
+            warnings.append(f"duplicate id '{item_id}' (skipped the later row)")
             continue
         seen.add(item_id)
         title = _show_text(show.get("title"), row, _guess_title(row, item_id))
@@ -852,18 +884,22 @@ def _items_from_rows(
             if image_warning:
                 warnings.append(image_warning)
         chip_hidden = pair_hidden if pair else ()
-        items.append(Item(
-            id=item_id,
-            kind=kind,
-            title=title,
-            body=body,
-            chips=_pairs(row, chips) if chips_set else _guess_chips(row, id_field, image_field, reveal, chip_hidden),
-            reveal=_pairs(row, reveal),
-            path=path,
-            media_token=str(_mtime(path)) if path else "",
-            fields=_flat(row),
-            sides=sides,
-        ))
+        items.append(
+            Item(
+                id=item_id,
+                kind=kind,
+                title=title,
+                body=body,
+                chips=_pairs(row, chips)
+                if chips_set
+                else _guess_chips(row, id_field, image_field, reveal, chip_hidden),
+                reveal=_pairs(row, reveal),
+                path=path,
+                media_token=str(_mtime(path)) if path else "",
+                fields=_flat(row),
+                sides=sides,
+            )
+        )
     return items, warnings
 
 
@@ -873,7 +909,7 @@ def _pair_spec(show: dict) -> tuple[dict | None, list[str], set[str]]:
         return None, [], set()
     if not isinstance(raw, dict):
         raise DeckProblem("show.pair must be an object with a and b.")
-    notes = ["show.pair: unknown key '%s' (ignored)" % key for key in raw if key not in {"a", "b"}]
+    notes = [f"show.pair: unknown key '{key}' (ignored)" for key in raw if key not in {"a", "b"}]
     if "a" not in raw or "b" not in raw:
         raise DeckProblem("show.pair needs a and b.")
     spec = {}
@@ -896,27 +932,33 @@ def _pair_side_spec(key: str, raw, notes: list[str]) -> dict:
     if isinstance(raw, str):
         return {"body": raw, "image": None, "label": ""}
     if not isinstance(raw, dict):
-        raise DeckProblem("show.pair.%s must be a string or an object." % key)
+        raise DeckProblem(f"show.pair.{key} must be a string or an object.")
     notes.extend(
-        "show.pair.%s: unknown key '%s' (ignored)" % (key, name)
+        f"show.pair.{key}: unknown key '{name}' (ignored)"
         for name in raw
         if name not in _PAIR_SIDE_KEYS
     )
     body = raw.get("body")
     if body is not None and not isinstance(body, str):
-        raise DeckProblem("show.pair.%s body must be a string." % key)
+        raise DeckProblem(f"show.pair.{key} body must be a string.")
     image = raw.get("image")
     if image is not None and (not isinstance(image, str) or not image.strip()):
-        raise DeckProblem("show.pair.%s image must be a field name." % key)
+        raise DeckProblem(f"show.pair.{key} image must be a field name.")
     label = raw.get("label") or ""
     if not isinstance(label, str):
-        raise DeckProblem("show.pair.%s label must be a string." % key)
+        raise DeckProblem(f"show.pair.{key} label must be a string.")
     if body is None and not image:
-        raise DeckProblem("show.pair.%s needs a body or an image." % key)
-    return {"body": body, "image": image.strip() if isinstance(image, str) else None, "label": label}
+        raise DeckProblem(f"show.pair.{key} needs a body or an image.")
+    return {
+        "body": body,
+        "image": image.strip() if isinstance(image, str) else None,
+        "label": label,
+    }
 
 
-def _pair_sides(root: Path, row: dict, spec: dict, labels: tuple[str, str]) -> tuple[list[Side], list[str]]:
+def _pair_sides(
+    root: Path, row: dict, spec: dict, labels: tuple[str, str]
+) -> tuple[list[Side], list[str]]:
     sides = []
     notes = []
     for key, fallback in (("a", labels[0]), ("b", labels[1])):
@@ -926,14 +968,16 @@ def _pair_sides(root: Path, row: dict, spec: dict, labels: tuple[str, str]) -> t
         if side["image"]:
             path, warning = _side_image(root, row, side["image"])
             if warning:
-                notes.append("pair %s: %s" % (key, warning))
-        sides.append(Side(
-            key=key,
-            label=side["label"] or fallback,
-            body=body,
-            path=path,
-            media_token=str(_mtime(path)) if path else "",
-        ))
+                notes.append(f"pair {key}: {warning}")
+        sides.append(
+            Side(
+                key=key,
+                label=side["label"] or fallback,
+                body=body,
+                path=path,
+                media_token=str(_mtime(path)) if path else "",
+            )
+        )
     return sides, notes
 
 
@@ -942,14 +986,14 @@ def _side_image(root: Path, row: dict, field: str) -> tuple[Path | None, str | N
     if isinstance(raw, list):
         raw = raw[0] if raw else None
     if not isinstance(raw, str) or not raw.strip():
-        return None, "image field '%s' is empty" % field
+        return None, f"image field '{field}' is empty"
     path = _source_path(root, raw.strip())
     if path.is_symlink():
-        return None, "skipped symlink image %s" % raw
+        return None, f"skipped symlink image {raw}"
     if not path.is_file():
-        return None, "image missing: %s" % raw
+        return None, f"image missing: {raw}"
     if not _is_image(path):
-        return None, "not an image: %s" % raw
+        return None, f"not an image: {raw}"
     return path.resolve(), None
 
 
@@ -977,7 +1021,20 @@ def _guess_body(row: dict) -> str:
 
 
 def _guess_chips(row: dict, id_field: str, image_field, reveal, extra=()) -> list[tuple[str, str]]:
-    hidden = {id_field, "title", "name", "question", "q", "body", "text", "content", "detail", "image", "image_path", "images"}
+    hidden = {
+        id_field,
+        "title",
+        "name",
+        "question",
+        "q",
+        "body",
+        "text",
+        "content",
+        "detail",
+        "image",
+        "image_path",
+        "images",
+    }
     if image_field:
         hidden.add(str(image_field))
     hidden.update(str(name) for name in (reveal or []))
@@ -1025,9 +1082,9 @@ def _row_image(root: Path, row: dict, image_field) -> tuple[Path | None, str, st
         return None, "text", None
     path = _source_path(root, raw.strip())
     if path.is_symlink():
-        return None, "text", "skipped symlink image %s" % raw
+        return None, "text", f"skipped symlink image {raw}"
     if not path.is_file():
-        return None, "text", "image missing: %s" % raw
+        return None, "text", f"image missing: {raw}"
     if not _is_image(path):
         return None, "text", None
     return path.resolve(), "image", None

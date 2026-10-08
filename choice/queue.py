@@ -16,7 +16,9 @@ _lock = threading.Lock()
 _snaps: dict[str, OrderedDict[str, tuple[float, list]]] = {}
 
 
-def page_items(deck_key: str, all_items: list, offset: int = 0, limit: int = PAGE_SIZE) -> tuple[list, str]:
+def page_items(
+    deck_key: str, all_items: list, offset: int = 0, limit: int = PAGE_SIZE
+) -> tuple[list, str]:
     """Return a slice and an opaque snapshot token for stable paging."""
     limit = max(1, min(limit, PAGE_SIZE))
     slice_items = all_items[offset : offset + limit]

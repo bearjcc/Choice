@@ -1,0 +1,25 @@
+[state]
+dir = ".choice-smoke-state"
+
+[[sources]]
+id = "examples"
+type = "folder"
+path = "examples"
+
+[[decks]]
+id = "yes-no"
+title = "Yes or no"
+source = "examples"
+mount = "yes-no"
+
+[[decks]]
+id = "which-one"
+title = "Which one"
+source = "examples"
+mount = "which-one"
+
+[[decks]]
+id = "rated"
+title = "Rated picks"
+source = "examples"
+mount = "rated"

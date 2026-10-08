@@ -61,11 +61,11 @@ class AppConfig:
 def load_config(path: Path) -> AppConfig:
     path = path.expanduser().resolve()
     if not path.is_file():
-        raise ConfigProblem("No config file at %s" % path)
+        raise ConfigProblem(f"No config file at {path}")
     try:
         raw = tomllib.loads(path.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as exc:
-        raise ConfigProblem("Invalid TOML in %s: %s" % (path, exc)) from exc
+        raise ConfigProblem(f"Invalid TOML in {path}: {exc}") from exc
     if not isinstance(raw, dict):
         raise ConfigProblem("Config root must be a table.")
 
@@ -95,16 +95,16 @@ def load_config(path: Path) -> AppConfig:
     seen_src = set()
     for spec in sources:
         if spec.id in seen_src:
-            raise ConfigProblem("Duplicate source id %r." % spec.id)
+            raise ConfigProblem(f"Duplicate source id {spec.id!r}.")
         seen_src.add(spec.id)
 
     seen_deck = set()
     for spec in decks:
         if spec.id in seen_deck:
-            raise ConfigProblem("Duplicate deck id %r." % spec.id)
+            raise ConfigProblem(f"Duplicate deck id {spec.id!r}.")
         seen_deck.add(spec.id)
         if spec.source not in seen_src:
-            raise ConfigProblem("Deck %r points at unknown source %r." % (spec.id, spec.source))
+            raise ConfigProblem(f"Deck {spec.id!r} points at unknown source {spec.source!r}.")
 
     return AppConfig(
         path=path,
@@ -122,34 +122,34 @@ def save_config(config: AppConfig, sources: list[dict], decks: list[dict]) -> No
         "# Choice configuration. See choice.example.toml.",
         "",
         "[state]",
-        'dir = "%s"' % _toml_str(str(config.state_dir)),
+        f'dir = "{_toml_str(str(config.state_dir))}"',
     ]
     if config.secrets_file:
-        lines.append('secrets_file = "%s"' % _toml_str(str(config.secrets_file)))
+        lines.append(f'secrets_file = "{_toml_str(str(config.secrets_file))}"')
     if config.roster_path:
-        lines.append('users_file = "%s"' % _toml_str(str(config.roster_path)))
+        lines.append(f'users_file = "{_toml_str(str(config.roster_path))}"')
     lines.append("")
     for row in sources:
         lines.append("[[sources]]")
         for key, value in row.items():
             if key == "type":
-                lines.append('type = "%s"' % _toml_str(str(value)))
+                lines.append(f'type = "{_toml_str(str(value))}"')
             elif isinstance(value, bool):
-                lines.append("%s = %s" % (key, "true" if value else "false"))
+                lines.append("{} = {}".format(key, "true" if value else "false"))
             elif isinstance(value, (int, float)):
-                lines.append("%s = %s" % (key, value))
+                lines.append(f"{key} = {value}")
             else:
-                lines.append('%s = "%s"' % (key, _toml_str(str(value))))
+                lines.append(f'{key} = "{_toml_str(str(value))}"')
         lines.append("")
     for row in decks:
         lines.append("[[decks]]")
         for key, value in row.items():
             if isinstance(value, bool):
-                lines.append("%s = %s" % (key, "true" if value else "false"))
+                lines.append("{} = {}".format(key, "true" if value else "false"))
             elif isinstance(value, (int, float)):
-                lines.append("%s = %s" % (key, value))
+                lines.append(f"{key} = {value}")
             else:
-                lines.append('%s = "%s"' % (key, _toml_str(str(value))))
+                lines.append(f'{key} = "{_toml_str(str(value))}"')
         lines.append("")
     config.path.parent.mkdir(parents=True, exist_ok=True)
     config.path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
@@ -175,6 +175,25 @@ def resolve_secret(name: str, config: AppConfig | None = None) -> str:
     return ""
 
 
+def write_secret(config: AppConfig, name: str, value: str) -> Path:
+    """Store a secret value in the secrets file; config keeps the env var name only."""
+    name = (name or "").strip()
+    if not name or not re.match(r"^[A-Z][A-Z0-9_]{0,63}$", name):
+        raise ConfigProblem("Secret name must look like an env var (e.g. IMMICH_API_KEY).")
+    path = config.secrets_file or (config.path.parent / ".choice-secrets")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = []
+    if path.is_file():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.strip().startswith(name + "="):
+                continue
+            lines.append(line)
+    lines.append(f"{name}={value}")
+    path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    config.secrets_file = path
+    return path
+
+
 def mask_secrets(row: dict) -> dict:
     out = {}
     for key, value in row.items():
@@ -187,28 +206,28 @@ def mask_secrets(row: dict) -> dict:
 
 def _parse_source(row: Any, idx: int) -> SourceSpec:
     if not isinstance(row, dict):
-        raise ConfigProblem("sources[%d] must be a table." % idx)
+        raise ConfigProblem(f"sources[{idx}] must be a table.")
     sid = str(row.get("id") or "").strip()
     if not _ID.match(sid):
-        raise ConfigProblem("sources[%d] needs id ([a-z0-9_-])." % idx)
+        raise ConfigProblem(f"sources[{idx}] needs id ([a-z0-9_-]).")
     typ = str(row.get("type") or "").strip().lower()
     if not typ:
-        raise ConfigProblem("sources[%d] needs type." % idx)
+        raise ConfigProblem(f"sources[{idx}] needs type.")
     opts = {k: v for k, v in row.items() if k not in {"id", "type"}}
     return SourceSpec(id=sid, type=typ, options=opts)
 
 
 def _parse_deck(row: Any, idx: int) -> DeckSpec:
     if not isinstance(row, dict):
-        raise ConfigProblem("decks[%d] must be a table." % idx)
+        raise ConfigProblem(f"decks[{idx}] must be a table.")
     did = str(row.get("id") or "").strip()
     if not _ID.match(did):
-        raise ConfigProblem("decks[%d] needs id ([a-z0-9_-])." % idx)
+        raise ConfigProblem(f"decks[{idx}] needs id ([a-z0-9_-]).")
     title = str(row.get("title") or did).strip()
     source = str(row.get("source") or "").strip()
     mount = str(row.get("mount") or row.get("path") or "").strip()
     if not source:
-        raise ConfigProblem("decks[%d] needs source." % idx)
+        raise ConfigProblem(f"decks[{idx}] needs source.")
     opts = {k: v for k, v in row.items() if k not in {"id", "title", "source", "mount", "path"}}
     return DeckSpec(id=did, title=title, source=source, mount=mount, options=opts)
 
