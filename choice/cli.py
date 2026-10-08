@@ -11,7 +11,7 @@ import webbrowser
 from pathlib import Path
 
 from choice import __version__
-from choice.act import import_swipe_legacy, tally_lines
+from choice.act import tally_lines
 from choice.httpd import normalize_base_path, serve
 from choice.load import DeckProblem
 from choice.open import config_root, open_path
@@ -23,10 +23,7 @@ def main(argv=None) -> int:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     except (AttributeError, OSError):
         pass
-    argv = list(argv) if argv is not None else sys.argv[1:]
-    if argv and argv[0] == "import":
-        return _import_legacy(argv[1:])
-    args = _parser().parse_args(argv)
+    args = _parser().parse_args(argv if argv is not None else None)
     config_path = None
     if args.config:
         config_path = Path(args.config).expanduser()
@@ -99,55 +96,6 @@ def _base_href(base_path: str) -> str:
     if not base_path:
         return "/"
     return base_path.rstrip("/") + "/"
-
-
-def _import_legacy(argv: list[str]) -> int:
-    parser = argparse.ArgumentParser(
-        prog="python -m choice import",
-        description="Import Swipe event logs into Choice decisions (idempotent).",
-    )
-    parser.add_argument("--config", required=True, help="choice.toml with legacy_log on decks")
-    parser.add_argument(
-        "decks",
-        nargs="*",
-        help="deck ids to import (default: every deck with legacy_log)",
-    )
-    args = parser.parse_args(argv)
-    from choice.open import open_config
-
-    path = Path(args.config).expanduser()
-    try:
-        opened = open_config(path)
-    except Exception as exc:
-        print(exc)
-        return 2
-    want = set(args.decks) if args.decks else None
-    total_added = 0
-    for deck in opened.decks:
-        if deck.problem:
-            continue
-        if want is not None and deck.id not in want:
-            continue
-        if deck.legacy_log_path is None:
-            if want is not None and deck.id in want:
-                print(f"{deck.id}: no legacy_log in config.")
-                return 2
-            continue
-        try:
-            added, skipped = import_swipe_legacy(deck)
-        except DeckProblem as exc:
-            print(f"{deck.id}: {exc}")
-            return 2
-        print(f"{deck.id}: imported {added} lines ({skipped} already present).")
-        total_added += added
-    if want:
-        missing = want - {d.id for d in opened.decks if not d.problem}
-        if missing:
-            print("Unknown deck(s): " + ", ".join(sorted(missing)))
-            return 2
-    if total_added == 0 and not args.decks:
-        print("No decks with legacy_log.")
-    return 0
 
 
 def _parser() -> argparse.ArgumentParser:

@@ -228,6 +228,10 @@ def _parse_deck(row: Any, idx: int) -> DeckSpec:
     mount = str(row.get("mount") or row.get("path") or "").strip()
     if not source:
         raise ConfigProblem(f"decks[{idx}] needs source.")
+    if "legacy_log" in row:
+        raise ConfigProblem(
+            f"decks[{idx}]: unsupported key 'legacy_log' (use swipe_to_choice.py outside Choice)."
+        )
     opts = {k: v for k, v in row.items() if k not in {"id", "title", "source", "mount", "path"}}
     return DeckSpec(id=did, title=title, source=source, mount=mount, options=opts)
 

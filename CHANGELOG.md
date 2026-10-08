@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.3 (2026-10-08)
+
+### Removed
+
+- Swipe-specific `legacy_log` deck option and `python -m choice import` (use the standalone `swipe_to_choice.py` migrator instead).
+
+### Added
+
+- Config error when `legacy_log` is still present in `choice.toml`.
+
 ## 0.2.2 (2026-10-08)
 
 ### Added
