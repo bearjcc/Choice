@@ -273,7 +273,7 @@ The home page does not call `list_items` for plugin decks until you open that de
 
 Rows may set `"decided": true` so Choice treats them as finished: hidden from the pending pile and counted as decided.
 
-Profile cards may set `"kind": "profile"` or an `images` list (`path`, optional `caption`). The UI shows a tappable photo strip that does not steal the card's left/right swipe.
+Profile cards may set `"kind": "profile"` or an `images` list. Each entry is either a path string (relative to the plugin folder, like `image_path`) or an object with `path` / `file` and optional `caption`. The first resolved image is the card's main photo when `image_path` is omitted. Bad paths are reported in deck warnings, not skipped quietly. The UI shows a tappable photo strip that does not steal the card's left/right swipe.
 
 Plugin `actions` is a list of `{"id", "label", "confirm"?}`. The phone menu posts to `/api/decks/<id>/action` with `{"action": "<id>"}`.
 

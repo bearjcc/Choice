@@ -152,6 +152,26 @@ mount = "{mount}"
         pub = items[0].public(None)
         self.assertEqual(len(pub.get("images") or []), 2)
 
+    def test_string_image_paths(self):
+        deck_dir = FIX / "string_images"
+        png = deck_dir / "good.png"
+        if not png.is_file():
+            png.write_bytes(
+                bytes.fromhex(
+                    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
+                    "0000000a49444154789c63000100000500010d0a2db40000000049454e44ae426082"
+                )
+            )
+        deck = self._deck("string_images")
+        items, warnings = deck.load_items()
+        self.assertEqual(len(items[0].images), 1)
+        self.assertTrue(items[0].path and items[0].path.is_file())
+        self.assertTrue(any("missing.png" in w for w in warnings))
+        self.assertTrue(any("not a path or object" in w for w in warnings))
+        from choice.httpd import _media_source
+
+        self.assertEqual(_media_source(items[0], "", 0), items[0].path)
+
     def test_clear_index_on_bust(self):
         from choice.deck_cache import bust
         from choice.deck_index import snapshot

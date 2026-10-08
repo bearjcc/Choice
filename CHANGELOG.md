@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.5 (2026-10-08)
+
+### Fixed
+
+- Swipe plugin `images` entries may be plain path strings; unresolved paths warn instead of disappearing.
+- `image_path` uses the same path-safety checks; main photo falls back to the first resolved `images` entry.
+
 ## 0.2.4 (2026-10-08)
 
 ### Added

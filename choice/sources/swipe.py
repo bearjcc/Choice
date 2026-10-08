@@ -95,7 +95,9 @@ class SwipeSource(Source):
                 if not item_id:
                     warnings.append("skipped item with no id")
                     continue
-                items.append(swipe_item_to_choice(row, folder, plugin))
+                item, row_notes = swipe_item_to_choice(row, folder, plugin)
+                warnings.extend(row_notes)
+                items.append(item)
             record_items(deck_ref, items)
             return items, warnings
 

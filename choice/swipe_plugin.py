@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from choice.load import Item, Side
+from choice.load import Item, Side, inside
 
 
 @dataclass
@@ -107,7 +107,7 @@ def load_swipe_class(deck_py: Path, folder_id: str) -> Any:
     raise RuntimeError(f"No Deck class in {deck_py}")
 
 
-def swipe_item_to_choice(row: dict, folder: Path, plugin: SwipePlugin) -> Item:
+def swipe_item_to_choice(row: dict, folder: Path, plugin: SwipePlugin) -> tuple[Item, list[str]]:
     kind = str(row.get("kind") or "card")
     item_id = str(row.get("id") or "")
     title = str(row.get("title") or item_id)
@@ -115,6 +115,7 @@ def swipe_item_to_choice(row: dict, folder: Path, plugin: SwipePlugin) -> Item:
     body = str(row.get("body") or subtitle or "")
     plugin_decided = bool(row.get("decided"))
     fields = dict(row.get("fields") or {})
+    notes: list[str] = []
     chips = []
     for key, value in fields.items():
         if isinstance(value, (str, int, float, bool)):
@@ -125,19 +126,25 @@ def swipe_item_to_choice(row: dict, folder: Path, plugin: SwipePlugin) -> Item:
     raw_images = row.get("images") or []
     if isinstance(raw_images, list) and raw_images:
         for idx, img in enumerate(raw_images):
-            if not isinstance(img, dict):
+            caption = ""
+            token = str(idx)
+            if isinstance(img, str):
+                rel = img
+            elif isinstance(img, dict):
+                rel = img.get("path") or img.get("file") or ""
+                caption = str(img.get("caption") or "")
+                token = str(img.get("token") or img.get("media_token") or idx)
+            else:
+                notes.append(f"{item_id}: images[{idx}] is not a path or object (skipped)")
                 continue
-            rel = img.get("path") or img.get("file") or ""
-            if not rel:
+            resolved, warn = _resolve_plugin_image(folder, str(rel), item_id, idx)
+            if warn:
+                notes.append(warn)
                 continue
-            candidate = Path(str(rel))
-            if not candidate.is_absolute():
-                candidate = folder / candidate
-            token = str(img.get("token") or img.get("media_token") or f"{idx}")
             images.append(
                 {
-                    "path": str(candidate),
-                    "caption": str(img.get("caption") or ""),
+                    "path": str(resolved),
+                    "caption": caption,
                     "media_token": token,
                 }
             )
@@ -148,9 +155,11 @@ def swipe_item_to_choice(row: dict, folder: Path, plugin: SwipePlugin) -> Item:
                 media_token = images[0]["media_token"]
     image_path = row.get("image_path")
     if path is None and image_path:
-        path = Path(str(image_path))
-        if not path.is_absolute():
-            path = folder / path
+        resolved, warn = _resolve_plugin_image(folder, str(image_path), item_id, -1)
+        if warn:
+            notes.append(warn)
+        elif resolved is not None:
+            path = resolved
     elif path is None and row.get("file"):
         path = folder / str(row["file"])
     if path and path.is_file():
@@ -173,21 +182,49 @@ def swipe_item_to_choice(row: dict, folder: Path, plugin: SwipePlugin) -> Item:
         kind = "pair"
     if kind == "profile":
         fields["profile"] = True
-    return Item(
-        id=item_id,
-        kind=kind,
-        title=title,
-        body=body,
-        chips=chips,
-        reveal=[],
-        path=path,
-        media_token=media_token or item_id,
-        fields=fields,
-        sides=sides,
-        plugin_decided=plugin_decided,
-        plugin_row=dict(row),
-        images=images,
+    return (
+        Item(
+            id=item_id,
+            kind=kind,
+            title=title,
+            body=body,
+            chips=chips,
+            reveal=[],
+            path=path,
+            media_token=media_token or item_id,
+            fields=fields,
+            sides=sides,
+            plugin_decided=plugin_decided,
+            plugin_row=dict(row),
+            images=images,
+        ),
+        notes,
     )
+
+
+def _resolve_plugin_image(
+    folder: Path, rel: str, item_id: str, idx: int
+) -> tuple[Path | None, str | None]:
+    label = "image_path" if idx < 0 else f"images[{idx}]"
+    text = str(rel or "").strip()
+    if not text:
+        return None, f"{item_id}: {label} is empty"
+    raw = Path(text)
+    root = folder.resolve()
+    if raw.is_absolute():
+        candidate = raw.resolve()
+    else:
+        parts = Path(text.replace("\\", "/")).parts
+        if ".." in parts or text.startswith("/"):
+            return None, f"{item_id}: {label} escapes deck ({text})"
+        candidate = (folder / text).resolve()
+    if not inside(root, candidate):
+        return None, f"{item_id}: {label} outside deck ({text})"
+    if candidate.is_symlink():
+        return None, f"{item_id}: skipped symlink {label} ({text})"
+    if not candidate.is_file():
+        return None, f"{item_id}: image missing {label} ({text})"
+    return candidate, None
 
 
 def _accepts(fn, name: str) -> bool:
