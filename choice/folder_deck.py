@@ -8,16 +8,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from choice.load import (
-    IMAGE_EXT,
+    SKIP_NAMES,
     Deck,
     DeckProblem,
     Direction,
     Item,
-    SKIP_NAMES,
     _file_directions,
     _hidden,
     _is_image,
-    _item_id,
     _mtime,
     _size_text,
     inside,
@@ -83,22 +81,6 @@ def merge_folder_options(source: dict, deck_options: dict) -> FolderScanOptions:
         } or key.startswith("sort_"):
             merged[key] = value
     return parse_folder_options(merged)
-
-
-def apply_folder_scan(deck: Deck, scan: FolderScanOptions) -> None:
-    deck.folder_scan = scan
-    if scan.output == "sort":
-        deck.directions = wire_sort_directions(deck.directions, scan.sort_targets)
-        deck.buttons = wire_sort_buttons(deck.buttons, scan.sort_targets)
-
-    root = deck.root
-
-    def load() -> tuple[list[Item], list[str]]:
-        folder = root
-        target = root
-        return items_from_folder_scan(root, target, scan), []
-
-    deck._load = load
 
 
 def wire_sort_directions(directions: dict[str, Direction], targets: dict[str, str]) -> dict[str, Direction]:

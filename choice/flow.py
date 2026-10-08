@@ -25,6 +25,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from choice.load import Deck, Item, Side
+from choice.rated import Player, confidence, pick_pair, ranking
+from choice.rated import update as rated_update
 
 
 @dataclass
@@ -62,6 +64,10 @@ class _Game:
 
 
 def arrange(deck: Deck, items: list[Item], choices: dict) -> Flow:
+    if deck.contest_kind == "taste":
+        return _taste(deck, items, choices)
+    if deck.contest_kind == "rated":
+        return _rated(deck, items, choices)
     if deck.contest_kind == "robin":
         return _robin(deck, items, choices)
     if deck.contest_kind == "bracket":
@@ -631,3 +637,100 @@ def _tag(text: str) -> str:
 
 def _group_key(ids: list[str]) -> str:
     return ".".join(_tag(pid) for pid in sorted(ids, key=str))
+
+
+def _taste(deck: Deck, items: list[Item], choices: dict) -> Flow:
+    """Stage 1: yes/no filter. Stage 2: rank likes (robin/bracket/rated by size)."""
+    pending = [it for it in items if it.id not in choices or choices[it.id].get("later")]
+    if pending:
+        return Flow(
+            pending,
+            total=len(items),
+            decided=len(items) - len(pending),
+            left=len(pending),
+            count_label="Filter",
+            meter=True,
+        )
+    likes = []
+    for item in items:
+        record = choices.get(item.id) or {}
+        value = str(record.get("value") or "").lower()
+        if value in {"yes", "keep", "right", "like", "y"}:
+            likes.append(item)
+    if len(likes) <= 8:
+        sub = Deck(
+            id=deck.id,
+            title=deck.title,
+            root=deck.root,
+            state_dir=deck.state_dir,
+            directions=deck.directions,
+            buttons=deck.buttons,
+            blind=deck.blind,
+            warnings=deck.warnings,
+            contest_kind="bracket" if len(likes) > 2 else None,
+            _load=lambda: (likes, []),
+        )
+        if len(likes) <= 2:
+            return Flow(likes, report={"heading": "Likes", "places": [{"place": i + 1, "name": it.title} for i, it in enumerate(likes)]})
+        if len(likes) <= 12:
+            sub.contest_kind = "robin"
+            return _robin(sub, likes, choices)
+        return _bracket(sub, likes, choices)
+    sub = Deck(
+        id=deck.id,
+        title=deck.title,
+        root=deck.root,
+        state_dir=deck.state_dir,
+        directions=deck.directions,
+        buttons=deck.buttons,
+        blind=deck.blind,
+        warnings=deck.warnings,
+        contest_kind="rated",
+        _load=lambda: (likes, []),
+    )
+    return _rated(sub, likes, choices)
+
+
+def _rated(deck: Deck, items: list[Item], choices: dict) -> Flow:
+    by_id = {item.id: item for item in items}
+    players = {item.id: Player(id=item.id) for item in items}
+    decided_pairs: set[tuple[str, str]] = set()
+    for item in items:
+        if item.kind != "pair":
+            continue
+        choice = choices.get(item.id)
+        if not choice or choice.get("later"):
+            continue
+        a = str(item.fields.get("a") or "")
+        b = str(item.fields.get("b") or "")
+        winner = str(choice.get("value") or "")
+        if winner in {a, b} and a and b:
+            key = tuple(sorted((a, b)))
+            decided_pairs.add(key)
+            loser = b if winner == a else a
+            if winner in players and loser in players:
+                rated_update(players, winner, loser)
+    pair = pick_pair(players, decided_pairs)
+    visible: list[Item] = []
+    if pair:
+        a, b = pair
+        game = _Game(id=_mid("rated", a, b), a=a, b=b, title="Which do you prefer?")
+        visible.append(_match_item(game, {pid: _Player(pid, by_id[pid].title, by_id[pid].path, by_id[pid].media_token) for pid in (a, b)}))
+    conf = confidence(players)
+    places = [
+        {"place": idx + 1, "name": by_id[pid].title if pid in by_id else pid, "note": "RD %.0f" % rd}
+        for idx, (pid, _rating, rd) in enumerate(ranking(players)[:10])
+    ]
+    report = None
+    if not pair and decided_pairs:
+        report = {"heading": "Rated ranking", "places": places}
+    return Flow(
+        visible,
+        total=max(len(decided_pairs) + (1 if pair else 0), 1),
+        decided=len(decided_pairs),
+        left=1 if pair else 0,
+        count_label="Rated %.0f%%" % (conf * 100),
+        meter=True,
+        report=report,
+        choices=choices,
+    )

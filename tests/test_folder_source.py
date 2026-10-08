@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from choice.act import decide, progress, undo
-from choice.folder_deck import items_from_folder_scan, merge_folder_options, parse_folder_options
+from choice.folder_deck import items_from_folder_scan, parse_folder_options
 from choice.load import resolve
 from choice.open import open_config
 

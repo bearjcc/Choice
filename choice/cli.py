@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import socket
 import sys
 import webbrowser
@@ -12,7 +13,8 @@ from pathlib import Path
 from choice import __version__
 from choice.act import tally_lines
 from choice.httpd import serve
-from choice.load import DeckProblem, resolve
+from choice.load import DeckProblem
+from choice.open import config_root, open_path
 from choice.people import Roster, load_roster
 
 
@@ -22,9 +24,17 @@ def main(argv=None) -> int:
     except (AttributeError, OSError):
         pass
     args = _parser().parse_args(argv)
-    path = Path(args.path).expanduser()
+    config_path = None
+    if args.config:
+        config_path = Path(args.config).expanduser()
+    elif os.environ.get("CHOICE_CONFIG"):
+        config_path = Path(os.environ["CHOICE_CONFIG"]).expanduser()
+    if config_path is not None:
+        path = config_path
+    else:
+        path = Path(args.path).expanduser()
     try:
-        opened = resolve(path)
+        opened = open_path(path)
     except DeckProblem as exc:
         print(exc)
         return 2
@@ -60,14 +70,15 @@ def main(argv=None) -> int:
         lan = _lan_ip()
         if lan and host in {"0.0.0.0", "::"}:
             print("  http://%s:%s/" % (lan, args.port))
-        print("Anyone who can open that address can label cards and move files.")
+        print("WARNING: listening on the network. Anyone who can open that address can label cards and move files.")
     else:
         print("Listening on this computer only. Pass --lan to use a phone on the same network.")
     print("Stop with Ctrl+C.", flush=True)
     sys.stdout.flush()
     if args.open:
         webbrowser.open(url)
-    serve(path, host, args.port)
+    root = config_root(path) if config_path else path.expanduser().resolve()
+    serve(root, host, args.port, config_path=config_path.resolve() if config_path else None)
     return 0
 
 
@@ -92,6 +103,7 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument("path", nargs="?", default=".", help="deck folder, library folder, photo folder, or data file")
+    parser.add_argument("--config", help="choice.toml with sources and decks (or set CHOICE_CONFIG)")
     parser.add_argument("--host", default="127.0.0.1", help="address to listen on (default: this computer only)")
     parser.add_argument("--lan", action="store_true", help="listen on the network, so a phone can open the page")
     parser.add_argument("--port", type=int, default=8741, help="port (default: 8741)")

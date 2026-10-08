@@ -17,9 +17,13 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from choice.act import decide, progress, undo, view
-from choice.load import DeckProblem, resolve
+from choice.config import ConfigProblem, load_config, mask_secrets, save_config
+from choice.load import DeckProblem
 from choice.media import content_type, view_path
+from choice.open import open_path
 from choice.people import assignment_warnings, load_roster, parse_users, remove_roster, save_roster
+from choice.queue import page_items
+from choice.sources.registry import build_source, source_types
 
 _WEB = Path(__file__).resolve().parent / "web"
 _LICENSE = Path(__file__).resolve().parents[1] / "LICENSE"
@@ -28,8 +32,9 @@ _STATIC = {"app.js": "text/javascript; charset=utf-8", "app.css": "text/css; cha
 
 
 class ChoiceSite(ThreadingHTTPServer):
-    def __init__(self, address, root: Path):
+    def __init__(self, address, root: Path, config_path: Path | None = None):
         self.choice_root = root
+        self.config_path = config_path
         super().__init__(address, Handler)
 
 
@@ -59,8 +64,20 @@ class Handler(BaseHTTPRequestHandler):
             return self._static(parts[0], _STATIC[parts[0]])
         if parts == ["license"]:
             return self._license()
+        if parts == ["api", "health"]:
+            return self._json(200, {"ok": True, "service": "choice"})
         if parts == ["api", "index"]:
             return self._index(parse_qs(parsed.query))
+        if parts == ["api", "config"]:
+            return self._config_get()
+        if parts == ["api", "source-types"]:
+            return self._json(200, {"ok": True, "types": source_types()})
+        if len(parts) == 5 and parts[:3] == ["api", "sources", "test"]:
+            return self._source_test(parts[3], parse_qs(parsed.query))
+        if len(parts) == 4 and parts[0] == "api" and parts[1] == "decks" and parts[3] == "stats":
+            return self._stats(parts[2], parse_qs(parsed.query))
+        if len(parts) == 4 and parts[0] == "api" and parts[1] == "decks" and parts[3] == "export":
+            return self._export(parts[2], parse_qs(parsed.query))
         if len(parts) == 4 and parts[0] == "api" and parts[1] == "decks" and parts[3] == "items":
             return self._items(parts[2], parse_qs(parsed.query))
         if len(parts) == 4 and parts[0] == "api" and parts[1] == "decks" and parts[3] == "media":
@@ -73,6 +90,10 @@ class Handler(BaseHTTPRequestHandler):
         body = self._json_body()
         if body is None:
             return
+        if parts == ["api", "config"]:
+            return self._config_save(body)
+        if parts == ["api", "sources", "test"] and isinstance(body.get("source"), dict):
+            return self._source_test_body(body)
         if parts == ["api", "users"]:
             return self._save_users(body)
         kind = parts[3] if len(parts) == 4 and parts[:2] == ["api", "decks"] else ""
@@ -89,7 +110,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _index(self, query):
         try:
-            opened = resolve(self.server.choice_root)
+            opened = open_path(self.server.choice_root)
             roster = load_roster(self.server.choice_root)
         except DeckProblem as exc:
             return self._json(200, {"ok": False, "message": str(exc), "direct": True, "decks": []})
@@ -129,7 +150,14 @@ class Handler(BaseHTTPRequestHandler):
         if isinstance(deck, dict):
             return self._reply(deck)
         pending = query.get("pending", ["1"])[0] != "0"
+        limit = int((query.get("limit") or ["0"])[0] or 0)
+        offset = int((query.get("offset") or ["0"])[0] or 0)
         snap = progress(deck, pending=pending)
+        if limit > 0 and snap.get("ok") and snap.get("items"):
+            items = snap["items"]
+            paged, token = page_items(deck.id, items, offset=offset, limit=limit)
+            snap["items"] = paged
+            snap["page_token"] = token
         if not snap.get("ok"):
             return self._json(200, snap)
         warnings = list(snap.get("warnings") or [])
@@ -143,11 +171,25 @@ class Handler(BaseHTTPRequestHandler):
             return self._reply(deck)
         item_id = (query.get("item") or [""])[0]
         side_key = (query.get("side") or [""])[0]
+        version = (query.get("v") or [""])[0]
         try:
             flow = view(deck)
         except DeckProblem as exc:
             return self._json(404, {"ok": False, "message": str(exc)})
         item = next((it for it in flow.items if it.id == item_id), None)
+        if deck.plugin is not None and hasattr(deck.plugin, "media_bytes"):
+            blob = deck.plugin.media_bytes(item_id)
+            if blob:
+                data, ctype = blob[0], blob[1]
+                self.send_response(200)
+                self.send_header("Content-Type", ctype)
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Cache-Control", "private, max-age=86400")
+                if version:
+                    self.send_header("ETag", '"%s"' % version)
+                self.end_headers()
+                self.wfile.write(data)
+                return
         source = _media_source(item, side_key)
         if source is None or not source.is_file():
             return self._json(404, {"ok": False, "message": "No such image."})
@@ -171,7 +213,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _save_users(self, body):
         try:
-            opened = resolve(self.server.choice_root)
+            opened = open_path(self.server.choice_root)
         except DeckProblem as exc:
             return self._json(400, {"ok": False, "message": str(exc)})
         known = {deck.id for deck in opened.decks}
@@ -255,7 +297,7 @@ class Handler(BaseHTTPRequestHandler):
         if not _ID.fullmatch(deck_id or ""):
             return {"ok": False, "message": "No such deck."}
         try:
-            opened = resolve(self.server.choice_root)
+            opened = open_path(self.server.choice_root)
         except DeckProblem as exc:
             return {"ok": False, "message": str(exc)}
         for deck in opened.decks:
@@ -286,6 +328,103 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
+
+    def _config_get(self):
+        path = self.server.config_path
+        if path is None or not path.is_file():
+            return self._json(200, {"ok": True, "config": None, "editable": False})
+        try:
+            cfg = load_config(path)
+        except ConfigProblem as exc:
+            return self._json(400, {"ok": False, "message": str(exc)})
+        sources = [mask_secrets({"id": s.id, "type": s.type, **s.options}) for s in cfg.sources]
+        decks = [{"id": d.id, "title": d.title, "source": d.source, "mount": d.mount, **d.options} for d in cfg.decks]
+        return self._json(
+            200,
+            {
+                "ok": True,
+                "editable": True,
+                "path": str(path),
+                "state_dir": str(cfg.state_dir),
+                "sources": sources,
+                "decks": decks,
+            },
+        )
+
+    def _config_save(self, body):
+        path = self.server.config_path
+        if path is None:
+            return self._json(400, {"ok": False, "message": "Server was not started with --config."})
+        try:
+            cfg = load_config(path)
+        except ConfigProblem as exc:
+            return self._json(400, {"ok": False, "message": str(exc)})
+        sources = body.get("sources")
+        decks = body.get("decks")
+        if not isinstance(sources, list) or not isinstance(decks, list):
+            return self._json(400, {"ok": False, "message": "Send sources and decks arrays."})
+        save_config(cfg, sources, decks)
+        return self._json(200, {"ok": True})
+
+    def _source_test(self, source_id, query):
+        path = self.server.config_path
+        if path is None:
+            return self._json(400, {"ok": False, "message": "No config."})
+        mount = (query.get("mount") or [""])[0]
+        try:
+            cfg = load_config(path)
+            spec = cfg.source(source_id)
+            if spec is None:
+                return self._json(404, {"ok": False, "message": "No such source."})
+            src = build_source(spec, cfg)
+            ok, message = src.test()
+            preview = [p.__dict__ for p in src.preview(mount)] if ok else []
+            return self._json(200, {"ok": ok, "message": message, "preview": preview})
+        except ConfigProblem as exc:
+            return self._json(400, {"ok": False, "message": str(exc)})
+
+    def _source_test_body(self, body):
+        path = self.server.config_path
+        if path is None:
+            return self._json(400, {"ok": False, "message": "No config."})
+        row = body.get("source")
+        mount = str(body.get("mount") or "")
+        try:
+            cfg = load_config(path)
+            from choice.config import SourceSpec
+
+            spec = SourceSpec(
+                id="test",
+                type=str(row.get("type") or ""),
+                options={k: v for k, v in row.items() if k != "type"},
+            )
+            src = build_source(spec, cfg)
+            ok, message = src.test()
+            preview = [p.__dict__ for p in src.preview(mount)] if ok else []
+            return self._json(200, {"ok": ok, "message": message, "preview": preview})
+        except ConfigProblem as exc:
+            return self._json(400, {"ok": False, "message": str(exc)})
+
+    def _stats(self, deck_id, query):
+        deck = self._opened(deck_id, self._requested_user(query, None))
+        if isinstance(deck, dict):
+            return self._reply(deck)
+        plugin = deck.plugin
+        if plugin is not None and hasattr(plugin, "stats"):
+            data = plugin.stats()
+            if data:
+                return self._json(200, {"ok": True, "stats": data})
+        snap = progress(deck, pending=False)
+        return self._json(200, {"ok": True, "stats": {"tally": snap.get("tally"), "total": snap.get("total")}})
+
+    def _export(self, deck_id, query):
+        deck = self._opened(deck_id, self._requested_user(query, None))
+        if isinstance(deck, dict):
+            return self._reply(deck)
+        from choice.act import _read_log
+
+        rows = _read_log(deck)
+        return self._json(200, {"ok": True, "decisions": rows})
 
     def _json(self, code, payload):
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -337,10 +476,10 @@ def _media_source(item, side_key: str):
     return None
 
 
-def serve(root: Path, host: str, port: int) -> None:
+def serve(root: Path, host: str, port: int, config_path: Path | None = None) -> None:
     ChoiceSite.allow_reuse_address = True
     try:
-        server = ChoiceSite((host, port), root)
+        server = ChoiceSite((host, port), root, config_path=config_path)
     except OSError as exc:
         raise SystemExit("Cannot listen on %s:%s (%s)." % (host, port, exc.strerror or exc)) from exc
     try:

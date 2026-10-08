@@ -8,8 +8,14 @@ from pathlib import Path
 from typing import Any
 
 from choice.config import ConfigProblem
-from choice.folder_deck import build_file_deck, items_from_folder_scan, merge_folder_options, wire_sort_buttons, wire_sort_directions
-from choice.load import Deck, DeckProblem, resolve, inside
+from choice.folder_deck import (
+    build_file_deck,
+    items_from_folder_scan,
+    merge_folder_options,
+    wire_sort_buttons,
+    wire_sort_directions,
+)
+from choice.load import Deck, DeckProblem, inside, resolve
 from choice.sources.base import PreviewItem, Source
 
 
