@@ -84,7 +84,8 @@ def decide(deck: Deck, item_id: str, direction: str, note: str | None) -> dict:
                 except Exception as exc:
                     return _fail(_plugin_error_text(exc))
                 if not plugin_result.get("ok", True):
-                    msg = _plugin_message(plugin_result.get("message")) or "Plugin refused the swipe."
+                    msg = _plugin_message(plugin_result.get("message"))
+                    msg = msg or "Plugin refused the swipe."
                     return _fail(msg)
                 if plugin_result.get("undo_token") is not None:
                     record["undo_token"] = plugin_result.get("undo_token")
