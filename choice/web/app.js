@@ -111,6 +111,45 @@ function reduceMotion() {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
+function isWide() {
+  return window.matchMedia("(min-width: 700px)").matches;
+}
+
+function resolveSwipe(dx, dy, arm, threshold) {
+  const a = arm == null ? 10 : arm;
+  const t = threshold == null ? 88 : threshold;
+  if (Math.abs(dx) < a && Math.abs(dy) < a) return null;
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    if (Math.abs(dx) < t) return null;
+    return dx > 0 ? "right" : "left";
+  }
+  if (Math.abs(dy) < t) return null;
+  return dy < 0 ? "up" : "down";
+}
+
+function slugTitle(title) {
+  const text = String(title || "").trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
+  return text || "deck";
+}
+
+function sourceIcon(type) {
+  const map = {
+    folder: "folder",
+    swipe: "layers",
+    swipe_plugin: "layers",
+    immich: "cloud",
+    rss: "feed",
+    atom: "feed",
+    webdav: "remote",
+  };
+  return map[type] || "deck";
+}
+
+function deckIconChar(kind) {
+  const icons = { folder: "F", layers: "S", cloud: "I", feed: "R", remote: "W", deck: "D" };
+  return icons[kind] || "D";
+}
+
 async function boot() {
   $("home").addEventListener("click", () => {
     if (state.picking) return backFromPeople();
@@ -120,6 +159,8 @@ async function boot() {
   $("pending").addEventListener("click", togglePending);
   $("blind").addEventListener("click", toggleBlind);
   $("counts").addEventListener("click", openCounts);
+  $("menu").addEventListener("click", openMenu);
+  $("fab-undo").addEventListener("click", () => undoLast());
   $("dialog").addEventListener("close", () => $("dialog-body").replaceChildren());
   document.addEventListener("keydown", onKey);
   window.addEventListener("popstate", route);
@@ -166,8 +207,8 @@ function showProblem(message) {
   $("tools").hidden = true;
   $("track").hidden = true;
   $("actions").hidden = true;
-  $("home").hidden = true;
-  $("home").textContent = "Decks";
+  $("fab-undo").hidden = true;
+  $("menu").hidden = false;
   $("count").textContent = "";
   paintWho();
   setStatus("");
@@ -195,8 +236,8 @@ async function showLibrary() {
   $("tools").hidden = true;
   $("track").hidden = true;
   $("actions").hidden = true;
-  $("home").hidden = true;
-  $("home").textContent = "Decks";
+  $("fab-undo").hidden = true;
+  $("menu").hidden = false;
   paintWho();
   $("status").textContent = "";
   $("status").hidden = true;
@@ -209,21 +250,51 @@ async function showLibrary() {
       list.append(item);
       return;
     }
-    const button = el("button", "deck-link");
+    const card = el("button", "deck-card deck-link");
+    card.type = "button";
+    const icon = el("span", "deck-icon", deckIconChar(sourceIcon(deck.source_type || "deck")));
+    icon.setAttribute("aria-hidden", "true");
     const copy = el("span", "deck-copy");
     copy.append(el("span", "deck-name", deck.title));
-    copy.append(el("span", "deck-meta", deck.count_label || (deck.left + " left of " + deck.total)));
-    button.append(copy);
-    if (deck.meter !== false) {
-      const bar = el("span", "bar");
-      bar.setAttribute("aria-hidden", "true");
-      const fill = el("span");
-      fill.style.width = (deck.total ? (100 * deck.decided) / deck.total : 0) + "%";
-      bar.append(fill);
-      button.append(bar);
-    }
-    button.addEventListener("click", () => openDeck(deck.id, true));
-    item.append(button);
+    const left = deck.count_label || (deck.left + " left");
+    copy.append(el("span", "deck-meta", left));
+    const row = el("span", "deck-row");
+    row.append(icon, copy);
+    card.append(row);
+    let pressTimer = null;
+    let longPressed = false;
+    card.addEventListener("pointerdown", () => {
+      longPressed = false;
+      pressTimer = window.setTimeout(() => {
+        pressTimer = null;
+        longPressed = true;
+        openDeckEdit(deck.id);
+      }, 520);
+    });
+    const clearPress = () => {
+      if (pressTimer) {
+        clearTimeout(pressTimer);
+        pressTimer = null;
+      }
+    };
+    card.addEventListener("pointerup", clearPress);
+    card.addEventListener("pointercancel", clearPress);
+    card.addEventListener("pointerleave", clearPress);
+    card.addEventListener("click", () => {
+      if (longPressed) {
+        longPressed = false;
+        return;
+      }
+      openDeck(deck.id, true);
+    });
+    const more = el("button", "deck-more", "...");
+    more.type = "button";
+    more.setAttribute("aria-label", "Edit deck");
+    more.addEventListener("click", (event) => {
+      event.stopPropagation();
+      openDeckEdit(deck.id);
+    });
+    item.append(card, more);
     list.append(item);
   });
   const parts = [];
@@ -260,154 +331,440 @@ async function setupLink(parts) {
   parts.push(wrap);
 }
 
-function showSetup(cfg) {
+function showSetup(cfg, editDeckId) {
   state.deckId = null;
-  $("title").textContent = "Add deck";
+  $("title").textContent = editDeckId ? "Edit deck" : "Add deck";
   $("tools").hidden = true;
   $("track").hidden = true;
   $("actions").hidden = true;
-  $("home").hidden = false;
+  $("fab-undo").hidden = true;
+  $("menu").hidden = false;
+  const wizard = { step: 1, type: "folder", cfg, editDeckId: editDeckId || null, preview: [] };
+  const existing = editDeckId ? (cfg.decks || []).find((d) => d.id === editDeckId) : null;
+  if (existing) {
+    const src = (cfg.sources || []).find((s) => s.id === existing.source);
+    wizard.type = src ? src.type : "folder";
+    wizard.step = 2;
+  }
+  paintSetupStep(wizard);
+  setStatus("");
+}
+
+function openDeckEdit(deckId) {
+  api("/api/config").then((cfg) => {
+    if (cfg.ok && cfg.editable) showSetup(cfg, deckId);
+  });
+}
+
+const SETUP_TYPES = [
+  { type: "folder", label: "Folder", hint: "Local photos or deck.json" },
+  { type: "immich", label: "Immich", hint: "Album or search" },
+  { type: "rss", label: "RSS", hint: "Feed items" },
+  { type: "webdav", label: "WebDAV", hint: "Remote folder" },
+  { type: "swipe", label: "Swipe deck", hint: "deck.py plugin" },
+];
+
+function paintSetupStep(wizard) {
+  const root = el("div", "setup-wizard");
+  root.append(el("p", "setup-step", "Step " + wizard.step + " of 3"));
+  if (wizard.step === 1) root.append(setupStepType(wizard));
+  else if (wizard.step === 2) root.append(setupStepFields(wizard));
+  else root.append(setupStepSave(wizard));
+  $("main").replaceChildren(root);
+}
+
+function setupStepType(wizard) {
+  const wrap = el("div", "setup-tiles");
+  wrap.append(el("h2", null, "Source type"));
+  const grid = el("div", "tile-grid");
+  SETUP_TYPES.forEach((row) => {
+    const btn = el("button", "type-tile" + (wizard.type === row.type ? " picked" : ""));
+    btn.type = "button";
+    btn.append(el("span", "tile-label", row.label));
+    btn.append(el("span", "tile-hint", row.hint));
+    btn.addEventListener("click", () => {
+      wizard.type = row.type;
+      wizard.step = 2;
+      paintSetupStep(wizard);
+    });
+    grid.append(btn);
+  });
+  wrap.append(grid);
+  return wrap;
+}
+
+function toggleSwitch(name, label, on) {
+  const row = el("label", "switch-row");
+  const input = el("input");
+  input.type = "checkbox";
+  input.name = name;
+  input.checked = !!on;
+  input.className = "switch-input";
+  const track = el("span", "switch-track");
+  track.append(el("span", "switch-thumb"));
+  row.append(input, track, el("span", "switch-label", label));
+  return row;
+}
+
+function setupStepFields(wizard) {
   const form = el("form", "setup-form");
   form.addEventListener("submit", (event) => event.preventDefault());
+  const existing = wizard.editDeckId
+    ? (wizard.cfg.decks || []).find((d) => d.id === wizard.editDeckId)
+    : null;
+  const srcExisting = existing
+    ? (wizard.cfg.sources || []).find((s) => s.id === existing.source)
+    : null;
 
-  form.append(fieldLabel("Deck id"));
-  const deckId = el("input");
-  deckId.name = "deck_id";
-  deckId.required = true;
-  form.append(deckId);
+  form.append(fieldLabel("Deck title"));
+  const titleInput = el("input");
+  titleInput.name = "title";
+  titleInput.required = true;
+  titleInput.value = existing ? existing.title : "";
+  form.append(titleInput);
 
-  form.append(fieldLabel("Title"));
-  const deckTitle = el("input");
-  deckTitle.name = "title";
-  form.append(deckTitle);
+  const fields = el("div", "setup-type-fields");
+  if (wizard.type === "folder") {
+    form.append(fieldLabel("Folder path"));
+    const pathRow = el("div", "path-row");
+    const mount = el("input");
+    mount.name = "mount";
+    mount.placeholder = ".";
+    mount.value = existing ? (existing.mount || ".") : ".";
+    mount.setAttribute("list", "browse-list");
+    pathRow.append(mount);
+    const browse = el("button", "path-browse", "Browse");
+    browse.type = "button";
+    browse.addEventListener("click", () => openBrowsePicker(mount, wizard));
+    pathRow.append(browse);
+    form.append(pathRow);
+    const datalist = el("datalist");
+    datalist.id = "browse-list";
+    form.append(datalist);
+    loadBrowseHints(datalist, wizard, mount.value);
 
-  form.append(fieldLabel("Source"));
-  const sourcePick = el("select");
-  (cfg.sources || []).forEach((src) => {
-    const opt = el("option", null, src.id + " (" + src.type + ")");
-    opt.value = src.id;
-    sourcePick.append(opt);
+    const output = el("select");
+    output.name = "output";
+    [["results", "Results (log only)"], ["sort", "Sort into folders"]].forEach(([value, label]) => {
+      const opt = el("option", null, label);
+      opt.value = value;
+      if (existing && existing.output === value) opt.selected = true;
+      output.append(opt);
+    });
+    form.append(fieldLabel("Output"));
+    form.append(output);
+    form.append(toggleSwitch("recursive", "Recursive scan", existing && existing.recursive));
+
+    const more = el("details", "setup-more");
+    more.append(el("summary", null, "More options"));
+    const include = el("input");
+    include.name = "include";
+    include.placeholder = "*.jpg, *.png";
+    if (existing && existing.include) include.value = existing.include.join(", ");
+    more.append(fieldLabel("Include globs"), include);
+    const exclude = el("input");
+    exclude.name = "exclude";
+    if (existing && existing.exclude) exclude.value = existing.exclude.join(", ");
+    more.append(fieldLabel("Exclude globs"), exclude);
+    const sortRight = el("input");
+    sortRight.name = "sort_right";
+    if (existing && existing.sort_right) sortRight.value = existing.sort_right;
+    more.append(fieldLabel("Sort folder: right"), sortRight);
+    const sortLeft = el("input");
+    sortLeft.name = "sort_left";
+    if (existing && existing.sort_left) sortLeft.value = existing.sort_left;
+    more.append(fieldLabel("Sort folder: left"), sortLeft);
+    form.append(more);
+  } else if (wizard.type === "immich") {
+    form.append(fieldLabel("Immich URL"));
+    const url = el("input");
+    url.name = "url";
+    url.placeholder = "https://photos.example.com";
+    if (srcExisting && srcExisting.url) url.value = srcExisting.url;
+    form.append(url);
+    form.append(fieldLabel("API key (stored as secret)"));
+    const key = el("input");
+    key.type = "password";
+    key.name = "api_key";
+    key.autocomplete = "off";
+    form.append(key);
+    form.append(fieldLabel("Album id or search mount"));
+    const mount = el("input");
+    mount.name = "mount";
+    mount.value = existing ? (existing.mount || "") : "";
+    form.append(mount);
+  } else if (wizard.type === "rss") {
+    form.append(fieldLabel("Feed URL"));
+    const feed = el("input");
+    feed.name = "url";
+    if (srcExisting && srcExisting.url) feed.value = srcExisting.url;
+    form.append(feed);
+  } else if (wizard.type === "webdav") {
+    form.append(fieldLabel("WebDAV URL"));
+    const url = el("input");
+    url.name = "url";
+    if (srcExisting && srcExisting.url) url.value = srcExisting.url;
+    form.append(url);
+    form.append(fieldLabel("Username"));
+    const user = el("input");
+    user.name = "username";
+    if (srcExisting && srcExisting.username) user.value = srcExisting.username;
+    form.append(user);
+    form.append(fieldLabel("Password"));
+    const pass = el("input");
+    pass.type = "password";
+    pass.name = "password";
+    pass.autocomplete = "off";
+    form.append(pass);
+    form.append(fieldLabel("Remote folder"));
+    const mount = el("input");
+    mount.name = "mount";
+    mount.value = existing ? (existing.mount || "/") : "/";
+    form.append(mount);
+  } else if (wizard.type === "swipe") {
+    form.append(fieldLabel("Plugin folder path"));
+    const plug = el("input");
+    plug.name = "path";
+    if (srcExisting && srcExisting.path) plug.value = srcExisting.path;
+    form.append(plug);
+    form.append(fieldLabel("Deck mount within plugin"));
+    const mount = el("input");
+    mount.name = "mount";
+    mount.value = existing ? (existing.mount || ".") : ".";
+    form.append(mount);
+  }
+  form.append(fields);
+
+  const nav = el("div", "setup-nav");
+  const back = el("button", null, "Back");
+  back.type = "button";
+  back.addEventListener("click", () => {
+    if (wizard.editDeckId) return showLibrary();
+    wizard.step = 1;
+    paintSetupStep(wizard);
   });
-  form.append(sourcePick);
-
-  form.append(fieldLabel("Mount path (folder within source)"));
-  const mount = el("input");
-  mount.name = "mount";
-  mount.placeholder = ".";
-  form.append(mount);
-
-  form.append(fieldLabel("Output mode"));
-  const output = el("select");
-  [["results", "Results (log only)"], ["sort", "Sort (move to folders)"]].forEach(([value, label]) => {
-    const opt = el("option", null, label);
-    opt.value = value;
-    output.append(opt);
+  const next = el("button", null, "Continue");
+  next.type = "button";
+  next.addEventListener("click", () => {
+    if (!titleInput.value.trim()) return setStatus("Title is required.");
+    wizard.step = 3;
+    wizard.draft = readSetupDraft(form, wizard);
+    paintSetupStep(wizard);
+    runSetupTest(wizard);
   });
-  form.append(output);
+  nav.append(back, next);
+  form.append(nav);
+  return form;
+}
 
-  form.append(fieldLabel("Recursive scan"));
-  const recursive = el("input");
-  recursive.type = "checkbox";
-  recursive.name = "recursive";
-  form.append(recursive);
+function readSetupDraft(form, wizard) {
+  const title = form.querySelector("[name=title]").value.trim();
+  const id = wizard.editDeckId || slugTitle(title);
+  const sourceId = wizard.editDeckId
+    ? ((wizard.cfg.decks || []).find((d) => d.id === wizard.editDeckId) || {}).source
+    : slugTitle(title + "-src");
+  const draft = { id, title, sourceId, type: wizard.type, mount: ".", source: { type: wizard.type, id: sourceId } };
+  const mountEl = form.querySelector("[name=mount]");
+  if (mountEl) draft.mount = mountEl.value.trim() || ".";
+  if (wizard.type === "folder") {
+    const output = form.querySelector("[name=output]");
+    draft.output = output ? output.value : "results";
+    const rec = form.querySelector("[name=recursive]");
+    draft.recursive = rec ? rec.checked : false;
+    draft.include = splitGlobs((form.querySelector("[name=include]") || {}).value);
+    draft.exclude = splitGlobs((form.querySelector("[name=exclude]") || {}).value);
+    draft.sort_right = (form.querySelector("[name=sort_right]") || {}).value.trim();
+    draft.sort_left = (form.querySelector("[name=sort_left]") || {}).value.trim();
+    draft.source.path = ".";
+    draft.source.output = draft.output;
+    draft.source.recursive = draft.recursive;
+  }
+  if (wizard.type === "immich") {
+    draft.source.url = form.querySelector("[name=url]").value.trim();
+    draft.api_key = form.querySelector("[name=api_key]").value;
+    draft.secret_name = "IMMICH_API_KEY";
+  }
+  if (wizard.type === "rss") draft.source.url = form.querySelector("[name=url]").value.trim();
+  if (wizard.type === "webdav") {
+    draft.source.url = form.querySelector("[name=url]").value.trim();
+    draft.source.username = form.querySelector("[name=username]").value.trim();
+    draft.password = form.querySelector("[name=password]").value;
+  }
+  if (wizard.type === "swipe") {
+    draft.source.path = form.querySelector("[name=path]").value.trim();
+  }
+  return draft;
+}
 
-  form.append(fieldLabel("Include globs (comma-separated)"));
-  const include = el("input");
-  include.name = "include";
-  include.placeholder = "*.jpg, *.png";
-  form.append(include);
+async function loadBrowseHints(datalist, wizard, path) {
+  try {
+    const res = await api("/api/browse");
+    if (!res.ok || !res.roots || !res.roots.length) return;
+    const source = res.roots[0].source;
+    const sub = await api("/api/browse?source=" + encodeURIComponent(source) + "&path=" + encodeURIComponent(path || ""));
+    if (!sub.ok || !sub.entries) return;
+    datalist.replaceChildren();
+    sub.entries.forEach((entry) => {
+      const opt = el("option");
+      opt.value = entry.path;
+      datalist.append(opt);
+    });
+  } catch (_err) {
+    return;
+  }
+}
 
-  form.append(fieldLabel("Exclude globs"));
-  const exclude = el("input");
-  exclude.name = "exclude";
-  exclude.placeholder = "keep/**";
-  form.append(exclude);
-
-  form.append(fieldLabel("Sort folder: right swipe"));
-  const sortRight = el("input");
-  sortRight.name = "sort_right";
-  sortRight.placeholder = "keep";
-  form.append(sortRight);
-
-  form.append(fieldLabel("Sort folder: left swipe"));
-  const sortLeft = el("input");
-  sortLeft.name = "sort_left";
-  sortLeft.placeholder = "delete";
-  form.append(sortLeft);
-
-  form.append(fieldLabel("Secret env name (e.g. IMMICH_API_KEY)"));
-  const secretName = el("input");
-  secretName.name = "secret_name";
-  secretName.placeholder = "IMMICH_API_KEY";
-  form.append(secretName);
-
-  form.append(fieldLabel("Secret value (stored in secrets file, not config)"));
-  const secretValue = el("input");
-  secretValue.type = "password";
-  secretValue.name = "secret_value";
-  secretValue.autocomplete = "off";
-  form.append(secretValue);
-
-  const testBtn = el("button", null, "Test connection");
-  testBtn.type = "button";
-  const saveBtn = el("button", null, "Save");
-  saveBtn.type = "submit";
-  form.append(testBtn, saveBtn);
-
-  testBtn.addEventListener("click", async () => {
-    const src = (cfg.sources || []).find((s) => s.id === sourcePick.value);
-    if (!src) return setStatus("Pick a source.");
-    const body = {
-      mount: mount.value || ".",
-      source: Object.assign({}, src, {
-        output: output.value,
-        recursive: recursive.checked,
-        include: splitGlobs(include.value),
-        exclude: splitGlobs(exclude.value),
-        sort_right: sortRight.value,
-        sort_left: sortLeft.value,
-      }),
-    };
-    const res = await api("/api/sources/test", body);
-    if (!res.ok) return setStatus(res.message || "Test failed.");
-    const names = (res.preview || []).map((p) => p.title).join(", ");
-    setStatus(res.message + (names ? " Preview: " + names : ""));
-  });
-
-  form.addEventListener("submit", async () => {
-    const id = deckId.value.trim();
-    if (!id) return setStatus("Deck id is required.");
-    const decks = (cfg.decks || []).filter((d) => d.id !== id);
-    const entry = {
-      id,
-      title: deckTitle.value.trim() || id,
-      source: sourcePick.value,
-      mount: mount.value.trim() || ".",
-      output: output.value,
-      recursive: recursive.checked,
-    };
-    const inc = splitGlobs(include.value);
-    const exc = splitGlobs(exclude.value);
-    if (inc.length) entry.include = inc;
-    if (exc.length) entry.exclude = exc;
-    if (sortRight.value.trim()) entry.sort_right = sortRight.value.trim();
-    if (sortLeft.value.trim()) entry.sort_left = sortLeft.value.trim();
-    decks.push(entry);
-    const sname = secretName.value.trim();
-    const sval = secretValue.value;
-    if (sname && sval) {
-      const sec = await api("/api/secrets", { name: sname, value: sval });
-      if (!sec.ok) return setStatus(sec.message || "Could not store secret.");
-      secretValue.value = "";
+function openBrowsePicker(mountInput, wizard) {
+  const body = $("dialog-body");
+  body.replaceChildren();
+  body.append(el("h2", null, "Choose folder"));
+  const list = el("ul", "browse-list");
+  body.append(list);
+  const close = el("button", null, "Close");
+  close.addEventListener("click", () => $("dialog").close());
+  body.append(close);
+  $("dialog").showModal();
+  api("/api/browse").then((res) => {
+    if (!res.ok || !res.roots || !res.roots.length) {
+      list.append(el("li", null, "No folder sources in config yet."));
+      return;
     }
-    const res = await api("/api/config", { sources: cfg.sources, decks });
-    if (!res.ok) return setStatus(res.message || "Could not save.");
-    setStatus("Saved. Restart Choice if decks do not refresh.");
-    showLibrary();
+    const source = res.roots[0].source;
+    const loadPath = (sub) => {
+      list.replaceChildren();
+      api("/api/browse?source=" + encodeURIComponent(source) + "&path=" + encodeURIComponent(sub || "")).then((data) => {
+        if (!data.ok) {
+          list.append(el("li", null, data.message || "Could not list."));
+          return;
+        }
+        if (sub) {
+          const up = el("li");
+          const upBtn = el("button", null, "..");
+          upBtn.type = "button";
+          upBtn.addEventListener("click", () => {
+            const parts = sub.split("/").filter(Boolean);
+            parts.pop();
+            loadPath(parts.join("/"));
+          });
+          up.append(upBtn);
+          list.append(up);
+        }
+        const pick = el("li");
+        const pickBtn = el("button", null, "Use " + (sub || "."));
+        pickBtn.type = "button";
+        pickBtn.addEventListener("click", () => {
+          mountInput.value = sub || ".";
+          $("dialog").close();
+        });
+        pick.append(pickBtn);
+        list.append(pick);
+        (data.entries || []).forEach((entry) => {
+          const li = el("li");
+          const btn = el("button", null, entry.name + "/");
+          btn.type = "button";
+          btn.addEventListener("click", () => loadPath(entry.path));
+          li.append(btn);
+          list.append(li);
+        });
+      });
+    };
+    loadPath(mountInput.value === "." ? "" : mountInput.value);
   });
+}
 
-  $("main").replaceChildren(form);
-  setStatus("");
+function setupStepSave(wizard) {
+  const wrap = el("div", "setup-review");
+  wrap.append(el("h2", null, wizard.draft.title));
+  wrap.append(el("p", "fine", "Id: " + wizard.draft.id));
+  const preview = el("ul", "preview-list");
+  preview.id = "setup-preview";
+  wrap.append(preview);
+  const testBtn = el("button", null, "Test again");
+  testBtn.type = "button";
+  testBtn.addEventListener("click", () => runSetupTest(wizard));
+  const saveBtn = el("button", "primary", "Save");
+  saveBtn.type = "button";
+  saveBtn.addEventListener("click", () => saveSetupDeck(wizard));
+  const back = el("button", null, "Back");
+  back.type = "button";
+  back.addEventListener("click", () => {
+    wizard.step = 2;
+    paintSetupStep(wizard);
+  });
+  const nav = el("div", "setup-nav");
+  nav.append(back, testBtn, saveBtn);
+  wrap.append(nav);
+  return wrap;
+}
+
+async function runSetupTest(wizard) {
+  const draft = wizard.draft;
+  if (!draft) return;
+  const sourcePayload = Object.assign({ type: draft.type }, draft.source);
+  if (draft.type === "folder") {
+    sourcePayload.recursive = draft.recursive;
+    sourcePayload.include = draft.include;
+    sourcePayload.exclude = draft.exclude;
+    sourcePayload.output = draft.output;
+  }
+  const res = await api("/api/sources/test", { mount: draft.mount, source: sourcePayload });
+  const list = document.getElementById("setup-preview");
+  if (!list) return;
+  list.replaceChildren();
+  if (!res.ok) {
+    list.append(el("li", "problem", res.message || "Test failed."));
+    setStatus(res.message || "Test failed.");
+    return;
+  }
+  setStatus(res.message || "OK");
+  (res.preview || []).slice(0, 3).forEach((row) => {
+    const li = el("li");
+    li.append(el("strong", null, row.title));
+    if (row.body) li.append(el("span", "fine", " " + row.body.slice(0, 80)));
+    list.append(li);
+  });
+  wizard.preview = res.preview || [];
+}
+
+async function saveSetupDeck(wizard) {
+  const draft = wizard.draft;
+  if (!draft) return;
+  const cfg = wizard.cfg;
+  const sources = (cfg.sources || []).filter((s) => s.id !== draft.sourceId);
+  const srcRow = Object.assign({ id: draft.sourceId, type: draft.type }, draft.source);
+  if (draft.type === "folder") {
+    srcRow.path = srcRow.path || ".";
+  }
+  sources.push(srcRow);
+  const decks = (cfg.decks || []).filter((d) => d.id !== draft.id);
+  const entry = {
+    id: draft.id,
+    title: draft.title,
+    source: draft.sourceId,
+    mount: draft.mount,
+  };
+  if (draft.type === "folder") {
+    entry.output = draft.output;
+    entry.recursive = draft.recursive;
+    if (draft.include.length) entry.include = draft.include;
+    if (draft.exclude.length) entry.exclude = draft.exclude;
+    if (draft.sort_right) entry.sort_right = draft.sort_right;
+    if (draft.sort_left) entry.sort_left = draft.sort_left;
+  }
+  decks.push(entry);
+  if (draft.api_key && draft.secret_name) {
+    const sec = await api("/api/secrets", { name: draft.secret_name, value: draft.api_key });
+    if (!sec.ok) return setStatus(sec.message || "Could not store secret.");
+  }
+  if (draft.password) {
+    const sec = await api("/api/secrets", { name: "WEBDAV_PASSWORD", value: draft.password });
+    if (!sec.ok) return setStatus(sec.message || "Could not store secret.");
+  }
+  const res = await api("/api/config", { sources, decks });
+  if (!res.ok) return setStatus(res.message || "Could not save.");
+  setStatus("Saved.");
+  await refreshIndex();
+  showLibrary();
 }
 
 function fieldLabel(text) {
@@ -458,12 +815,10 @@ async function loadItems(storedBlind) {
 function renderDeck() {
   state.picking = false;
   const data = state.payload;
-  const several = state.index && state.index.decks && state.index.decks.length > 1;
-  $("home").hidden = !several;
-  $("home").textContent = "Decks";
   paintWho();
   $("title").textContent = data.title;
-  $("tools").hidden = false;
+  $("tools").hidden = true;
+  $("menu").hidden = false;
   $("count").textContent = data.count_label || (data.left + " left");
   $("pending").textContent = state.pending ? "Show all" : "Still to do";
   $("blind").setAttribute("aria-pressed", state.blind ? "true" : "false");
@@ -492,8 +847,30 @@ function renderDeck() {
     $("main").replaceChildren(card);
   }
   paintCard(card, item);
-  bindDrag(card);
+  bindDrag(card, item);
+  bindCardTap(card, item);
   preloadMedia();
+  paintFabUndo();
+  applyDemoDrag(card);
+}
+
+function applyDemoDrag(card) {
+  const demo = new URLSearchParams(location.search).get("demo");
+  if (!demo || !card) return;
+  const side = demo === "drag" ? "right" : demo;
+  if (!["left", "right", "up", "down"].includes(side)) return;
+  const spec = specFor(side);
+  const label = spec && buttonLabel(spec, current());
+  const hint = card.querySelector(".drag-hint");
+  const hintLabel = hint && hint.querySelector(".drag-hint-label");
+  if (hint && hintLabel && label) {
+    hint.hidden = false;
+    hintLabel.textContent = label;
+  }
+  card.style.setProperty("--drag-tint", hintTint(side));
+  const dx = side === "right" ? 72 : side === "left" ? -72 : 0;
+  const dy = side === "up" ? -72 : side === "down" ? 72 : 0;
+  card.style.transform = "translate(" + dx + "px," + dy + "px) rotate(" + (dx / 12) + "deg)";
 }
 
 function preloadMedia() {
@@ -552,6 +929,7 @@ function paintPair(card, item) {
   const media = item.sides.some((side) => side.media);
   card.classList.add("pair");
   if (media) card.classList.add("has-media");
+  if (!isWide()) card.classList.add("pair-stack");
   if (item.title || item.body || callText(item) || item.mark) {
     const pad = el("div", "pad");
     if (item.title) pad.append(el("h2", null, item.title));
@@ -562,8 +940,10 @@ function paintPair(card, item) {
     card.append(pad);
   }
   const sides = el("div", media ? "sides media" : "sides");
-  item.sides.forEach((side) => {
+  if (!isWide()) sides.classList.add("stacked");
+  item.sides.forEach((side, index) => {
     const pane = el("section", side.media ? "side has-media" : "side");
+    if (!isWide()) pane.classList.add(index === 0 ? "stack-top" : "stack-under");
     pane.setAttribute("role", "button");
     pane.tabIndex = 0;
     const pick = side.key === "b" ? "right" : "left";
@@ -687,10 +1067,17 @@ function appendReport(box, report) {
   }
 }
 
+function paintFabUndo() {
+  const fab = $("fab-undo");
+  const show = state.deckId && state.payload && state.payload.can_undo && !isWide();
+  fab.hidden = !show;
+  fab.disabled = state.busy || !state.payload || !state.payload.can_undo;
+}
+
 function renderActions() {
   const row = $("actions");
   const item = current();
-  row.hidden = false;
+  row.hidden = !isWide();
   row.replaceChildren();
   if (item) {
     ["left", "down", "up", "right"].forEach((id) => {
@@ -702,15 +1089,18 @@ function renderActions() {
     });
     (state.payload.buttons || []).forEach((spec) => row.append(actionButton(spec, spec.label)));
   }
-  const undo = el("button", null, "Undo");
-  undo.disabled = !state.payload.can_undo || state.busy;
-  undo.addEventListener("click", () => undoLast());
-  row.append(undo);
-  if (item) {
-    const details = el("button", null, "Details");
-    details.addEventListener("click", openDetails);
-    row.append(details);
+  if (isWide()) {
+    const undo = el("button", null, "Undo");
+    undo.disabled = !state.payload.can_undo || state.busy;
+    undo.addEventListener("click", () => undoLast());
+    row.append(undo);
+    if (item) {
+      const details = el("button", null, "Details");
+      details.addEventListener("click", openDetails);
+      row.append(details);
+    }
   }
+  paintFabUndo();
 }
 
 function actionButton(spec, label) {
@@ -726,14 +1116,39 @@ function actionButton(spec, label) {
   return button;
 }
 
-function bindDrag(card) {
+function bindCardTap(card, item) {
+  let start = null;
+  card.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 || state.busy) return;
+    if (event.target.closest(".side, .path-browse")) return;
+    start = { x: event.clientX, y: event.clientY, t: Date.now() };
+  });
+  card.addEventListener("pointerup", (event) => {
+    if (!start || state.busy) return;
+    const dx = event.clientX - start.x;
+    const dy = event.clientY - start.y;
+    const moved = Math.abs(dx) > 14 || Math.abs(dy) > 14;
+    start = null;
+    if (moved) return;
+    if (item && item.kind === "pair" && !isWide()) return;
+    if (event.target.closest(".side")) return;
+    openDetails();
+  });
+}
+
+function bindDrag(card, item) {
   let drag = null;
-  const hint = el("div", "hint");
+  const pairMobile = item && item.kind === "pair" && !isWide();
+  const hint = el("div", "drag-hint");
+  const hintLabel = el("span", "drag-hint-label");
+  hint.append(hintLabel);
   hint.hidden = true;
   card.append(hint);
+  card.style.touchAction = pairMobile ? "pan-x pan-y" : "none";
 
   card.addEventListener("pointerdown", (event) => {
     if (event.button !== 0 || state.busy) return;
+    if (event.target.closest(".side")) return;
     drag = { id: event.pointerId, x: event.clientX, y: event.clientY, on: false };
   });
   card.addEventListener("pointermove", (event) => {
@@ -741,37 +1156,64 @@ function bindDrag(card) {
     const dx = event.clientX - drag.x;
     const dy = event.clientY - drag.y;
     if (!drag.on) {
-      if (Math.abs(dx) < 10) return;
-      if (Math.abs(dy) > Math.abs(dx)) {
-        drag = null;
-        return;
-      }
+      if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
       drag.on = true;
       card.setPointerCapture(event.pointerId);
     }
+    const side = resolveSwipe(dx, dy, 10, 40);
     if (reduceMotion()) return;
-    card.style.transform = "translateX(" + dx + "px) rotate(" + Math.max(-8, Math.min(8, dx / 40)) + "deg)";
-    const side = dx > 0 ? "right" : "left";
-    const spec = specFor(side);
+    const rot = pairMobile ? 0 : Math.max(-8, Math.min(8, dx / 40));
+    card.style.transform = "translate(" + dx + "px," + dy + "px) rotate(" + rot + "deg)";
+    const armed = resolveSwipe(dx, dy);
+    const pick = pairMobile ? (armed === "up" ? "up" : null) : armed;
+    const spec = pick ? specFor(pick) : null;
     const label = spec && buttonLabel(spec, current());
     hint.hidden = !label;
-    hint.className = "hint " + side;
-    hint.style.color = spec && spec.color ? spec.color : "";
-    hint.textContent = label || "";
+    if (label) {
+      hint.dataset.dir = pick;
+      hintLabel.textContent = label;
+      card.style.setProperty("--drag-tint", hintTint(pick));
+    } else {
+      card.style.removeProperty("--drag-tint");
+    }
   });
   const finish = (event) => {
     if (!drag || event.pointerId !== drag.id) return;
     const dx = event.clientX - drag.x;
-    const side = dx > 0 ? "right" : "left";
-    const spec = specFor(side);
-    const armed = drag.on && Math.abs(dx) > 88 && spec && buttonLabel(spec, current());
+    const dy = event.clientY - drag.y;
+    let side = resolveSwipe(dx, dy);
+    if (pairMobile) side = side === "up" ? "up" : null;
+    const spec = side ? specFor(side) : null;
+    const armed = drag.on && side && spec && buttonLabel(spec, current());
     drag = null;
     hint.hidden = true;
+    card.style.removeProperty("--drag-tint");
+    if (armed) {
+      flingCard(card, side);
+      act(side);
+      return;
+    }
     card.style.transform = "";
-    if (armed) act(side);
   };
   card.addEventListener("pointerup", finish);
   card.addEventListener("pointercancel", finish);
+}
+
+function hintTint(dir) {
+  const map = { right: "var(--drag-yes)", left: "var(--drag-no)", up: "var(--drag-fav)", down: "var(--drag-skip)" };
+  return map[dir] || "transparent";
+}
+
+function flingCard(card, direction) {
+  if (!card || reduceMotion()) {
+    if (card) card.style.transform = "";
+    return;
+  }
+  const dx = direction === "right" ? "120%" : direction === "left" ? "-120%" : "0";
+  const dy = direction === "up" ? "-120%" : direction === "down" ? "120%" : "0";
+  const rot = direction === "right" ? 8 : direction === "left" ? -8 : 0;
+  card.style.transition = "transform 180ms ease-out";
+  card.style.transform = "translate(" + dx + "," + dy + ") rotate(" + rot + "deg)";
 }
 
 async function act(direction) {
@@ -783,11 +1225,7 @@ async function act(direction) {
   state.busy = true;
   renderActions();
   const card = document.querySelector(".card");
-  if (card && !reduceMotion() && (direction === "left" || direction === "right")) {
-    const sign = direction === "right" ? 1 : -1;
-    card.style.transition = "transform 180ms ease-out";
-    card.style.transform = "translateX(" + (sign * 120) + "%) rotate(" + (sign * 8) + "deg)";
-  }
+  if (card && !card.style.transition) flingCard(card, direction);
   let data;
   try {
     data = await api("/api/decks/" + encodeURIComponent(state.deckId) + "/decide", {
@@ -838,6 +1276,7 @@ async function undoLast() {
   const ok = await loadItems();
   state.busy = false;
   if (ok) renderDeck();
+  else paintFabUndo();
 }
 
 function openDetails() {
@@ -893,6 +1332,41 @@ function openDetails() {
   });
   body.append(row);
   body.append(el("p", "fine", "Arrow keys decide. U undoes. I opens this."));
+  const close = el("button", null, "Close");
+  close.addEventListener("click", () => $("dialog").close());
+  body.append(close);
+  $("dialog").showModal();
+}
+
+async function openMenu() {
+  const body = $("dialog-body");
+  body.replaceChildren();
+  body.append(el("h2", null, "Menu"));
+  const list = el("div", "menu-list");
+  const add = (label, fn) => {
+    const btn = el("button", "menu-item", label);
+    btn.type = "button";
+    btn.addEventListener("click", () => {
+      $("dialog").close();
+      fn();
+    });
+    list.append(btn);
+  };
+  if (state.deckId && state.payload) {
+    add(state.pending ? "Show all" : "Still to do", togglePending);
+    add(state.blind ? "Blind off" : "Blind on", toggleBlind);
+    add("Counts", openCounts);
+  }
+  if (peopleOn()) add("People", showPeople);
+  const decks = (state.index && state.index.decks) || [];
+  if (!state.deckId || decks.length > 1) add("Decks", () => showLibrary());
+  try {
+    const cfg = await api("/api/config");
+    if (cfg.ok && cfg.editable) add("Add deck", () => showSetup(cfg));
+  } catch (_err) {
+    /* no config mode */
+  }
+  body.append(list);
   const close = el("button", null, "Close");
   close.addEventListener("click", () => $("dialog").close());
   body.append(close);
@@ -1062,10 +1536,10 @@ function renderPeople() {
   $("tools").hidden = true;
   $("track").hidden = true;
   $("actions").hidden = true;
+  $("fab-undo").hidden = true;
+  $("menu").hidden = false;
   $("count").textContent = "";
   $("title").textContent = "People";
-  $("home").textContent = "Back";
-  $("home").hidden = peopleOn() && !currentPerson();
   const wrap = el("div", "people");
   (state.index.warnings || []).forEach((warning) => wrap.append(el("p", "warn", warning)));
   const users = (state.index && state.index.users) || [];

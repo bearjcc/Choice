@@ -12,8 +12,11 @@
 - **rated** contest (Glicko-style pairs) and **taste** two-stage flow; JSON export with rankings.
 - `GET /api/health`, `GET /api/decks/<id>/export`, `GET /api/decks/<id>/stats`.
 - Examples: `taste`, `rated`. Tests for folder source, sources, and flows (34 tests).
+- Phone-first swipe UI: four-way drag with on-card hints, floating undo, overflow menu, content-sized cards, neutral A/B, add-deck stepper, deck list cards. `GET /api/browse` for folder paths. Gesture helper tests.
 
 ### Changed
+
+- Web UI: Tinder-style gestures on narrow viewports; action bar kept for keyboard and wide screens only.
 
 - A bare photo folder defaults to **results** mode (log only) instead of moving files to trash unless `deck.json` or sort mode says otherwise.
 

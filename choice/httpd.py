@@ -81,6 +81,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._config_get()
         if parts == ["api", "source-types"]:
             return self._json(200, {"ok": True, "types": source_types()})
+        if parts == ["api", "browse"]:
+            return self._browse(parse_qs(parsed.query))
         if len(parts) == 5 and parts[:3] == ["api", "sources", "test"]:
             return self._source_test(parts[3], parse_qs(parsed.query))
         if len(parts) == 4 and parts[0] == "api" and parts[1] == "decks" and parts[3] == "stats":
@@ -135,10 +137,16 @@ class Handler(BaseHTTPRequestHandler):
             roster = load_roster(self.server.choice_root)
         except DeckProblem as exc:
             return self._json(200, {"ok": False, "message": str(exc), "direct": True, "decks": []})
+        deck_meta = _config_deck_meta(self.server.config_path)
         if not roster.enabled:
             return self._json(
                 200,
-                {"ok": True, "direct": opened.direct, "decks": _rows(opened.decks), "users": None},
+                {
+                    "ok": True,
+                    "direct": opened.direct,
+                    "decks": _rows(opened.decks, deck_meta),
+                    "users": None,
+                },
             )
         library = [
             {"id": deck.id, "title": deck.title, "error": deck.problem} for deck in opened.decks
@@ -168,7 +176,7 @@ class Handler(BaseHTTPRequestHandler):
                 chosen.append(deck)
         payload["pick"] = False
         payload["user"] = {"id": person.id, "name": person.name}
-        payload["decks"] = _rows(chosen)
+        payload["decks"] = _rows(chosen, deck_meta)
         self._json(200, payload)
 
     def _items(self, deck_id, query):
@@ -469,6 +477,50 @@ class Handler(BaseHTTPRequestHandler):
             payload["tally"] = snap["tally"]
         return self._json(200, payload)
 
+    def _browse(self, query):
+        path = self.server.config_path
+        if path is None:
+            return self._json(400, {"ok": False, "message": "No config."})
+        source_id = (query.get("source") or query.get("source_id") or [""])[0]
+        sub = (query.get("path") or [""])[0] or ""
+        try:
+            cfg = load_config(path)
+        except ConfigProblem as exc:
+            return self._json(400, {"ok": False, "message": str(exc)})
+        if not source_id:
+            roots = []
+            for spec in cfg.sources:
+                if spec.type not in {"folder", "swipe", "swipe_plugin"}:
+                    continue
+                try:
+                    src = build_source(spec, cfg)
+                    root = _folder_source_root(src)
+                    roots.append(
+                        {
+                            "source": spec.id,
+                            "type": spec.type,
+                            "label": spec.id,
+                            "path": str(root),
+                        }
+                    )
+                except ConfigProblem:
+                    continue
+            return self._json(200, {"ok": True, "roots": roots})
+        spec = cfg.source(source_id)
+        if spec is None:
+            return self._json(404, {"ok": False, "message": "No such source."})
+        if spec.type not in {"folder", "swipe", "swipe_plugin"}:
+            return self._json(
+                400,
+                {"ok": False, "message": "Browse only works for folder sources."},
+            )
+        try:
+            src = build_source(spec, cfg)
+            entries = _list_folder_entries(src, sub)
+        except ConfigProblem as exc:
+            return self._json(400, {"ok": False, "message": str(exc)})
+        return self._json(200, {"ok": True, "path": sub, "entries": entries})
+
     def _secret_save(self, body):
         path = self.server.config_path
         if path is None:
@@ -502,7 +554,59 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
 
-def _rows(decks) -> list[dict]:
+def _config_deck_meta(config_path: Path | None) -> dict[str, dict]:
+    if config_path is None or not config_path.is_file():
+        return {}
+    try:
+        cfg = load_config(config_path)
+    except ConfigProblem:
+        return {}
+    src_type = {s.id: s.type for s in cfg.sources}
+    out: dict[str, dict] = {}
+    for spec in cfg.decks:
+        out[spec.id] = {"source": spec.source, "source_type": src_type.get(spec.source, "")}
+    return out
+
+
+def _folder_source_root(src) -> Path:
+    from choice.sources.folder import FolderSource
+
+    if isinstance(src, FolderSource):
+        return src._root()
+    raw = src.options.get("path") or src.options.get("root") or "."
+    base = src.app_config.path.parent
+    path = Path(str(raw)).expanduser()
+    if not path.is_absolute():
+        path = (base / path).resolve()
+    return path.resolve()
+
+
+def _list_folder_entries(src, sub: str) -> list[dict]:
+    from choice.load import inside
+
+    root = _folder_source_root(src)
+    sub = sub.strip().replace("\\", "/").strip("/")
+    target = (root / sub).resolve() if sub else root.resolve()
+    if not inside(root, target) and target != root.resolve():
+        raise ConfigProblem("Path escapes source folder.")
+    if not target.is_dir():
+        raise ConfigProblem("Not a folder.")
+    entries: list[dict] = []
+    try:
+        children = sorted(target.iterdir(), key=lambda p: p.name.lower())
+    except OSError as exc:
+        raise ConfigProblem(str(exc)) from exc
+    for child in children:
+        if child.name.startswith("."):
+            continue
+        if child.is_dir():
+            rel = child.relative_to(root).as_posix()
+            entries.append({"name": child.name, "path": rel, "kind": "dir"})
+    return entries
+
+
+def _rows(decks, deck_meta: dict[str, dict] | None = None) -> list[dict]:
+    deck_meta = deck_meta or {}
     rows = []
     for deck in decks:
         if deck.problem:
@@ -538,6 +642,10 @@ def _rows(decks) -> list[dict]:
             "decided": snap["decided"],
             "left": snap["left"],
         }
+        meta = deck_meta.get(deck.id)
+        if meta:
+            row["source"] = meta.get("source")
+            row["source_type"] = meta.get("source_type")
         if snap.get("count_label"):
             row["count_label"] = snap["count_label"]
         if snap.get("meter") is False:
