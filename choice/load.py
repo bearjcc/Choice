@@ -188,6 +188,8 @@ class Deck:
     plugin: object | None = None
     folder_scan: object | None = None
     view_defaults: dict | None = None
+    counts_defaults: str | dict | None = None
+    source_type: str | None = None
     # Set per request. None is the shared log.
     actor: str | None = None
     private_feed: bool = False
@@ -235,6 +237,9 @@ class Deck:
             from choice.view_prefs import public_view
 
             out["view"] = public_view(self)
+        from choice.count_prefs import public_counts
+
+        out["counts"] = public_counts(self)
         return out
 
 
@@ -492,6 +497,11 @@ def _from_config(folder: Path, data: dict, warnings: list[str] | None = None) ->
     view_raw = data.get("view")
     if isinstance(view_raw, dict):
         deck.view_defaults = dict(view_raw)
+    counts_raw = data.get("counts")
+    if isinstance(counts_raw, (str, dict)):
+        deck.counts_defaults = counts_raw
+    elif isinstance(view_raw, dict) and view_raw.get("counts") is not None:
+        deck.counts_defaults = view_raw.get("counts")
     src_kind = str(source.get("type") or "files")
     if src_kind in {"images", "files"} and (
         source.get("output")

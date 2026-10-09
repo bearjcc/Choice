@@ -78,6 +78,7 @@ sort_right = "keep"
 sort_left = "reject"
 sort_up = "like"
 sort_down = "love"
+counts = "on"
 """.strip(),
             encoding="utf-8",
         )

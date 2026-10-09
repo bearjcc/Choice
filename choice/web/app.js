@@ -327,8 +327,9 @@ async function showLibrary() {
     const copy = el("span", "deck-copy");
     copy.append(el("span", "deck-name", deck.title));
     let meta = deck.count_label;
-    if (!meta && deck.stale && deck.left == null) meta = "Scanning…";
-    if (!meta && deck.stale && deck.left != null) meta = deck.left + " left · scanning";
+    if (!meta && deck.meter === false) meta = deck.count_label || "";
+    else if (!meta && deck.stale && deck.left == null) meta = "Scanning…";
+    else if (!meta && deck.stale && deck.left != null) meta = deck.left + " left · scanning";
     else if (!meta && deck.left != null) meta = deck.left + " left";
     copy.append(el("span", "deck-meta deck-meta" + (deck.stale ? " stale" : ""), meta || ""));
     const row = el("span", "deck-row");
@@ -1069,15 +1070,17 @@ function renderDeck() {
   $("title").textContent = data.title;
   $("tools").hidden = true;
   $("menu").hidden = false;
-  $("count").textContent = data.count_label || (data.left + " left");
+  $("count").textContent = data.count_label || (data.left != null ? data.left + " left" : "");
   $("pending").textContent = state.pending ? "Show all" : "Still to do";
   $("blind").setAttribute("aria-pressed", state.blind ? "true" : "false");
   $("track").hidden = data.meter === false;
   const pct = data.total ? (100 * data.decided) / data.total : 0;
-  $("fill").style.width = pct + "%";
+  $("fill").style.width = data.meter === false ? "0%" : pct + "%";
   $("track").setAttribute("aria-valuenow", String(data.decided));
   $("track").setAttribute("aria-valuemax", String(data.total));
-  $("track").setAttribute("aria-label", data.count_label || (data.decided + " of " + data.total + " decided"));
+  const aria = data.count_label
+    || (data.total != null ? data.decided + " of " + data.total + " decided" : "");
+  $("track").setAttribute("aria-label", aria);
   renderActions();
   let item = current();
   if (!item && state.paged && state.paged.hasMore) {
@@ -1755,6 +1758,7 @@ async function openMenu() {
     add(state.pending ? "Show all" : "Still to do", togglePending);
     add(state.blind ? "Blind off" : "Blind on", toggleBlind);
     if (state.payload.view && !state.payload.view.locked) add("Order and filter", openOrderSettings);
+    add("Count display", openCountSettings);
     add("Counts", openCounts);
   }
   if (peopleOn()) add("People", showPeople);
@@ -1781,6 +1785,52 @@ function splitCsv(text) {
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+async function openCountSettings() {
+  const countsInfo = (state.payload && state.payload.counts) || {};
+  const body = $("dialog-body");
+  body.replaceChildren();
+  body.append(el("h2", null, "Count display"));
+  const countsSel = el("select", "setup-input");
+  [
+    ["auto", "Auto (hide for large or special decks)"],
+    ["on", "Always show counts"],
+    ["off", "Hide counts"],
+  ].forEach(([value, label]) => {
+    const opt = document.createElement("option");
+    opt.value = value;
+    opt.textContent = label;
+    if ((countsInfo.mode || "auto") === value) opt.selected = true;
+    countsSel.append(opt);
+  });
+  body.append(el("label", "setup-label", "Show counts"));
+  body.append(countsSel);
+  const row = el("div", "sheet-actions");
+  const save = el("button", null, "Save");
+  save.addEventListener("click", async () => {
+    let data;
+    try {
+      data = await api("/api/decks/" + encodeURIComponent(state.deckId) + "/counts", {
+        mode: countsSel.value,
+      });
+    } catch (_err) {
+      data = { ok: false };
+    }
+    $("dialog").close();
+    if (!data.ok) {
+      setStatus(data.message || "Could not save.");
+      return;
+    }
+    if (data.counts) state.payload.counts = data.counts;
+    if (await loadItems()) renderDeck();
+  });
+  row.append(save);
+  const close = el("button", null, "Cancel");
+  close.addEventListener("click", () => $("dialog").close());
+  row.append(close);
+  body.append(row);
+  $("dialog").showModal();
 }
 
 async function openOrderSettings() {
@@ -1871,6 +1921,10 @@ function openCounts() {
   body.replaceChildren();
   if (data.report) {
     appendReport(body, data.report);
+  } else if (data.counts_hidden || data.meter === false) {
+    body.append(el("h2", null, "Counts"));
+    if (data.count_label) body.append(el("p", null, data.count_label));
+    else body.append(el("p", null, "Pile totals are hidden for this deck."));
   } else {
     body.append(el("h2", null, "Counts"));
     body.append(el("p", null, data.decided + " decided, " + data.left + " left, " + data.total + " in the pile."));

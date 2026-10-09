@@ -94,6 +94,11 @@ class FolderSource(Source):
             )._view_defaults_from_options({**deck_options, "view": data.get("view")})
             if merged_view:
                 deck.view_defaults = {**(deck.view_defaults or {}), **merged_view}
+            merged_counts = __import__(
+                "choice.folder_deck", fromlist=["_counts_defaults_from_options"]
+            )._counts_defaults_from_options({**deck_options, "view": data.get("view")})
+            if merged_counts is not None:
+                deck.counts_defaults = merged_counts
             if scan.output == "sort":
                 deck.directions = wire_sort_directions(deck.directions, scan.sort_targets)
                 deck.buttons = wire_sort_buttons(deck.buttons, scan.sort_targets)

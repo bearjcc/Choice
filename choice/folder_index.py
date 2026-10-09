@@ -113,6 +113,9 @@ def save_index(state_dir: Path, idx: FolderIndex, *, save_meta: bool = False) ->
     atomic_replace(tmp, path)
     if save_meta:
         _save_meta_file(state_dir, idx)
+    from choice.count_prefs import write_folder_stats
+
+    write_folder_stats(state_dir, len(idx.ordered))
 
 
 def _load_meta_file(state_dir: Path, idx: FolderIndex) -> None:
@@ -340,7 +343,20 @@ def _purge_sorted_from_index(idx: FolderIndex, root: Path, skip_dirs: set[Path])
     return changed
 
 
-def summary(deck: Deck, log_decided: set[str]) -> dict:
+def summary(deck: Deck, log_decided: set[str], *, counts_hidden: bool = False) -> dict:
+    if counts_hidden:
+        from choice.count_prefs import today_count_label
+
+        return {
+            "ok": True,
+            "total": None,
+            "decided": len(log_decided),
+            "left": None,
+            "list_size": None,
+            "meter": False,
+            "counts_hidden": True,
+            "count_label": today_count_label(deck),
+        }
     idx = load_index(deck.state_dir)
     outdated = _tree_dirs_changed(deck, idx)
     if not idx.ordered and not idx.scanning:

@@ -168,6 +168,7 @@ def build_file_deck(
     if scan.output == "sort":
         directions = wire_sort_directions(directions, scan.sort_targets)
     view_defaults = _view_defaults_from_options(options)
+    counts_defaults = _counts_defaults_from_options(options)
     deck = Deck(
         id=deck_id,
         title=title,
@@ -179,6 +180,7 @@ def build_file_deck(
         warnings=[],
         folder_scan=scan,
         view_defaults=view_defaults,
+        counts_defaults=counts_defaults,
         _load=lambda: (
             __import__("choice.folder_index", fromlist=["load_items_for"]).load_items_for(
                 folder.resolve(), state_dir, scan
@@ -203,6 +205,16 @@ def _view_defaults_from_options(options: dict) -> dict | None:
         if key in options:
             view[key] = options[key]
     return view or None
+
+
+def _counts_defaults_from_options(options: dict) -> str | dict | None:
+    raw = options.get("counts")
+    if isinstance(raw, (str, dict)):
+        return raw
+    view = options.get("view")
+    if isinstance(view, dict) and view.get("counts") is not None:
+        return view.get("counts")
+    return None
 
 
 def items_from_folder_scan(root: Path, folder: Path, scan: FolderScanOptions) -> list[Item]:

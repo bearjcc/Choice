@@ -23,6 +23,7 @@ from choice.act import (
     item_by_id,
     progress,
     run_plugin_action,
+    save_deck_counts,
     save_deck_view,
     undo,
 )
@@ -175,6 +176,12 @@ class Handler(BaseHTTPRequestHandler):
             if isinstance(deck, dict):
                 return self._reply(deck)
             result = save_deck_view(deck, body)
+            return self._json(200 if result.get("ok") else 400, result)
+        if kind == "counts":
+            deck = self._opened(parts[2], self._requested_user(parse_qs(parsed.query), body))
+            if isinstance(deck, dict):
+                return self._reply(deck)
+            result = save_deck_counts(deck, body)
             return self._json(200 if result.get("ok") else 400, result)
         if kind not in {"decide", "undo"}:
             return self._json(404, {"ok": False, "message": "No such page."})
@@ -861,6 +868,8 @@ def _rows(decks, deck_meta: dict[str, dict] | None = None) -> list[dict]:
             row["meter"] = False
         elif snap.get("meter") is True:
             row["meter"] = True
+        if snap.get("counts_hidden"):
+            row["counts_hidden"] = True
         rows.append(row)
     return rows
 

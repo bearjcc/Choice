@@ -199,6 +199,26 @@ def view(deck: Deck, items: list[Item] | None = None) -> Flow:
     return flow
 
 
+def _counts_hidden(deck: Deck) -> bool:
+    from choice.count_prefs import counts_hidden
+
+    return counts_hidden(deck)
+
+
+def _hidden_summary(deck: Deck, log_decided: set[str]) -> dict:
+    from choice.count_prefs import today_count_label
+
+    return {
+        "ok": True,
+        "total": None,
+        "decided": len(log_decided),
+        "left": None,
+        "meter": False,
+        "counts_hidden": True,
+        "count_label": today_count_label(deck),
+    }
+
+
 def index_summary(deck: Deck) -> dict:
     """Deck-list counts without calling list_items when a snapshot exists."""
     if deck.problem:
@@ -212,11 +232,14 @@ def index_summary(deck: Deck) -> dict:
     choices = _choices(deck)
     snap = snapshot(deck)
     log_decided = {item_id for item_id, row in choices.items() if not row.get("later")}
+    hidden = _counts_hidden(deck)
     if snap is None:
         if deck.plugin is None and deck.folder_scan is not None:
             from choice.folder_index import summary as folder_summary
 
-            return folder_summary(deck, log_decided)
+            return folder_summary(deck, log_decided, counts_hidden=hidden)
+        if hidden:
+            return _hidden_summary(deck, log_decided)
         if deck.plugin is None:
             snap_full = progress(deck, pending=True)
             if not snap_full.get("ok"):
@@ -258,6 +281,8 @@ def index_summary(deck: Deck) -> dict:
             "meter": False,
             "count_label": f"{decided} decided" if decided else None,
         }
+    if hidden:
+        return _hidden_summary(deck, log_decided)
     total, decided, left, list_size = plugin_pile_counts(log_decided, snap.ids, snap.plugin_decided)
     return {
         "ok": True,
@@ -408,6 +433,7 @@ def _plugin_progress_page(deck: Deck, pending: bool, offset: int, limit: int) ->
 
 
 def _folder_progress(deck: Deck, pending: bool, offset: int, limit: int) -> dict:
+    from choice.count_prefs import today_count_label
     from choice.folder_index import item_for_id, progress_page
 
     choices = _choices(deck)
@@ -426,7 +452,7 @@ def _folder_progress(deck: Deck, pending: bool, offset: int, limit: int) -> dict
             shown["choice_label"] = choice.get("label")
         visible.append(shown)
     tally = _tally(deck, choices)
-    return {
+    out = {
         "ok": True,
         "total": total,
         "decided": decided,
@@ -439,6 +465,13 @@ def _folder_progress(deck: Deck, pending: bool, offset: int, limit: int) -> dict
         "meter": True,
         "view": _public_view(deck),
     }
+    if _counts_hidden(deck):
+        out["meter"] = False
+        out["counts_hidden"] = True
+        label = today_count_label(deck)
+        if label:
+            out["count_label"] = label
+    return out
 
 
 def save_deck_view(deck: Deck, body: dict) -> dict:
@@ -452,6 +485,19 @@ def save_deck_view(deck: Deck, body: dict) -> dict:
     save_view_prefs(deck, prefs)
     bust_item_cache(deck, invalidate_folder=False)
     return {"ok": True, "view": _public_view(deck)}
+
+
+def save_deck_counts(deck: Deck, body: dict) -> dict:
+    from choice.count_prefs import public_counts, save_counts_mode
+
+    raw = body.get("mode") if isinstance(body, dict) else None
+    if not isinstance(raw, str):
+        return _fail("counts.mode must be auto, on, or off.")
+    mode = raw.strip().lower()
+    if mode not in {"auto", "on", "off"}:
+        return _fail("counts.mode must be auto, on, or off.")
+    save_counts_mode(deck, mode)
+    return {"ok": True, "counts": public_counts(deck)}
 
 
 def _public_view(deck: Deck) -> dict:

@@ -55,6 +55,12 @@ def open_config(path: Path) -> Opened:
             deck.contest_kind = "rated"
         if spec.options.get("private") or spec.options.get("notify") is False:
             deck.private_feed = True
+        src_spec = config.source(spec.source)
+        if src_spec is not None:
+            deck.source_type = src_spec.type
+        counts_raw = spec.options.get("counts")
+        if counts_raw is not None and deck.counts_defaults is None:
+            deck.counts_defaults = counts_raw
         decks.append(deck)
     return Opened(decks=decks, direct=False)
 
