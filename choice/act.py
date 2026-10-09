@@ -168,12 +168,14 @@ def undo(deck: Deck) -> dict:
                     "ok": True,
                     "message": f"Undone here, but the hook failed: {exc}",
                     "can_undo": _latest_undoable(deck) is not None,
+                    "item": latest["item"],
                 }
         undone = latest.get("file") or latest.get("label") or item.title
         return {
             "ok": True,
             "message": f"Undone {undone}",
             "can_undo": _latest_undoable(deck) is not None,
+            "item": latest["item"],
         }
 
 

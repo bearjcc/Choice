@@ -19,6 +19,7 @@ const state = {
   user: localStorage.getItem("choice.user") || "",
   picking: false,
   galleryAt: {},
+  anchorAfterLoad: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -924,6 +925,7 @@ async function ensureCardsAhead() {
   const items = (state.payload && state.payload.items) || [];
   if (!state.paged || !state.paged.hasMore || state.paged.loading) return false;
   if (items.length - state.pos >= minAhead) return false;
+  const anchorId = anchorItemId();
   state.paged.loading = true;
   let added = false;
   try {
@@ -945,6 +947,8 @@ async function ensureCardsAhead() {
     state.payload.left = data.left;
     state.payload.total = data.total;
     state.payload.decided = data.decided;
+    if (anchorId) state.anchorAfterLoad = anchorId;
+    applyPosAnchor(items);
     return added;
   } catch (_err) {
     return false;
@@ -1014,7 +1018,28 @@ function openQueueFailures() {
   $("dialog").showModal();
 }
 
+function pileNav() {
+  return typeof ChoicePileNav !== "undefined" ? ChoicePileNav : null;
+}
+
+function anchorItemId() {
+  if (state.anchorAfterLoad) return state.anchorAfterLoad;
+  const item = current();
+  return item ? item.id : null;
+}
+
+function applyPosAnchor(items) {
+  const nav = pileNav();
+  if (!nav) {
+    if (state.pos >= items.length) state.pos = 0;
+    return;
+  }
+  state.pos = nav.syncPosToAnchor(items, state.pos, anchorItemId());
+  state.anchorAfterLoad = null;
+}
+
 async function loadItems(storedBlind) {
+  const anchorId = anchorItemId();
   let data;
   try {
     updateMediaWidth();
@@ -1031,7 +1056,8 @@ async function loadItems(storedBlind) {
   if (storedBlind !== undefined) {
     state.blind = storedBlind === null ? !!data.blind : storedBlind === "1";
   }
-  if (state.pos >= data.items.length) state.pos = 0;
+  if (anchorId) state.anchorAfterLoad = anchorId;
+  applyPosAnchor(data.items || []);
   return true;
 }
 
@@ -1542,12 +1568,25 @@ function flingCard(card, direction) {
 function advanceAfterSwipe(itemId, later) {
   const items = (state.payload && state.payload.items) || [];
   if (!items.length) return;
+  const nav = pileNav();
   if (later || !state.pending) {
-    const idx = items.findIndex((row) => row.id === itemId);
-    state.pos = idx === -1 ? 0 : (idx + 1) % items.length;
+    state.pos = nav
+      ? nav.advanceShowAllPos(items, state.pos, itemId)
+      : (() => {
+          const idx = items.findIndex((row) => row.id === itemId);
+          return idx === -1 ? 0 : (idx + 1) % items.length;
+        })();
     return;
   }
-  state.pos = (state.pos + 1) % items.length;
+  if (nav) {
+    const next = nav.removePendingSwipe(items, state.pos, itemId);
+    state.payload.items = next.items;
+    state.pos = next.pos;
+  } else {
+    const idx = items.findIndex((row) => row.id === itemId);
+    if (idx !== -1) items.splice(idx, 1);
+    if (state.pos >= items.length) state.pos = Math.max(0, items.length - 1);
+  }
   ensureCardsAhead();
 }
 
@@ -1630,6 +1669,7 @@ async function undoLast() {
   } catch (_err) {
     data = { ok: false, message: "Could not reach Choice." };
   }
+  if (data.ok && data.item) state.anchorAfterLoad = data.item;
   setStatus(data.message || "");
   const ok = await loadItems();
   state.busy = false;

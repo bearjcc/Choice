@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.6 (2026-10-09)
+
+### Fixed
+
+- Still-to-do mode no longer skips a card after each swipe when the pending list reloads; pile cursor follows the on-screen card through reload, prefetch, and undo (`pile_nav.js`).
+
+### Tests
+
+- Headless `pile_nav` tests: single and double swipe before reload, show-all mode, undo anchor.
+
 ## 0.3.5 (2026-10-09)
 
 ### Fixed
