@@ -1,0 +1,7 @@
+{
+  "private": true,
+  "description": "Headless layout checks for Choice modals (optional dev dep).",
+  "optionalDependencies": {
+    "playwright": "1.49.1"
+  }
+}

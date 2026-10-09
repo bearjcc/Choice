@@ -90,7 +90,7 @@ function setStatus(text) {
   $("status").hidden = false;
   $("status").textContent = text || "";
   const body = $("dialog-body");
-  if (!$("dialog").open || !body) return;
+  if (!ChoiceDialog.isOpen() || !body) return;
   let note = body.querySelector(".dialog-status");
   if (!text) {
     if (note) note.remove();
@@ -226,7 +226,7 @@ async function boot() {
   $("counts").addEventListener("click", openCounts);
   $("menu").addEventListener("click", openMenu);
   $("queue-badge").addEventListener("click", openQueueFailures);
-  $("dialog").addEventListener("close", () => $("dialog-body").replaceChildren());
+  ChoiceDialog.init();
   document.addEventListener("keydown", onKey);
   window.addEventListener("popstate", route);
   updateMediaWidth();
@@ -692,9 +692,9 @@ function openBrowsePicker(mountInput, wizard) {
   const list = el("ul", "browse-list");
   body.append(list);
   const close = el("button", null, "Close");
-  close.addEventListener("click", () => $("dialog").close());
+  close.addEventListener("click", () => ChoiceDialog.close());
   body.append(close);
-  $("dialog").showModal();
+  ChoiceDialog.open();
   api("/api/browse").then((res) => {
     if (!res.ok || !res.roots || !res.roots.length) {
       list.append(el("li", null, "No folder sources in config yet."));
@@ -725,7 +725,7 @@ function openBrowsePicker(mountInput, wizard) {
         pickBtn.type = "button";
         pickBtn.addEventListener("click", () => {
           mountInput.value = sub || ".";
-          $("dialog").close();
+          ChoiceDialog.close();
         });
         pick.append(pickBtn);
         list.append(pick);
@@ -807,7 +807,11 @@ async function removeSetupDeck(wizard) {
   const cfg = wizard.cfg;
   const deckId = wizard.editDeckId;
   if (!deckId) return;
-  if (!window.confirm("Remove this deck from Choice? Files and state stay on disk.")) return;
+  const okRemove = await ChoiceDialog.confirm(
+    "Remove this deck from Choice? Files and state stay on disk.",
+    { title: "Remove deck", confirmLabel: "Remove", cancelLabel: "Cancel" },
+  );
+  if (!okRemove) return;
   const removed = (cfg.decks || []).find((d) => d.id === deckId);
   const decks = (cfg.decks || []).filter((d) => d.id !== deckId);
   const sources = (cfg.sources || []).filter((s) => {
@@ -1014,7 +1018,7 @@ function openQueueFailures() {
     const label = row.from || row.item || row.id;
     body.append(el("p", "warn", label + ": " + (row.error || "Failed")));
   });
-  $("dialog").showModal();
+  ChoiceDialog.open();
 }
 
 function pileNav() {
@@ -1663,7 +1667,7 @@ async function act(direction) {
   const item = current();
   const label = spec && item ? buttonLabel(spec, item) : null;
   if (!spec || !item || !label || state.busy) return;
-  if ($("dialog").open) $("dialog").close();
+  if (ChoiceDialog.isOpen()) ChoiceDialog.close();
   state.busy = true;
   renderActions();
   const card = document.querySelector(".card");
@@ -1706,7 +1710,11 @@ async function act(direction) {
 async function runPluginAction(spec) {
   if (!spec || !spec.id || state.busy) return;
   if (spec.confirm) {
-    const ok = window.confirm(spec.label + "?");
+    const ok = await ChoiceDialog.confirm(spec.label + "?", {
+      title: spec.label,
+      confirmLabel: "Continue",
+      cancelLabel: "Cancel",
+    });
     if (!ok) return;
   }
   state.busy = true;
@@ -1780,7 +1788,7 @@ async function openMenu() {
     const btn = el("button", "menu-item", label);
     btn.type = "button";
     btn.addEventListener("click", () => {
-      $("dialog").close();
+      ChoiceDialog.close();
       fn();
     });
     list.append(btn);
@@ -1806,9 +1814,9 @@ async function openMenu() {
   });
   body.append(list);
   const close = el("button", null, "Close");
-  close.addEventListener("click", () => $("dialog").close());
+  close.addEventListener("click", () => ChoiceDialog.close());
   body.append(close);
-  $("dialog").showModal();
+  ChoiceDialog.open();
 }
 
 function splitCsv(text) {
@@ -1848,7 +1856,7 @@ async function openCountSettings() {
     } catch (_err) {
       data = { ok: false };
     }
-    $("dialog").close();
+    ChoiceDialog.close();
     if (!data.ok) {
       setStatus(data.message || "Could not save.");
       return;
@@ -1858,10 +1866,10 @@ async function openCountSettings() {
   });
   row.append(save);
   const close = el("button", null, "Cancel");
-  close.addEventListener("click", () => $("dialog").close());
+  close.addEventListener("click", () => ChoiceDialog.close());
   row.append(close);
   body.append(row);
-  $("dialog").showModal();
+  ChoiceDialog.open();
 }
 
 async function openOrderSettings() {
@@ -1929,7 +1937,7 @@ async function openOrderSettings() {
     } catch (_err) {
       data = { ok: false };
     }
-    $("dialog").close();
+    ChoiceDialog.close();
     if (!data.ok) {
       setStatus(data.message || "Could not save.");
       return;
@@ -1939,10 +1947,10 @@ async function openOrderSettings() {
   });
   row.append(save);
   const close = el("button", null, "Cancel");
-  close.addEventListener("click", () => $("dialog").close());
+  close.addEventListener("click", () => ChoiceDialog.close());
   row.append(close);
   body.append(row);
-  $("dialog").showModal();
+  ChoiceDialog.open();
 }
 
 function openCounts() {
@@ -1963,9 +1971,9 @@ function openCounts() {
     if (!data.tally || !data.tally.length) body.append(el("p", null, "No decisions yet."));
   }
   const close = el("button", null, "Close");
-  close.addEventListener("click", () => $("dialog").close());
+  close.addEventListener("click", () => ChoiceDialog.close());
   body.append(close);
-  $("dialog").showModal();
+  ChoiceDialog.open();
 }
 
 function togglePending() {
@@ -1983,11 +1991,11 @@ function toggleBlind() {
 function onKey(event) {
   if (event.target.closest("input, textarea")) return;
   if (!state.deckId || state.picking) return;
-  if ($("dialog").open && event.key === "Escape") return;
+  if (ChoiceDialog.isOpen() && event.key === "Escape") return;
   const map = { ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down" };
   if (map[event.key]) {
     event.preventDefault();
-    if ($("dialog").open) $("dialog").close();
+    if (ChoiceDialog.isOpen()) ChoiceDialog.close();
     act(map[event.key]);
     return;
   }
@@ -2084,7 +2092,7 @@ async function showPeople() {
   state.picking = true;
   setStatus("");
   $("status").hidden = true;
-  if ($("dialog").open) $("dialog").close();
+  if (ChoiceDialog.isOpen()) ChoiceDialog.close();
   try {
     if (!(await refreshIndex())) return;
   } catch (_err) {
@@ -2214,10 +2222,10 @@ function openAssign(user) {
   remove.addEventListener("click", () => removePerson(user));
   const close = el("button", null, "Close");
   close.type = "button";
-  close.addEventListener("click", () => $("dialog").close());
+  close.addEventListener("click", () => ChoiceDialog.close());
   row.append(save, remove, close);
   body.append(row);
-  $("dialog").showModal();
+  ChoiceDialog.open();
 }
 
 async function saveAssign(user, list) {
@@ -2236,7 +2244,7 @@ async function saveAssign(user, list) {
   const ok = await saveUsers(users);
   state.busy = false;
   if (!ok) return;
-  if ($("dialog").open) $("dialog").close();
+  if (ChoiceDialog.isOpen()) ChoiceDialog.close();
   setStatus(user.name + " now has " + assignedPhrase(decks) + ".");
   renderPeople();
 }
@@ -2259,7 +2267,7 @@ async function removePerson(user) {
     state.user = "";
     localStorage.removeItem("choice.user");
   }
-  if ($("dialog").open) $("dialog").close();
+  if (ChoiceDialog.isOpen()) ChoiceDialog.close();
   if (!users.length) setStatus("People are off. Swipes use the shared log again.");
   else setStatus("Removed " + user.name + ". Their swipes stay on disk.");
   renderPeople();
@@ -2284,4 +2292,35 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function installTestHooks() {
+  if (!new URLSearchParams(location.search).has("testhooks")) return;
+  window.ChoiceTestHooks = {
+    openMenu,
+    openCounts,
+    openCountSettings,
+    openOrderSettings,
+    openAssign,
+    openBrowsePicker,
+    openQueueFailures,
+    showPeople,
+    seedQueueFailures() {
+      state.queue = {
+        failures: [{ from: "sample.jpg", error: "Layout test failure" }],
+        failed: 1,
+        pending: 0,
+        running: 0,
+      };
+      paintQueueBadge();
+    },
+    openConfirm(message) {
+      return ChoiceDialog.confirm(message, {
+        title: "Confirm",
+        confirmLabel: "OK",
+        cancelLabel: "Cancel",
+      });
+    },
+  };
+}
+
+installTestHooks();
 boot();

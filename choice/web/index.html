@@ -29,9 +29,12 @@
 <main id="main"></main>
 <p id="status" class="status" aria-live="polite"></p>
 <footer id="actions" class="actions deck-bar" hidden></footer>
-<dialog id="dialog">
-  <div id="dialog-body"></div>
+<dialog id="dialog" class="app-dialog" aria-labelledby="dialog-title">
+  <div class="dialog-shell">
+    <div id="dialog-body" class="dialog-body"></div>
+  </div>
 </dialog>
+<script src="dialog_ui.js"></script>
 <script src="pile_nav.js"></script>
 <script src="swipe_ui.js"></script>
 <script src="app.js" defer></script>

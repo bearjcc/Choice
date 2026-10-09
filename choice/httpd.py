@@ -49,7 +49,9 @@ _LICENSE = Path(__file__).resolve().parents[1] / "LICENSE"
 _ID = re.compile(r"[a-z0-9_-]+")
 _STATIC = {
     "app.js": "text/javascript; charset=utf-8",
+    "dialog_ui.js": "text/javascript; charset=utf-8",
     "pile_nav.js": "text/javascript; charset=utf-8",
+    "swipe_ui.js": "text/javascript; charset=utf-8",
     "app.css": "text/css; charset=utf-8",
 }
 

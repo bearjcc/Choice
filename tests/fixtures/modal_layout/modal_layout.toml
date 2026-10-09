@@ -1,0 +1,13 @@
+[state]
+dir = "state"
+
+[[sources]]
+id = "examples"
+type = "folder"
+path = "../../../examples"
+
+[[decks]]
+id = "yes-no"
+title = "Yes or no"
+source = "examples"
+mount = "yes-no"

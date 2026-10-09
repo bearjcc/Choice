@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.7 (2026-10-09)
+
+### Fixed
+
+- Phone modals and sheets: viewport-fixed layout with safe-area and `visualViewport` when the keyboard opens, internal scroll, body scroll lock, backdrop tap and Escape; in-app confirms replace `window.confirm` for deck remove and plugin actions.
+- Headless layout checks at 360×640, 390×844, and landscape 844×390 for menu, counts, sort/filter, count display, queue failures, assign, browse picker, and confirm.
+
 ## 0.4.6 (2026-10-09)
 
 ### Fixed
