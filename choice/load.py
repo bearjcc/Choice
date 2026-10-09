@@ -220,6 +220,7 @@ class Deck:
     source_type: str | None = None
     allow_undo: bool = True
     show_filename: bool = False
+    pair_layout: str = "auto"
     # Set per request. None is the shared log.
     actor: str | None = None
     private_feed: bool = False
@@ -272,6 +273,10 @@ class Deck:
         out["counts"] = public_counts(self)
         out["allow_undo"] = self.allow_undo
         out["show_filename"] = self.show_filename
+        if self.pair_layout and self.pair_layout != "auto":
+            out["pair_layout"] = self.pair_layout
+        elif self.pair_layout:
+            out["pair_layout"] = "auto"
         return out
 
 
@@ -538,6 +543,14 @@ def _from_config(folder: Path, data: dict, warnings: list[str] | None = None) ->
         deck.allow_undo = False
     if data.get("show_filename") is True:
         deck.show_filename = True
+    show_cfg = data.get("show")
+    layout_raw = data.get("pair_layout")
+    if isinstance(show_cfg, dict) and show_cfg.get("pair_layout"):
+        layout_raw = show_cfg.get("pair_layout")
+    if isinstance(layout_raw, str):
+        layout = layout_raw.strip().lower().replace("-", "_")
+        if layout in {"auto", "stack", "side_by_side", "sidebyside"}:
+            deck.pair_layout = "side_by_side" if layout == "sidebyside" else layout
     src_kind = str(source.get("type") or "files")
     if src_kind in {"images", "files"} and (
         source.get("output")

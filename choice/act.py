@@ -62,15 +62,15 @@ _LOG_SNAP: LruDict[str, tuple[int, int, list[dict]]] = LruDict(64)
 def decide(deck: Deck, item_id: str, direction: str, note: str | None) -> dict:
     action = deck.action(direction)
     if action is None:
-        return _fail(f"Unknown action '{direction}'.")
+        return _reject(deck, item_id, f"Unknown action '{direction}'.")
     note = (note or "").strip()
     if len(note) > 500:
-        return _fail("Note is longer than 500 characters.")
+        return _reject(deck, item_id, "Note is longer than 500 characters.")
 
     with _lock(deck):
         prior = _choices(deck).get(item_id)
         if prior is not None and not prior.get("later"):
-            if prior.get("direction") == action.id and (prior.get("note") or "") == note:
+            if prior.get("direction") == action.id:
                 label = prior.get("label") or action.label
                 title = prior.get("file") or item_id
                 return {
@@ -81,16 +81,16 @@ def decide(deck: Deck, item_id: str, direction: str, note: str | None) -> dict:
                 }
             scan = deck.folder_scan
             if scan is not None and scan.output == "sort" and prior.get("file_op"):
-                return _fail("That card is already decided.")
+                return _reject(deck, item_id, "That card is already decided.")
 
     try:
         item = _item_for_decide(deck, item_id)
     except DeckProblem as exc:
-        return _fail(str(exc))
+        return _reject(deck, item_id, str(exc))
     if item is None:
-        return _fail("That card is not in the pile.")
+        return _reject(deck, item_id, "That card is not in the pile.")
     if _plugin_done(item):
-        return _fail("That card was already decided elsewhere.")
+        return _reject(deck, item_id, "That card was already decided elsewhere.")
 
     with _lock(deck):
         token = uuid.uuid4().hex
@@ -128,7 +128,7 @@ def decide(deck: Deck, item_id: str, direction: str, note: str | None) -> dict:
             if deck.hook and deck.hook_required:
                 _run_hook(deck, _hook_body("decide", deck, item, record))
         except _OpError as exc:
-            return _fail(str(exc))
+            return _reject(deck, item_id, str(exc))
 
         _append(deck, record)
         _fire_decide_test_hook("after_log")
@@ -208,7 +208,7 @@ def undo(deck: Deck) -> dict:
             if deck.hook and deck.hook_required:
                 _run_hook(deck, _hook_body("undo", deck, item, latest))
         except _OpError as exc:
-            return _fail(str(exc))
+            return _reject(deck, item_id, str(exc))
         _append(deck, {"type": "undo", "ref": latest["id"], "item": latest["item"], "ts": _now()})
         bust_item_cache(deck, invalidate_folder=False)
         if deck.hook and not deck.hook_required:
@@ -363,12 +363,13 @@ def progress(
     *,
     limit: int = 0,
     offset: int = 0,
+    after: str | None = None,
 ) -> dict:
     """Counts, tally, and the cards still to show. Caller may pass items it already loaded."""
     if items is None and deck.folder_scan is not None:
-        return _folder_progress(deck, pending, offset, limit)
+        return _folder_progress(deck, pending, offset, limit, after=after)
     if items is None and deck.plugin is not None and limit > 0:
-        return _plugin_progress_page(deck, pending, offset, limit)
+        return _plugin_progress_page(deck, pending, offset, limit, after=after)
     try:
         flow = view(deck, items)
     except DeckProblem as exc:
@@ -424,7 +425,16 @@ def progress(
     return out
 
 
-def _plugin_progress_page(deck: Deck, pending: bool, offset: int, limit: int) -> dict:
+def _plugin_progress_page(
+    deck: Deck,
+    pending: bool,
+    offset: int,
+    limit: int,
+    *,
+    after: str | None = None,
+) -> dict:
+    from choice.pile_page import page_after
+
     choices = _choices(deck)
     snap = snapshot(deck)
     warnings: list[str] = []
@@ -434,21 +444,29 @@ def _plugin_progress_page(deck: Deck, pending: bool, offset: int, limit: int) ->
     else:
         items, warnings = cached_load_items(deck)
         ordered = [item.id for item in items]
-    pile: list[str] = []
-    decided = 0
-    for rid in ordered:
-        choice = choices.get(rid)
-        log_done = choice is not None and not choice.get("later")
-        if log_done:
-            decided += 1
-            if pending:
-                continue
-        pile.append(rid)
-    page_ids = pile[offset : offset + limit]
     if items is None:
         items, more = cached_load_items(deck)
         warnings = list(more) + warnings
     by_id = {item.id: item for item in items}
+    pile: list[str] = []
+    decided = 0
+    for rid in ordered:
+        item = by_id.get(rid)
+        choice = choices.get(rid)
+        log_done = choice is not None and not choice.get("later")
+        done_elsewhere = item is not None and _plugin_done(item)
+        if log_done or done_elsewhere:
+            decided += 1
+            if pending:
+                continue
+        pile.append(rid)
+    if after is not None:
+        page_ids, next_after = page_after(pile, after or None, limit)
+    else:
+        page_ids = pile[offset : offset + limit]
+        next_after = (
+            page_ids[-1] if page_ids and offset + len(page_ids) < len(pile) else None
+        )
     visible = []
     for rid in page_ids:
         item = by_id.get(rid)
@@ -460,9 +478,9 @@ def _plugin_progress_page(deck: Deck, pending: bool, offset: int, limit: int) ->
         if choice and choice.get("label"):
             shown["choice_label"] = choice.get("label")
         visible.append(shown)
-    total = len(ordered)
+    total = decided + len(pile) if pending else len(ordered)
     left = len(pile)
-    return {
+    out = {
         "ok": True,
         "total": total,
         "decided": decided,
@@ -473,18 +491,26 @@ def _plugin_progress_page(deck: Deck, pending: bool, offset: int, limit: int) ->
         "warnings": warnings,
         "pending": pending,
         "meter": True,
+        "next_after": next_after,
     }
     _attach_undo_meta(deck, out)
     return out
 
 
-def _folder_progress(deck: Deck, pending: bool, offset: int, limit: int) -> dict:
+def _folder_progress(
+    deck: Deck,
+    pending: bool,
+    offset: int,
+    limit: int,
+    *,
+    after: str | None = None,
+) -> dict:
     from choice.count_prefs import today_count_label
     from choice.folder_index import item_for_id, progress_page
 
     choices = _choices(deck)
-    page_ids, total, decided, left, warnings = progress_page(
-        deck, choices, pending, offset, limit
+    page_ids, total, decided, left, warnings, next_after = progress_page(
+        deck, choices, pending, offset, limit, after=after
     )
     visible = []
     for rid in page_ids:
@@ -510,6 +536,7 @@ def _folder_progress(deck: Deck, pending: bool, offset: int, limit: int) -> dict
         "pending": pending,
         "meter": True,
         "view": _public_view(deck),
+        "next_after": next_after,
     }
     if _counts_hidden(deck):
         out["meter"] = False
@@ -971,6 +998,24 @@ def _now() -> str:
 
 def _fail(message: str) -> dict:
     return {"ok": False, "message": message}
+
+
+def _reject(deck: Deck, item_id: str, message: str, **extra) -> dict:
+    row = {
+        "type": "reject",
+        "item": item_id,
+        "reason": message,
+        "ts": _now(),
+    }
+    row.update(extra)
+    path = deck.state_dir / "rejects.jsonl"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
+    return _fail(message)
 
 
 def _plugin_handle(deck: Deck, item: Item, direction: str, note: str) -> dict:

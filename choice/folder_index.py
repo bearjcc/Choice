@@ -249,6 +249,15 @@ def _scan_locked(deck: Deck) -> None:
     purged = _purge_sorted_from_index(idx, root, skip_dirs)
     if purged:
         changed = True
+    missing = [rid for rid in idx.ordered if not (root / rid).is_file()]
+    if missing:
+        gone_set = set(missing)
+        idx.ordered = [rid for rid in idx.ordered if rid not in gone_set]
+        for rid in missing:
+            idx.meta.pop(rid, None)
+        idx.pending_front = [r for r in idx.pending_front if r not in gone_set]
+        known -= gone_set
+        changed = True
     if changed:
         idx.generation += 1
     idx.stale = False
@@ -475,7 +484,9 @@ def progress_page(
     pending: bool,
     offset: int,
     limit: int,
-) -> tuple[list[str], int, int, int, list[str]]:
+    *,
+    after: str | None = None,
+) -> tuple[list[str], int, int, int, list[str], str | None]:
     """Return page ids, total, decided, left, warnings."""
     scan = deck.folder_scan
     assert scan is not None
@@ -488,7 +499,7 @@ def progress_page(
         schedule_scan(deck)
     warnings: list[str] = []
     if not idx.ordered:
-        return [], 0, 0, 0, warnings
+        return [], 0, 0, 0, warnings, None
     from choice.pile_view import view_order_ids
     from choice.view_prefs import load_view_prefs
 
@@ -505,12 +516,18 @@ def progress_page(
                 continue
         pile.append(rid)
     pile = apply_pending_front(idx, pile)
-    total = len(ordered)
     left = len(pile)
+    total = decided + left
+    from choice.pile_page import page_after
+
     if limit <= 0:
         limit = min(200, len(pile))
-    page = pile[offset : offset + limit]
-    return page, total, decided, left, warnings
+    if after is not None:
+        page, next_after = page_after(pile, after or None, limit)
+    else:
+        page = pile[offset : offset + limit]
+        next_after = page[-1] if page and offset + len(page) < len(pile) else None
+    return page, total, decided, left, warnings, next_after
 
 
 def admit_if_on_disk(deck: Deck, item_id: str) -> bool:

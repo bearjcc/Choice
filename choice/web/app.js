@@ -890,27 +890,26 @@ async function openDeck(id, push) {
   }
 }
 
-function itemsApiPath(offset, limit) {
+function itemsApiPath(cursor, limit) {
   const w = state.mediaWidth || 1280;
-  return (
+  let path =
     "/api/decks/" +
     encodeURIComponent(state.deckId) +
     "/items?pending=" +
     (state.pending ? "1" : "0") +
     "&limit=" +
     limit +
-    "&offset=" +
-    offset +
     "&w=" +
-    w
-  );
+    w;
+  if (cursor) path += "&after=" + encodeURIComponent(cursor);
+  return path;
 }
 
-function applyPagedMeta(data, offset) {
+function applyPagedMeta(data) {
   const n = (data.items || []).length;
   state.paged = {
-    nextOffset: offset + n,
-    hasMore: n > 0 && offset + n < data.left,
+    nextAfter: data.next_after || null,
+    hasMore: !!data.next_after,
     loading: false,
   };
 }
@@ -924,7 +923,7 @@ async function ensureCardsAhead() {
   state.paged.loading = true;
   let added = false;
   try {
-    const data = await api(itemsApiPath(state.paged.nextOffset, state.pageSize));
+    const data = await api(itemsApiPath(state.paged.nextAfter, state.pageSize));
     if (!data.ok || !data.items || !data.items.length) {
       state.paged.hasMore = false;
       return false;
@@ -937,8 +936,8 @@ async function ensureCardsAhead() {
         added = true;
       }
     });
-    state.paged.nextOffset += data.items.length;
-    state.paged.hasMore = state.paged.nextOffset < data.left;
+    state.paged.nextAfter = data.next_after || null;
+    state.paged.hasMore = !!data.next_after;
     state.payload.left = data.left;
     state.payload.total = data.total;
     state.payload.decided = data.decided;
@@ -1043,7 +1042,7 @@ async function loadItems(storedBlind) {
   let data;
   try {
     updateMediaWidth();
-    data = await api(itemsApiPath(0, state.pageSize));
+    data = await api(itemsApiPath(null, state.pageSize));
   } catch (_err) {
     return showProblem("Could not reach Choice.");
   }
@@ -1052,7 +1051,7 @@ async function loadItems(storedBlind) {
     return false;
   }
   state.payload = data;
-  applyPagedMeta(data, 0);
+  applyPagedMeta(data);
   if (storedBlind !== undefined) {
     state.blind = storedBlind === null ? !!data.blind : storedBlind === "1";
   }
@@ -1268,11 +1267,20 @@ function paintGallery(card, item) {
   appendChips(card, item);
 }
 
+function pairLayoutMode() {
+  const layout = (state.payload && state.payload.pair_layout) || "auto";
+  if (layout === "stack") return "stack";
+  if (layout === "side_by_side") return "side";
+  return isWide() ? "side" : "stack";
+}
+
 function paintPair(card, item) {
   const media = item.sides.some((side) => side.media);
+  const layout = pairLayoutMode();
   card.classList.add("pair");
   if (media) card.classList.add("has-media");
-  if (!isWide()) card.classList.add("pair-stack");
+  if (layout === "stack") card.classList.add("pair-stack");
+  if (layout === "side") card.classList.add("pair-side-by-side");
   if (item.title || item.body || callText(item) || item.mark) {
     const pad = el("div", "pad");
     if (item.title) pad.append(el("h2", null, item.title));
@@ -1283,10 +1291,10 @@ function paintPair(card, item) {
     card.append(pad);
   }
   const sides = el("div", media ? "sides media" : "sides");
-  if (!isWide()) sides.classList.add("stacked");
+  if (layout === "stack") sides.classList.add("stacked");
   item.sides.forEach((side, index) => {
     const pane = el("section", side.media ? "side has-media" : "side");
-    if (!isWide()) pane.classList.add(index === 0 ? "stack-top" : "stack-under");
+    if (layout === "stack") pane.classList.add(index === 0 ? "stack-top" : "stack-under");
     pane.setAttribute("role", "button");
     pane.tabIndex = 0;
     const pick = side.key === "b" ? "right" : "left";
@@ -1475,7 +1483,7 @@ function actionButton(spec, label) {
 
 function bindDrag(card, item) {
   let drag = null;
-  const pairMobile = item && item.kind === "pair" && !isWide();
+  const pairMobile = item && item.kind === "pair" && pairLayoutMode() === "stack";
   const hint = el("div", "drag-hint");
   const hintLabel = el("span", "drag-hint-label");
   hint.append(hintLabel);
@@ -1673,6 +1681,7 @@ async function act(direction) {
     data = await api("/api/decks/" + encodeURIComponent(state.deckId) + "/decide", {
       item: item.id,
       direction: direction,
+      deck_id: state.deckId,
     });
   } catch (_err) {
     data = { ok: false, message: "Could not reach Choice." };

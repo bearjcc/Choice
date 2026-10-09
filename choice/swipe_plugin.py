@@ -43,13 +43,19 @@ class SwipePlugin:
         item_id: str,
         item: dict | None = None,
         index: int | None = None,
+        side: str | None = None,
     ) -> tuple[bytes, str] | None:
         fn = getattr(self.obj, "media_bytes", None)
         if not callable(fn):
             return None
         row = item if item is not None else {"id": item_id}
         result = None
-        if index is not None and _accepts(fn, "n"):
+        if side and _accepts(fn, "side"):
+            if index is not None and _accepts(fn, "n"):
+                result = fn(row, side=side, n=index)
+            else:
+                result = fn(row, side=side)
+        elif index is not None and _accepts(fn, "n"):
             result = fn(row, n=index)
         elif _accepts(fn, "item_id") and not _accepts(fn, "n") and item is None:
             result = fn(item_id)

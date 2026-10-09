@@ -129,6 +129,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._feed(parse_qs(parsed.query))
         if parts == ["api", "config"]:
             return self._config_get()
+        if parts == ["api", "reload"]:
+            return self._reload_library()
         if parts == ["api", "source-types"]:
             return self._json(200, {"ok": True, "types": source_types()})
         if parts == ["api", "browse"]:
@@ -155,6 +157,8 @@ class Handler(BaseHTTPRequestHandler):
         body = self._json_body()
         if body is None:
             return
+        if parts == ["api", "reload"]:
+            return self._reload_library()
         if parts == ["api", "config"]:
             return self._config_save(body)
         if parts == ["api", "secrets"]:
@@ -191,18 +195,42 @@ class Handler(BaseHTTPRequestHandler):
         if kind == "undo":
             result = undo(deck)
         else:
+            item_id = str(body.get("item") or "")
+            body_deck = str(body.get("deck_id") or body.get("deck") or "").strip()
+            if body_deck and body_deck != deck.id:
+                from choice.act import _reject
+
+                result = _reject(
+                    deck,
+                    item_id,
+                    "That card belongs to another deck.",
+                    deck_id=deck.id,
+                    expected_deck=body_deck,
+                )
+                self._json(409, result)
+                return
             result = decide(
                 deck,
-                str(body.get("item") or ""),
+                item_id,
                 str(body.get("direction") or ""),
                 body.get("note"),
             )
-        self._json(200 if result.get("ok") else 400, result)
+        code = 200 if result.get("ok") else 400
+        self._json(code, result)
 
     def _library_path(self) -> Path:
         if self.server.config_path is not None:
             return self.server.config_path
         return self.server.choice_root
+
+    def _reload_library(self):
+        from choice.open_cache import reload_library
+
+        try:
+            reload_library(self._library_path())
+        except Exception as exc:
+            return self._json(500, {"ok": False, "message": str(exc)})
+        return self._json(200, {"ok": True, "message": "Reloaded."})
 
     def _index(self, query):
         try:
@@ -285,9 +313,13 @@ class Handler(BaseHTTPRequestHandler):
         pending = query.get("pending", ["1"])[0] != "0"
         limit = int((query.get("limit") or ["0"])[0] or 0)
         offset = int((query.get("offset") or ["0"])[0] or 0)
+        after_raw = (query.get("after") or [""])[0]
+        after = str(after_raw).strip() or None
         if deck.folder_scan is not None and limit <= 0:
             limit = 200
-        snap = progress(deck, pending=pending, limit=limit, offset=offset)
+        snap = progress(
+            deck, pending=pending, limit=limit, offset=offset, after=after
+        )
         if limit > 0 and snap.get("ok") and snap.get("items") and deck.folder_scan is None:
             items = snap["items"]
             paged, token = page_items(deck.id, items, offset=offset, limit=limit)
@@ -321,7 +353,12 @@ class Handler(BaseHTTPRequestHandler):
             if item is None:
                 return self._json(404, {"ok": False, "message": "No such image."})
             row = item.plugin_row
-            blob = plugin.media_bytes(item_id, item=row, index=image_index)
+            blob = plugin.media_bytes(
+                item_id,
+                item=row,
+                index=image_index,
+                side=side_key or None,
+            )
             if blob:
                 data, ctype = blob[0], blob[1]
                 identity = self._media_cache_identity(

@@ -22,10 +22,10 @@ class Deck:
             }
         ]
 
-    def media_bytes(self, row, n=None):
+    def media_bytes(self, row, n=None, side=None):
         if PATH:
             with open(PATH, "w", encoding="utf-8") as handle:
-                handle.write(json.dumps({"row": row, "n": n}))
+                handle.write(json.dumps({"row": row, "n": n, "side": side}))
         return (b"\x89PNG\r\n", "image/png")
 
     def handle(self, item_id, direction, note=None):

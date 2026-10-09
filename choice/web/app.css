@@ -591,6 +591,20 @@ main {
   overflow: hidden;
 }
 
+.card.pair.pair-side-by-side .sides {
+  flex-direction: row;
+  align-items: stretch;
+}
+
+.card.pair.pair-side-by-side .sides.media {
+  gap: 10px;
+}
+
+.card.pair.pair-side-by-side .side {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
 .pair-stack .side.stack-top {
   position: relative;
   z-index: 1;

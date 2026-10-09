@@ -52,6 +52,7 @@ class WorkJob:
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
     retry_after: float = 0.0
+    cancel_requested: bool = False
     file_op: dict | None = None
     plugin: dict | None = None
     deck_id: str = ""
@@ -74,6 +75,7 @@ class WorkJob:
             created_at=float(row.get("created_at") or 0),
             updated_at=float(row.get("updated_at") or 0),
             retry_after=float(row.get("retry_after") or 0),
+            cancel_requested=bool(row.get("cancel_requested")),
             file_op=row.get("file_op") if isinstance(row.get("file_op"), dict) else None,
             plugin=row.get("plugin") if isinstance(row.get("plugin"), dict) else None,
             deck_id=str(row.get("deck_id") or ""),
@@ -279,8 +281,14 @@ def cancel_for_decision(deck: Deck, decision_id: str) -> int:
         for job in jobs:
             if job.decision_id != decision_id:
                 continue
+            if job.kind not in {"file", "file_reverse"}:
+                continue
             if job.status == "pending":
                 job.status = "cancelled"
+                job.updated_at = time.time()
+                cancelled += 1
+            elif job.status == "running":
+                job.cancel_requested = True
                 job.updated_at = time.time()
                 cancelled += 1
 
@@ -535,9 +543,13 @@ def _worker_loop(state_dir: Path) -> bool:
             if row.id != job.id:
                 continue
             if ok:
-                row.status = "done"
+                if row.cancel_requested:
+                    row.status = "cancelled"
+                else:
+                    row.status = "done"
                 row.last_error = ""
                 row.retry_after = 0.0
+                row.cancel_requested = False
             elif row.status == "cancelled":
                 break
             else:
@@ -622,13 +634,17 @@ def _run_file_job(job: WorkJob) -> bool:
     reverse = job.kind == "file_reverse"
     try:
         if reverse:
-            _reverse_file_op(root, op)
+            if _forward_file_job_active(state_dir, job.decision_id, job.id):
+                raise _RetryLater("forward move still active")
+            _reverse_file_op(root, op, state_dir, job)
         else:
             _apply_file_op(root, op, job, state_dir)
         if job.kind == "file" and str(op.get("op") or "move") == "move":
             src = _under(root, str(op.get("from") or ""))
             if src.is_file():
                 raise MoveNotReady("source remains")
+        return True
+    except _JobCancelled:
         return True
     except (MoveNotReady, _RetryLater) as exc:
         job.last_error = str(exc)
@@ -676,6 +692,22 @@ def _run_plugin_job(job: WorkJob) -> bool:
         return False
 
 
+def _cancel_requested(state_dir: Path, job_id: str) -> bool:
+    for row in _snapshot_jobs(state_dir):
+        if row.id == job_id:
+            return row.cancel_requested or row.status == "cancelled"
+    return False
+
+
+def _forward_file_job_active(state_dir: Path, decision_id: str, skip_id: str) -> bool:
+    for row in _snapshot_jobs(state_dir):
+        if row.decision_id != decision_id or row.id == skip_id:
+            continue
+        if row.kind == "file" and row.status in {"pending", "running"}:
+            return True
+    return False
+
+
 def _apply_file_op(
     root: Path, file_op: dict, job: WorkJob, state_dir: Path
 ) -> None:
@@ -700,7 +732,13 @@ def _apply_file_op(
                 deck = _deck_resolver(job.deck_id, job.actor)
                 if deck is not None:
                     patch_decision_file_op(deck, job.decision_id, dict(job.file_op or {}))
+        if _cancel_requested(state_dir, job.id):
+            raise _JobCancelled()
         move_file(src, dest)
+        if _cancel_requested(state_dir, job.id):
+            if dest.is_file() and not src.is_file():
+                move_file(dest, src)
+            raise _JobCancelled()
         if src.is_file():
             raise MoveNotReady("source remains")
 
@@ -719,7 +757,9 @@ def _replan_dest_locked(
     return str(file_op.get("to") or "")
 
 
-def _reverse_file_op(root: Path, file_op: dict) -> None:
+def _reverse_file_op(
+    root: Path, file_op: dict, state_dir: Path, job: WorkJob
+) -> None:
     src = _under(root, str(file_op.get("from") or ""))
     dest = _under(root, str(file_op.get("to") or ""))
     if file_op.get("op") == "copy":
@@ -730,10 +770,14 @@ def _reverse_file_op(root: Path, file_op: dict) -> None:
         if src.is_file():
             return
         raise _RetryLater("destination missing for undo")
-    if src.exists():
+    if src.is_file():
+        if files_equal(src, dest):
+            remove_source(dest)
         return
     lock = _dest_lock(str(src.parent))
     with lock:
+        if _cancel_requested(state_dir, job.id):
+            raise _JobCancelled()
         move_file(dest, src)
 
 
@@ -757,6 +801,10 @@ def _under(root: Path, relative: str) -> Path:
 
 
 class _RetryLater(Exception):
+    pass
+
+
+class _JobCancelled(Exception):
     pass
 
 

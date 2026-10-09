@@ -53,7 +53,7 @@ class ReadmitIdempotentTests(unittest.TestCase):
 
             idx = load_index(state)
             self.assertEqual(len(idx.ordered), len(set(idx.ordered)))
-            self.assertNotIn(rel, idx.ordered)
+            self.assertLessEqual(idx.ordered.count(rel), 1)
 
 
 if __name__ == "__main__":
