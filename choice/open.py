@@ -61,6 +61,8 @@ def open_config(path: Path) -> Opened:
         counts_raw = spec.options.get("counts")
         if counts_raw is not None and deck.counts_defaults is None:
             deck.counts_defaults = counts_raw
+        if spec.options.get("allow_undo") is False or spec.options.get("undo") is False:
+            deck.allow_undo = False
         decks.append(deck)
     return Opened(decks=decks, direct=False)
 

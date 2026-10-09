@@ -56,6 +56,7 @@ def decide(deck: Deck, item_id: str, direction: str, note: str | None) -> dict:
                     "ok": True,
                     "message": f"{label}: {title} (already recorded)",
                     "can_undo": _has_undo(deck),
+                    "allow_undo": _undo_allowed(deck),
                 }
             scan = deck.folder_scan
             if scan is not None and scan.output == "sort" and prior.get("file_op"):
@@ -117,10 +118,12 @@ def decide(deck: Deck, item_id: str, direction: str, note: str | None) -> dict:
                 _run_hook(deck, _hook_body("decide", deck, item, record))
             except _OpError as exc:
                 message += f" Saved here, but the hook failed: {exc}"
-        return {"ok": True, "message": message, "can_undo": True}
+        return {"ok": True, "message": message, "can_undo": _has_undo(deck), "allow_undo": _undo_allowed(deck)}
 
 
 def undo(deck: Deck) -> dict:
+    if not _undo_allowed(deck):
+        return _fail("Undo is disabled for this deck.")
     with _lock(deck):
         latest = _latest_undoable(deck)
         if latest is None:
@@ -377,6 +380,7 @@ def progress(
         out["meter"] = flow.meter
     if flow.replay is not None:
         out["replay"] = flow.replay
+    _attach_undo_meta(deck, out)
     return out
 
 
@@ -430,6 +434,8 @@ def _plugin_progress_page(deck: Deck, pending: bool, offset: int, limit: int) ->
         "pending": pending,
         "meter": True,
     }
+    _attach_undo_meta(deck, out)
+    return out
 
 
 def _folder_progress(deck: Deck, pending: bool, offset: int, limit: int) -> dict:
@@ -471,6 +477,7 @@ def _folder_progress(deck: Deck, pending: bool, offset: int, limit: int) -> dict
         label = today_count_label(deck)
         if label:
             out["count_label"] = label
+    _attach_undo_meta(deck, out)
     return out
 
 
@@ -569,8 +576,44 @@ def _choices(deck: Deck) -> dict[str, dict]:
     return latest
 
 
+def _undo_allowed(deck: Deck) -> bool:
+    return bool(getattr(deck, "allow_undo", True))
+
+
 def _has_undo(deck: Deck) -> bool:
-    return _latest_undoable(deck) is not None
+    return _undo_allowed(deck) and _latest_undoable(deck) is not None
+
+
+def _undo_hint(deck: Deck) -> dict | None:
+    if not _undo_allowed(deck):
+        return None
+    latest = _latest_undoable(deck)
+    if latest is None:
+        return None
+    item_id = str(latest.get("item") or "")
+    hint: dict = {
+        "item": item_id,
+        "direction": latest.get("direction"),
+        "label": latest.get("label"),
+        "file": latest.get("file"),
+        "later": bool(latest.get("later")),
+    }
+    if deck.folder_scan is not None and item_id:
+        from choice.folder_index import item_for_id
+
+        row = item_for_id(deck, item_id)
+        if row is not None:
+            hint["card"] = row.public(latest.get("value"))
+    return hint
+
+
+def _attach_undo_meta(deck: Deck, out: dict) -> None:
+    out["allow_undo"] = _undo_allowed(deck)
+    out["can_undo"] = _has_undo(deck)
+    if out["can_undo"]:
+        hint = _undo_hint(deck)
+        if hint:
+            out["undo_hint"] = hint
 
 
 def _latest_undoable(deck: Deck) -> dict | None:

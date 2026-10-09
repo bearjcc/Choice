@@ -38,6 +38,7 @@ _DECK_KEYS = {
     "contest",
     "story",
     "view",
+    "allow_undo",
 }
 _FIELD = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _SOURCE_KEYS = {
@@ -190,6 +191,7 @@ class Deck:
     view_defaults: dict | None = None
     counts_defaults: str | dict | None = None
     source_type: str | None = None
+    allow_undo: bool = True
     # Set per request. None is the shared log.
     actor: str | None = None
     private_feed: bool = False
@@ -240,6 +242,7 @@ class Deck:
         from choice.count_prefs import public_counts
 
         out["counts"] = public_counts(self)
+        out["allow_undo"] = self.allow_undo
         return out
 
 
@@ -502,6 +505,8 @@ def _from_config(folder: Path, data: dict, warnings: list[str] | None = None) ->
         deck.counts_defaults = counts_raw
     elif isinstance(view_raw, dict) and view_raw.get("counts") is not None:
         deck.counts_defaults = view_raw.get("counts")
+    if data.get("allow_undo") is False or data.get("undo") is False:
+        deck.allow_undo = False
     src_kind = str(source.get("type") or "files")
     if src_kind in {"images", "files"} and (
         source.get("output")

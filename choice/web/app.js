@@ -20,6 +20,7 @@ const state = {
   picking: false,
   galleryAt: {},
   anchorAfterLoad: null,
+  lastSwipe: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -1420,9 +1421,13 @@ function appendReport(box, report) {
   }
 }
 
+function undoEnabled() {
+  return !!(state.payload && state.payload.allow_undo !== false);
+}
+
 function paintFabUndo() {
   const fab = $("fab-undo");
-  const show = state.deckId && state.payload && state.payload.can_undo && !isWide();
+  const show = state.deckId && undoEnabled() && state.payload && state.payload.can_undo && !isWide();
   fab.hidden = !show;
   fab.disabled = state.busy || !state.payload || !state.payload.can_undo;
 }
@@ -1442,7 +1447,7 @@ function renderActions() {
     });
     (state.payload.buttons || []).forEach((spec) => row.append(actionButton(spec, spec.label)));
   }
-  if (isWide()) {
+  if (isWide() && undoEnabled()) {
     const undo = el("button", null, "Undo");
     undo.disabled = !state.payload.can_undo || state.busy;
     undo.addEventListener("click", () => undoLast());
@@ -1569,6 +1574,77 @@ function flingCard(card, direction) {
   card.style.transform = "translate(" + dx + "," + dy + ") rotate(" + rot + "deg)";
 }
 
+function unflingCard(card, direction) {
+  if (!card || reduceMotion()) {
+    if (card) card.style.transform = "";
+    return;
+  }
+  const dx = direction === "right" ? "120%" : direction === "left" ? "-120%" : "0";
+  const dy = direction === "up" ? "-120%" : direction === "down" ? "120%" : "0";
+  const rot = direction === "right" ? 8 : direction === "left" ? -8 : 0;
+  card.style.transition = "none";
+  card.style.transform = "translate(" + dx + "," + dy + ") rotate(" + rot + "deg)";
+  requestAnimationFrame(() => {
+    card.style.transition = "transform 180ms ease-out";
+    card.style.transform = "";
+  });
+}
+
+function itemFromUndoHint(hint) {
+  if (hint && hint.card) return hint.card;
+  if (hint && hint._item) return hint._item;
+  if (!hint || !hint.item) return null;
+  return {
+    id: hint.item,
+    title: hint.file || hint.label || hint.item,
+    kind: "file",
+  };
+}
+
+function buildUndoHint() {
+  const hint = state.payload && state.payload.undo_hint;
+  if (hint && hint.item) return hint;
+  if (state.lastSwipe && state.lastSwipe.item) {
+    return {
+      item: state.lastSwipe.item.id,
+      direction: state.lastSwipe.direction,
+      later: !!state.lastSwipe.later,
+      _item: state.lastSwipe.item,
+    };
+  }
+  return null;
+}
+
+function applyOptimisticUndo(hint) {
+  const restored = itemFromUndoHint(hint);
+  if (!restored || !state.payload) return;
+  const items = state.payload.items || [];
+  const nav = pileNav();
+  state.anchorAfterLoad = restored.id;
+  const later = !!hint.later;
+  if (state.pending && !later) {
+    if (nav) {
+      const next = nav.restorePendingUndo(items, state.pos, restored);
+      state.payload.items = next.items;
+      state.pos = next.pos;
+    } else {
+      const idx = items.findIndex((row) => row.id === restored.id);
+      if (idx === -1) items.splice(state.pos, 0, restored);
+      state.pos = items.findIndex((row) => row.id === restored.id);
+    }
+  } else if (nav) {
+    state.pos = nav.syncPosToAnchor(items, state.pos, restored.id);
+  } else {
+    const idx = items.findIndex((row) => row.id === restored.id);
+    state.pos = idx >= 0 ? idx : state.pos;
+  }
+  if (typeof state.payload.decided === "number") {
+    state.payload.decided = Math.max(0, state.payload.decided - 1);
+  }
+  if (typeof state.payload.left === "number") state.payload.left += 1;
+  state.payload.can_undo = false;
+}
+
 function advanceAfterSwipe(itemId, later) {
   const items = (state.payload && state.payload.items) || [];
   if (!items.length) return;
@@ -1607,6 +1683,7 @@ async function act(direction) {
   const snapshot = state.payload;
   const itemId = item.id;
   const later = !!spec.later;
+  state.lastSwipe = { item: { ...item }, direction, later };
   advanceAfterSwipe(itemId, later);
   if (!reduceMotion()) await wait(40);
   state.busy = false;
@@ -1665,18 +1742,45 @@ async function runPluginAction(spec) {
 }
 
 async function undoLast() {
-  if (state.busy || !state.payload || !state.payload.can_undo) return;
+  if (state.busy || !undoEnabled() || !state.payload || !state.payload.can_undo) return;
+  const hint = buildUndoHint();
+  if (!hint || !hint.item) return;
+  const direction = hint.direction || "right";
+  const snapshot = {
+    payload: {
+      ...state.payload,
+      items: (state.payload.items || []).slice(),
+    },
+    pos: state.pos,
+    lastSwipe: state.lastSwipe,
+  };
+  applyOptimisticUndo(hint);
   state.busy = true;
+  renderActions();
+  renderDeck();
+  const card = document.querySelector(".card");
+  unflingCard(card, direction);
+  if (!reduceMotion()) await wait(40);
+  state.busy = false;
+  paintFabUndo();
   let data;
   try {
     data = await api("/api/decks/" + encodeURIComponent(state.deckId) + "/undo", {});
   } catch (_err) {
     data = { ok: false, message: "Could not reach Choice." };
   }
-  if (data.ok && data.item) state.anchorAfterLoad = data.item;
+  if (!data.ok) {
+    state.payload = snapshot.payload;
+    state.pos = snapshot.pos;
+    state.lastSwipe = snapshot.lastSwipe;
+    renderDeck();
+    setStatus(data.message || "Undo failed");
+    paintFabUndo();
+    return;
+  }
+  if (data.item) state.anchorAfterLoad = data.item;
   setStatus(data.message || "");
   const ok = await loadItems();
-  state.busy = false;
   if (ok) renderDeck();
   else paintFabUndo();
 }
@@ -1733,7 +1837,13 @@ function openDetails() {
     row.append(actionButton(spec, label));
   });
   body.append(row);
-  body.append(el("p", "fine", "Arrow keys decide. U undoes. I opens this."));
+  body.append(
+    el(
+      "p",
+      "fine",
+      undoEnabled() ? "Arrow keys decide. U undoes. I opens this." : "Arrow keys decide. I opens this."
+    )
+  );
   const close = el("button", null, "Close");
   close.addEventListener("click", () => $("dialog").close());
   body.append(close);
@@ -1973,7 +2083,7 @@ function onKey(event) {
       return;
     }
   }
-  if (event.key === "u" || event.key === "U") undoLast();
+  if ((event.key === "u" || event.key === "U") && undoEnabled()) undoLast();
   if (event.key === "i" || event.key === "I") openDetails();
 }
 

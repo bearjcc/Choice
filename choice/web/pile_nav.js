@@ -27,9 +27,26 @@
     return (idx + 1) % items.length;
   }
 
+  function restorePendingUndo(items, pos, restoredItem) {
+    const list = items.slice();
+    const id = restoredItem && restoredItem.id;
+    if (!id) return { items: list, pos };
+    const existing = list.findIndex((row) => row.id === id);
+    if (existing >= 0) return { items: list, pos: existing };
+    const insertAt = Math.max(0, Math.min(pos, list.length));
+    list.splice(insertAt, 0, restoredItem);
+    return { items: list, pos: insertAt };
+  }
+
+  function currentItem(items, pos) {
+    return items && items.length && pos >= 0 && pos < items.length ? items[pos] : null;
+  }
+
   root.ChoicePileNav = {
     syncPosToAnchor,
     removePendingSwipe,
     advanceShowAllPos,
+    restorePendingUndo,
+    currentItem,
   };
 })(typeof globalThis !== "undefined" ? globalThis : window);

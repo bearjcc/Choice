@@ -8,6 +8,8 @@
 - Defaults in `deck.json` / `choice.toml` (`view` table or keys); UI changes save to `view_prefs.json` in the deck state dir.
 - Sort metadata cached in `folder_index.json`; view order cached in memory without rescanning.
 - Deck menu: Order and filter (hidden when contest, score, story, or plugin order is fixed).
+- Optimistic undo: restored card returns immediately with a reverse-swipe animation; failed server undo reverts. `undo_hint` on deck payloads for re-anchoring after reload.
+- Per-deck `allow_undo` (or `undo = false`) for quizzes and story decks; hides undo in the UI and rejects server undo.
 - Per-deck count display: `auto`, `on`, or `off` (default in `deck.json` / `choice.toml` as `counts` or `view.counts`; override in `counts_prefs.json`). Auto hides totals for large piles, RSS, Elo (`rated`), story, and endless plugin decks; shows a optional “decisions today” label instead. Home and summary skip scan work when counts are hidden (`folder_stats.json` tracks pile size).
 
 ### Fixed

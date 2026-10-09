@@ -169,6 +169,9 @@ def build_file_deck(
         directions = wire_sort_directions(directions, scan.sort_targets)
     view_defaults = _view_defaults_from_options(options)
     counts_defaults = _counts_defaults_from_options(options)
+    allow_undo = True
+    if options.get("allow_undo") is False or options.get("undo") is False:
+        allow_undo = False
     deck = Deck(
         id=deck_id,
         title=title,
@@ -181,6 +184,7 @@ def build_file_deck(
         folder_scan=scan,
         view_defaults=view_defaults,
         counts_defaults=counts_defaults,
+        allow_undo=allow_undo,
         _load=lambda: (
             __import__("choice.folder_index", fromlist=["load_items_for"]).load_items_for(
                 folder.resolve(), state_dir, scan

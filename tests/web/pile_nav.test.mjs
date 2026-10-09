@@ -66,3 +66,21 @@ test("undo: anchor restores undone card index", () => {
   assert.equal(afterUndo, 0);
   assert.equal(restored[afterUndo].id, "a");
 });
+
+test("undo pending: restored card is current", () => {
+  const items = [item("b"), item("c")];
+  const pos = 0;
+  const next = nav.restorePendingUndo(items, pos, item("a"));
+  const cur = nav.currentItem(next.items, next.pos);
+  assert.ok(cur);
+  assert.equal(cur.id, "a");
+});
+
+test("undo pending: after swipe then optimistic restore shows undone card", () => {
+  let items = [item("a"), item("b"), item("c")];
+  let pos = 0;
+  const afterSwipe = nav.removePendingSwipe(items, pos, "a");
+  assert.equal(nav.currentItem(afterSwipe.items, afterSwipe.pos).id, "b");
+  const afterUndo = nav.restorePendingUndo(afterSwipe.items, afterSwipe.pos, item("a"));
+  assert.equal(nav.currentItem(afterUndo.items, afterUndo.pos).id, "a");
+});
