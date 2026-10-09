@@ -631,11 +631,12 @@ def _same_volume(a: Path, b: Path) -> bool:
 
 
 def _safe_move(src: Path, dest: Path) -> None:
-    if _same_volume(src, dest):
-        shutil.move(str(src), str(dest))
-        return
-    _safe_copy(src, dest)
-    src.unlink()
+    from choice.file_moves import MoveNotReady, move_file
+
+    try:
+        move_file(src, dest)
+    except MoveNotReady as exc:
+        raise _OpError(str(exc)) from exc
 
 
 def _safe_copy(src: Path, dest: Path) -> None:

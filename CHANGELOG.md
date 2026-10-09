@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.5 (2026-10-09)
+
+### Fixed
+
+- Sort file moves use `os.replace` on the same volume (no copy-and-delete fallback). Blocked renames stay queued with backoff until the source is gone.
+- Cross-volume moves copy via a temp file, fsync, atomic rename, then require a successful source delete before the job completes.
+- Reconcile removes identical source/destination duplicates, or renames conflicting destinations with a `.choice-conflict-*` suffix and logs to `move_conflicts.jsonl`.
+
+### Tests
+
+- Stranded duplicate after a partial move plus restart; locked source delete retries through reconcile.
+
 ## 0.3.4 (2026-10-09)
 
 ### Fixed

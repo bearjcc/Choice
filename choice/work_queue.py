@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import threading
 import time
 import uuid
@@ -15,6 +14,15 @@ from pathlib import Path
 
 from choice.atomic_io import atomic_replace
 from choice.bounded_cache import LruDict
+from choice.file_moves import (
+    MoveNotReady,
+    conflict_dest_path,
+    copy_file,
+    files_equal,
+    log_move_conflict,
+    move_file,
+    remove_source,
+)
 from choice.load import Deck, inside
 
 _QUEUE_NAME = "work_queue.json"
@@ -235,6 +243,42 @@ def reconcile_deck(deck: Deck) -> int:
                 continue
             to_rel = str(op.get("to") or "")
             dest = (root / to_rel).resolve() if to_rel else None
+            if dest is not None and dest.is_file() and src.is_file():
+                if files_equal(src, dest):
+                    try:
+                        remove_source(src)
+                    except MoveNotReady:
+                        jobs.append(
+                            WorkJob(
+                                id=uuid.uuid4().hex,
+                                decision_id=decision_id,
+                                kind="file",
+                                file_op=dict(op),
+                                deck_id=deck.id,
+                                actor=deck.actor or "",
+                                deck_root=str(root),
+                                state_dir=str(deck.state_dir.resolve()),
+                            )
+                        )
+                        active.add(decision_id)
+                        n += 1
+                    continue
+                try:
+                    renamed = conflict_dest_path(dest)
+                    dest.rename(renamed)
+                    log_move_conflict(
+                        deck.state_dir,
+                        {
+                            "type": "move_conflict",
+                            "decision_id": decision_id,
+                            "from": from_rel,
+                            "to": to_rel,
+                            "renamed_to": str(renamed.relative_to(root).as_posix()),
+                            "ts": time.time(),
+                        },
+                    )
+                except OSError:
+                    pass
             if dest is not None and dest.is_file() and not src.is_file():
                 continue
             from choice.folder_index import readmit_path
@@ -378,7 +422,7 @@ def _run_file_job(job: WorkJob) -> bool:
         else:
             _apply_file_op(root, op)
         return True
-    except _RetryLater as exc:
+    except (MoveNotReady, _RetryLater) as exc:
         job.last_error = str(exc)
         return False
     except Exception as exc:
@@ -427,18 +471,17 @@ def _run_plugin_job(job: WorkJob) -> bool:
 def _apply_file_op(root: Path, file_op: dict) -> None:
     src = _under(root, str(file_op.get("from") or ""))
     dest = _under(root, str(file_op.get("to") or ""))
-    if dest.is_file() and not src.is_file():
-        return
-    if not src.is_file():
-        if dest.is_file():
-            return
-        raise _RetryLater("source missing")
-    dest.parent.mkdir(parents=True, exist_ok=True)
+    op = str(file_op.get("op") or "move")
     lock = _dest_lock(str(dest.parent))
     with lock:
-        if dest.is_file():
+        if op == "copy":
+            copy_file(src, dest)
             return
-        _safe_move_retry(src, dest)
+        if not src.is_file():
+            if dest.is_file():
+                return
+            raise _RetryLater("source missing")
+        move_file(src, dest)
 
 
 def _reverse_file_op(root: Path, file_op: dict) -> None:
@@ -454,33 +497,9 @@ def _reverse_file_op(root: Path, file_op: dict) -> None:
         raise _RetryLater("destination missing for undo")
     if src.exists():
         return
-    src.parent.mkdir(parents=True, exist_ok=True)
     lock = _dest_lock(str(src.parent))
     with lock:
-        _safe_move_retry(dest, src)
-
-
-def _safe_move_retry(src: Path, dest: Path) -> None:
-    last: Exception | None = None
-    for delay in (*_BACKOFF, 5.0, 5.0):
-        try:
-            if _same_volume(src, dest):
-                shutil.move(str(src), str(dest))
-            else:
-                shutil.copy2(src, dest)
-                src.unlink()
-            return
-        except OSError as exc:
-            last = exc
-            time.sleep(delay)
-    raise _RetryLater(str(last) if last else "move failed")
-
-
-def _same_volume(a: Path, b: Path) -> bool:
-    try:
-        return os.stat(a).st_dev == os.stat(b.parent).st_dev
-    except OSError:
-        return True
+        move_file(dest, src)
 
 
 def _dest_lock(key: str) -> threading.Lock:
