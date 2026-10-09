@@ -12,6 +12,7 @@
 ### Fixed
 
 - Legacy folder listing uses natural sort so `12` orders before `117`.
+- Sort moves refresh directory mtimes in the index instead of marking the tree outdated; home counts stay visible during background scans (`N left · scanning`).
 
 ## 0.3.7 (2026-10-09)
 

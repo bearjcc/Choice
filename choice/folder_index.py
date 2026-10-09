@@ -244,23 +244,55 @@ def _scan_locked(deck: Deck) -> None:
     save_index(state_dir, idx, save_meta=changed)
 
 
-def apply_move(state_dir: Path, from_rel: str, to_rel: str, *, reverse: bool = False) -> None:
+def apply_move(
+    state_dir: Path,
+    from_rel: str,
+    to_rel: str,
+    *,
+    reverse: bool = False,
+    deck: Deck | None = None,
+) -> None:
     idx = load_index(state_dir)
+    touched: list[str] = []
     if reverse:
         if from_rel and from_rel not in idx.ordered:
             idx.ordered.append(from_rel)
+            touched = [from_rel]
             idx.generation += 1
             idx.stale = False
+            if deck is not None:
+                _refresh_dir_mtimes(deck, idx, touched)
             save_index(state_dir, idx)
         return
     if from_rel in idx.ordered:
         idx.ordered = [rid for rid in idx.ordered if rid != from_rel]
+        touched = [from_rel]
+        if to_rel:
+            touched.append(to_rel)
         idx.generation += 1
         idx.stale = False
+        if deck is not None:
+            _refresh_dir_mtimes(deck, idx, touched)
         save_index(state_dir, idx)
 
 
-def readmit_path(state_dir: Path, rel: str) -> bool:
+def _refresh_dir_mtimes(deck: Deck, idx: FolderIndex, rels: list[str]) -> None:
+    if deck.folder_scan is None:
+        return
+    root = deck.root.resolve()
+    dirs: set[str] = set()
+    for rel in rels:
+        if rel:
+            dirs.add(_dir_of(rel))
+    for dir_rel in dirs:
+        path = root if dir_rel == "." else (root / dir_rel)
+        try:
+            idx.dir_mtimes[dir_rel] = path.stat().st_mtime_ns
+        except OSError:
+            continue
+
+
+def readmit_path(state_dir: Path, rel: str, *, deck: Deck | None = None) -> bool:
     """Put a source path back on the pile when a sort move did not land."""
     if not rel:
         return False
@@ -270,6 +302,8 @@ def readmit_path(state_dir: Path, rel: str) -> bool:
     idx.ordered.append(rel)
     idx.generation += 1
     idx.stale = False
+    if deck is not None:
+        _refresh_dir_mtimes(deck, idx, [rel])
     save_index(state_dir, idx)
     return True
 
@@ -311,30 +345,36 @@ def summary(deck: Deck, log_decided: set[str]) -> dict:
     outdated = _tree_dirs_changed(deck, idx)
     if not idx.ordered and not idx.scanning:
         kick_background_scan(deck)
-    elif idx.stale or idx.scanning or outdated:
+    elif not idx.scanning and (idx.stale or outdated):
         schedule_scan(deck)
-    stale = idx.stale or idx.scanning or outdated or not idx.ordered
-    if idx.scanning or (stale and len(idx.ordered) < 50):
+    warming = idx.scanning or outdated or idx.stale
+    if idx.ordered:
+        universe = frozenset(idx.ordered)
+        total, decided, left, list_size = plugin_pile_counts(
+            log_decided, universe, frozenset()
+        )
+        label = None
+        if warming:
+            label = f"{left} left · scanning"
         return {
             "ok": True,
-            "total": None,
-            "decided": len(log_decided),
-            "left": None,
-            "list_size": len(idx.ordered) if idx.ordered else None,
-            "meter": False,
-            "stale": True,
-            "count_label": "Scanning…",
+            "total": total,
+            "decided": decided,
+            "left": left,
+            "list_size": list_size,
+            "meter": True,
+            "stale": warming,
+            "count_label": label,
         }
-    universe = frozenset(idx.ordered)
-    total, decided, left, list_size = plugin_pile_counts(log_decided, universe, frozenset())
     return {
         "ok": True,
-        "total": total,
-        "decided": decided,
-        "left": left,
-        "list_size": list_size if idx.ordered else None,
-        "meter": True,
-        "stale": stale,
+        "total": None,
+        "decided": len(log_decided),
+        "left": None,
+        "list_size": None,
+        "meter": False,
+        "stale": warming,
+        "count_label": "Scanning…" if warming else None,
     }
 
 
@@ -366,10 +406,11 @@ def progress_page(
     scan = deck.folder_scan
     assert scan is not None
     idx = load_index(deck.state_dir)
+    outdated = _tree_dirs_changed(deck, idx)
     if not idx.ordered and not idx.scanning:
         scan_incremental(deck)
         idx = load_index(deck.state_dir)
-    else:
+    elif not idx.scanning and (idx.stale or outdated):
         schedule_scan(deck)
     warnings: list[str] = []
     if not idx.ordered:
@@ -450,10 +491,11 @@ def item_for_id(deck: Deck, rel_id: str) -> Item | None:
 
 def load_deck_items(deck: Deck) -> tuple[list[Item], list[str]]:
     idx = load_index(deck.state_dir)
+    outdated = _tree_dirs_changed(deck, idx)
     if not idx.ordered and not idx.scanning:
         scan_incremental(deck)
         idx = load_index(deck.state_dir)
-    else:
+    elif not idx.scanning and (idx.stale or outdated):
         schedule_scan(deck)
     items: list[Item] = []
     for rid in idx.ordered:

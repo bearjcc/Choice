@@ -328,7 +328,7 @@ def reconcile_deck(deck: Deck) -> int:
             if new_to != new_op.get("to"):
                 new_op["to"] = new_to
                 pending_patch.append((decision_id, dict(new_op)))
-            readmit_path(deck.state_dir, from_rel)
+            readmit_path(deck.state_dir, from_rel, deck=deck)
             jobs.append(
                 WorkJob(
                     id=uuid.uuid4().hex,

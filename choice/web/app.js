@@ -327,7 +327,8 @@ async function showLibrary() {
     const copy = el("span", "deck-copy");
     copy.append(el("span", "deck-name", deck.title));
     let meta = deck.count_label;
-    if (!meta && deck.stale) meta = "Scanning…";
+    if (!meta && deck.stale && deck.left == null) meta = "Scanning…";
+    if (!meta && deck.stale && deck.left != null) meta = deck.left + " left · scanning";
     else if (!meta && deck.left != null) meta = deck.left + " left";
     copy.append(el("span", "deck-meta deck-meta" + (deck.stale ? " stale" : ""), meta || ""));
     const row = el("span", "deck-row");

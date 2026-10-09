@@ -103,7 +103,7 @@ def decide(deck: Deck, item_id: str, direction: str, note: str | None) -> dict:
                 record["file_op_pending"] = True
                 from choice.folder_index import apply_move
 
-                apply_move(deck.state_dir, planned["from"], planned["to"])
+                apply_move(deck.state_dir, planned["from"], planned["to"], deck=deck)
             if deck.hook and deck.hook_required:
                 _run_hook(deck, _hook_body("decide", deck, item, record))
         except _OpError as exc:
@@ -155,7 +155,13 @@ def undo(deck: Deck) -> dict:
                 from choice.folder_index import apply_move
 
                 op = latest.get("file_op") or {}
-                apply_move(deck.state_dir, op.get("from") or "", op.get("to") or "", reverse=True)
+                apply_move(
+                    deck.state_dir,
+                    op.get("from") or "",
+                    op.get("to") or "",
+                    reverse=True,
+                    deck=deck,
+                )
             if deck.hook and deck.hook_required:
                 _run_hook(deck, _hook_body("undo", deck, item, latest))
         except _OpError as exc:
