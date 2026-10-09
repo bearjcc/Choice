@@ -88,8 +88,28 @@ class SwipePlugin:
         return dict(fn(action_id) or {})
 
 
+def purge_swipe_modules(prefix: str = "choice_swipe_") -> None:
+    importlib.invalidate_caches()
+    for name in list(sys.modules):
+        if name.startswith(prefix):
+            del sys.modules[name]
+
+
+def _drop_pyc(deck_py: Path) -> None:
+    try:
+        pyc = importlib.util.cache_from_source(str(deck_py.resolve()))
+        Path(pyc).unlink(missing_ok=True)
+    except (OSError, ValueError):
+        return
+
+
 def load_swipe_class(deck_py: Path, folder_id: str) -> Any:
-    spec = importlib.util.spec_from_file_location("choice_swipe_" + folder_id, deck_py)
+    deck_py = deck_py.resolve()
+    mod_name = "choice_swipe_" + folder_id
+    sys.modules.pop(mod_name, None)
+    _drop_pyc(deck_py)
+    importlib.invalidate_caches()
+    spec = importlib.util.spec_from_file_location(mod_name, deck_py)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"Could not load {deck_py}")
     mod = importlib.util.module_from_spec(spec)

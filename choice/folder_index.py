@@ -19,8 +19,10 @@ from choice.load import Deck, Item, _hidden, _is_image, _mtime, _size_text, insi
 _INDEX_FILE = "folder_index.json"
 _META_FILE = "folder_meta.json"
 _DEBOUNCE = 1.5
+_MAX_SCAN_WAIT = 5.0
 _mem: LruDict[str, FolderIndex] = LruDict(32)
 _timers: dict[str, threading.Timer] = {}
+_scan_chain_start: dict[str, float] = {}
 _timer_lock = threading.Lock()
 _scan_locks: LruDict[str, threading.Lock] = LruDict(32)
 _index_mutate_locks: LruDict[str, threading.Lock] = LruDict(32)
@@ -155,14 +157,34 @@ def schedule_scan(deck: Deck) -> None:
         return
     key = str(deck.state_dir.resolve())
 
-    def _fire():
+    def _fire() -> None:
+        with _timer_lock:
+            _timers.pop(key, None)
+            _scan_chain_start.pop(key, None)
         scan_incremental(deck)
 
+    now = time.monotonic()
     with _timer_lock:
+        chain = _scan_chain_start.get(key)
+        if chain is None:
+            _scan_chain_start[key] = now
+            chain = now
+        if now - chain >= _MAX_SCAN_WAIT:
+            old = _timers.pop(key, None)
+            if old:
+                old.cancel()
+            _scan_chain_start.pop(key, None)
+            threading.Thread(
+                target=_fire,
+                name=f"folder-scan-maxwait-{deck.id}",
+                daemon=True,
+            ).start()
+            return
+        delay = min(_DEBOUNCE, _MAX_SCAN_WAIT - (now - chain))
         old = _timers.pop(key, None)
         if old:
             old.cancel()
-        timer = threading.Timer(_DEBOUNCE, _fire)
+        timer = threading.Timer(delay, _fire)
         _timers[key] = timer
         timer.daemon = True
         timer.start()

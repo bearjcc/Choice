@@ -31,6 +31,16 @@ def page_items(
     return slice_items, token
 
 
+def clear_deck_snapshots(deck_key: str) -> None:
+    with _lock:
+        _snaps.pop(deck_key, None)
+
+
+def clear_all_snapshots() -> None:
+    with _lock:
+        _snaps.clear()
+
+
 def resolve_token(deck_key: str, token: str) -> list | None:
     with _lock:
         deck_snaps = _snaps.get(deck_key)

@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.4.6 (2026-10-09)
+
+### Fixed
+
+- Plugin hot reload: `/api/reload` and file watching purge the plugin pool, swipe modules, item and page caches, and warm scheduling; `deck.py` loads from source with pyc dropped and a content-hash fingerprint (not mtime alone).
+- Folder rescan: debounced scans also run after at most five seconds of continuous `/items` polling so adds and deletes are not starved.
+
+## 0.4.5 (2026-10-09)
+
+### Fixed
+
+- Undo while a sort move is still running: `cancel_requested` on running jobs, rollback after rename, reverse jobs wait for forward work.
+- Plugin pending `/items` respects `decided`; cursor paging (`after=`); same-direction decide is idempotent; refused decides logged to `rejects.jsonl`; deck mismatch returns 409; pair `media_bytes` receives `side`.
+- Folder index prunes vanished paths on scan; `total = decided + left`; readmit idempotent and serialized with `apply_move`.
+- Pair cards: per-deck `pair_layout` (`auto`, `stack`, `side_by_side`) for narrow screens.
+
+## 0.4.4 (2026-10-09)
+
+### Fixed
+
+- Work queue retries sleep outside the lock via `retry_after` and a condition wake; file-in-use backoff 1–30 s then minutes.
+- Media cache writes use per-key locks and tolerate Windows replace races.
+- Index readmit idempotent; concurrent readmit/apply_move cannot duplicate paths.
+
+## 0.4.3 (2026-10-09)
+
+### Fixed
+
+- Failed file moves retry while the source remains (slow backoff, no terminal cap for sharing errors); boot revives failed jobs and reconcile no longer treats `failed` as blocking.
+- In-process media read tracking so moves wait for `/media` and thumbnail encoding; queue badge shows pending or retrying.
+
 ## 0.4.2 (2026-10-09)
 
 ### Fixed

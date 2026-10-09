@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import threading
 from collections.abc import Callable
@@ -15,14 +16,22 @@ _lock = threading.Lock()
 _cache: dict[str, SwipePlugin] = {}
 
 
+def deck_py_fingerprint(deck_py: Path) -> str:
+    deck_py = deck_py.resolve()
+    try:
+        data = deck_py.read_bytes()
+        stat = deck_py.stat()
+        digest = hashlib.sha256(data).hexdigest()
+        return f"{stat.st_mtime_ns}:{digest}"
+    except OSError:
+        return "0"
+
+
 def cache_key(folder: Path, deck_id: str, options: dict[str, Any]) -> str:
     deck_py = folder / "deck.py"
-    try:
-        mtime = deck_py.stat().st_mtime_ns
-    except OSError:
-        mtime = 0
+    fp = deck_py_fingerprint(deck_py)
     opts = json.dumps(options or {}, sort_keys=True, default=str)
-    return f"{deck_id}|{folder.resolve()}|{mtime}|{opts}"
+    return f"{deck_id}|{folder.resolve()}|{fp}|{opts}"
 
 
 def get_plugin(
@@ -66,3 +75,13 @@ def clear_pool() -> None:
         for plugin in _cache.values():
             _shutdown(plugin)
         _cache.clear()
+
+
+def drop_folder(folder: Path, deck_id: str) -> None:
+    prefix = f"{deck_id}|{folder.resolve()}|"
+    with _lock:
+        for key in list(_cache.keys()):
+            if not key.startswith(prefix):
+                continue
+            plugin = _cache.pop(key)
+            _shutdown(plugin)

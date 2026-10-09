@@ -70,6 +70,11 @@ def clear_index(deck: Deck) -> None:
         _index.pop(str(deck.state_dir))
 
 
+def clear_warm_scheduled(deck: Deck) -> None:
+    with _guard:
+        _warm_scheduled.discard(str(deck.state_dir))
+
+
 def schedule_plugin_warm(deck: Deck) -> None:
     if os.environ.get("CHOICE_DISABLE_WARM"):
         return
