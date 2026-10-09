@@ -28,7 +28,7 @@ class HomeItemsInvariantTests(unittest.TestCase):
         self.assertEqual(home["total"], home["decided"] + home["left"])
 
     def test_folder_sort_deck_fully_decided(self):
-        with tempfile.TemporaryDirectory() as tmpname:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpname:
             tmp = Path(tmpname)
             (tmp / "deck.json").write_text(
                 json.dumps(
@@ -56,6 +56,9 @@ class HomeItemsInvariantTests(unittest.TestCase):
             from choice.act import decide
 
             decide(deck, "incoming/a.jpg", "right", None)
+            from choice.work_queue import wait_idle
+
+            self.assertTrue(wait_idle(deck.state_dir, timeout=30.0))
             scan_incremental(deck)
             snap = progress(deck, pending=True, limit=200)
             self.assertFalse(snap.get("scanning"))
@@ -69,7 +72,7 @@ class HomeItemsInvariantTests(unittest.TestCase):
             self.assertFalse(home.get("stale") and home.get("left") == home.get("total"))
 
     def test_folder_view_filter_matches_home(self):
-        with tempfile.TemporaryDirectory() as tmpname:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpname:
             tmp = Path(tmpname)
             for i in range(10):
                 (tmp / f"p{i}.jpg").write_bytes(b"x")
@@ -129,7 +132,7 @@ mount = "hides_decided"
             os.environ.pop("CHOICE_DISABLE_WARM", None)
 
     def test_offset_paging_past_first_chunk(self):
-        with tempfile.TemporaryDirectory() as tmpname:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpname:
             tmp = Path(tmpname)
             for i in range(250):
                 (tmp / f"f{i:03d}.jpg").write_bytes(b"x")
