@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.10 (2026-10-09)
+
+### Fixed
+
+- Swipe source: `directions` in deck options no longer crash startup (`_config_directions` vs plugin parser name clash).
+- A deck that fails to open becomes an error row; other decks still load (exceptions are logged).
+
 ## 0.4.9 (2026-10-09)
 
 ### Fixed

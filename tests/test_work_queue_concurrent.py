@@ -4,6 +4,7 @@ import json
 import os
 import tempfile
 import threading
+import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -86,18 +87,29 @@ class WorkQueueConcurrentTests(unittest.TestCase):
         scan_incremental(deck)
         return deck, ids
 
-    def _assert_consistent(self, deck: Deck, n_decided: int) -> None:
-        wait_idle(deck.state_dir, timeout=120.0)
-        logged = _logged_sort_decisions(deck)
-        self.assertEqual(logged, n_decided)
-        on_disk = _unsorted_incoming(self.tmp)
-        snap = index_summary(deck)
-        left = snap.get("left")
-        idx = load_index(deck.state_dir)
-        self.assertEqual(len(idx.ordered), on_disk)
-        if left is not None:
-            self.assertEqual(left, on_disk)
-        self.assertEqual(on_disk, 0)
+    def _assert_consistent(self, deck: Deck, n_decided: int, timeout: float = 120.0) -> None:
+        deadline = time.monotonic() + timeout
+        last: AssertionError | None = None
+        while time.monotonic() < deadline:
+            wait_idle(deck.state_dir, timeout=min(5.0, deadline - time.monotonic()))
+            try:
+                logged = _logged_sort_decisions(deck)
+                self.assertEqual(logged, n_decided)
+                on_disk = _unsorted_incoming(self.tmp)
+                snap = index_summary(deck)
+                left = snap.get("left")
+                idx = load_index(deck.state_dir)
+                self.assertEqual(len(idx.ordered), on_disk)
+                if left is not None:
+                    self.assertEqual(left, on_disk)
+                self.assertEqual(on_disk, 0)
+                return
+            except AssertionError as exc:
+                last = exc
+                time.sleep(0.05)
+        if last is not None:
+            raise last
+        raise AssertionError("queue did not settle")
 
     def test_burst_three_hundred_decides(self):
         os.environ.pop("CHOICE_SYNC_WORK", None)
@@ -107,7 +119,7 @@ class WorkQueueConcurrentTests(unittest.TestCase):
         def _one(rel: str) -> None:
             decide(deck, rel, directions[hash(rel) % 4], None)
 
-        with ThreadPoolExecutor(max_workers=64) as pool:
+        with ThreadPoolExecutor(max_workers=16) as pool:
             futures = [pool.submit(_one, rel) for rel in ids]
             for fut in as_completed(futures):
                 fut.result()

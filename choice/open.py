@@ -3,9 +3,12 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from choice.config import ConfigProblem, load_config
+
+_log = logging.getLogger(__name__)
 from choice.load import Deck, DeckProblem, Opened, resolve
 from choice.sources.registry import build_source
 
@@ -31,20 +34,12 @@ def open_config(path: Path) -> Opened:
         try:
             deck = source.open_deck(spec.id, spec.title, spec.mount, state_dir, dict(spec.options))
         except (ConfigProblem, DeckProblem) as exc:
-            decks.append(
-                Deck(
-                    id=spec.id,
-                    title=spec.title,
-                    root=state_dir,
-                    state_dir=state_dir,
-                    directions={},
-                    buttons=[],
-                    blind=False,
-                    warnings=[],
-                    problem=str(exc),
-                    _load=lambda: ([], []),
-                )
-            )
+            _log.warning("Deck %s skipped: %s", spec.id, exc)
+            decks.append(_problem_deck(spec, state_dir, str(exc)))
+            continue
+        except Exception as exc:
+            _log.exception("Deck %s failed to open", spec.id)
+            decks.append(_problem_deck(spec, state_dir, str(exc)))
             continue
         contest = spec.options.get("contest")
         if contest:
@@ -67,6 +62,21 @@ def open_config(path: Path) -> Opened:
             deck.show_filename = True
         decks.append(deck)
     return Opened(decks=decks, direct=False)
+
+
+def _problem_deck(spec, state_dir: Path, message: str) -> Deck:
+    return Deck(
+        id=spec.id,
+        title=spec.title,
+        root=state_dir,
+        state_dir=state_dir,
+        directions={},
+        buttons=[],
+        blind=False,
+        warnings=[],
+        problem=message,
+        _load=lambda: ([], []),
+    )
 
 
 def config_root(path: Path) -> Path:

@@ -75,6 +75,8 @@ class MoveRetryBootTests(unittest.TestCase):
                 os.environ.pop("CHOICE_SYNC_WORK", None)
 
     def test_sharing_violation_retries_then_succeeds(self):
+        import time
+
         from choice.file_moves import MoveNotReady, replace_same_volume
 
         calls = {"n": 0}
@@ -86,10 +88,19 @@ class MoveRetryBootTests(unittest.TestCase):
                 raise MoveNotReady("WinError 32: file in use")
             real(src, dest)
 
+        def wait_until(predicate, timeout: float = 30.0) -> bool:
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                if predicate():
+                    return True
+                time.sleep(0.01)
+            return False
+
         with tempfile.TemporaryDirectory() as tmpname:
             tmp = Path(tmpname)
             deck = _sort_deck(tmp)
             src = tmp / "card.jpg"
+            dest = tmp / "keep" / "card.jpg"
             op = {"op": "move", "from": "card.jpg", "to": "keep/card.jpg"}
             os.environ["CHOICE_SYNC_WORK"] = "1"
             try:
@@ -98,10 +109,18 @@ class MoveRetryBootTests(unittest.TestCase):
                         from choice.work_queue import enqueue_file_op
 
                         enqueue_file_op(deck, "dec-2", op)
-                        wait_idle(deck.state_dir, timeout=30.0)
+                        ok = wait_until(
+                            lambda: (
+                                not src.is_file()
+                                and dest.is_file()
+                                and calls["n"] >= 3
+                            ),
+                            timeout=30.0,
+                        )
+                        self.assertTrue(ok, f"calls={calls['n']} src={src.is_file()} dest={dest.is_file()}")
                 self.assertGreaterEqual(calls["n"], 3)
                 self.assertFalse(src.is_file())
-                self.assertTrue((tmp / "keep" / "card.jpg").is_file())
+                self.assertTrue(dest.is_file())
             finally:
                 os.environ.pop("CHOICE_SYNC_WORK", None)
 
