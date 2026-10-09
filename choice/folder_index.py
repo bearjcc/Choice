@@ -444,6 +444,22 @@ def _purge_sorted_from_index(idx: FolderIndex, root: Path, skip_dirs: set[Path])
     return changed
 
 
+def folder_view_ordered(deck: Deck, idx: FolderIndex) -> list[str]:
+    from choice.pile_view import view_order_ids
+    from choice.view_prefs import load_view_prefs
+
+    return view_order_ids(deck, idx, load_view_prefs(deck))
+
+
+def folder_meter_counts(
+    deck: Deck, idx: FolderIndex, log_decided: set[str]
+) -> tuple[int, int, int, int]:
+    if not idx.ordered:
+        return plugin_pile_counts(log_decided, frozenset(), frozenset())
+    universe = frozenset(folder_view_ordered(deck, idx))
+    return plugin_pile_counts(log_decided, universe, frozenset())
+
+
 def summary(deck: Deck, log_decided: set[str], *, counts_hidden: bool = False) -> dict:
     if counts_hidden:
         from choice.count_prefs import today_count_label
@@ -466,10 +482,7 @@ def summary(deck: Deck, log_decided: set[str], *, counts_hidden: bool = False) -
         schedule_scan(deck)
     warming = idx.scanning or outdated or idx.stale
     if idx.ordered:
-        universe = frozenset(idx.ordered)
-        total, decided, left, list_size = plugin_pile_counts(
-            log_decided, universe, frozenset()
-        )
+        total, decided, left, list_size = folder_meter_counts(deck, idx, log_decided)
         label = None
         if warming:
             label = f"{left} left · scanning"
@@ -483,13 +496,14 @@ def summary(deck: Deck, log_decided: set[str], *, counts_hidden: bool = False) -
             "stale": warming,
             "count_label": label,
         }
+    total, decided, left, list_size = plugin_pile_counts(log_decided, frozenset(), frozenset())
     return {
         "ok": True,
-        "total": None,
-        "decided": len(log_decided),
-        "left": None,
-        "list_size": None,
-        "meter": False,
+        "total": total,
+        "decided": decided,
+        "left": left,
+        "list_size": list_size,
+        "meter": bool(total),
         "stale": warming,
         "count_label": "Scanning…" if warming else None,
     }
@@ -528,8 +542,8 @@ def progress_page(
     limit: int,
     *,
     after: str | None = None,
-) -> tuple[list[str], int, int, int, list[str], str | None, bool]:
-    """Return page ids, total, decided, left, warnings, next_after, scanning."""
+) -> tuple[list[str], int, int, int, list[str], str | None, bool, int]:
+    """Return page ids, total, decided, left, warnings, next_after, scanning, pile_size."""
     from choice.deck_index import plugin_pile_counts
 
     scan = deck.folder_scan
@@ -543,25 +557,15 @@ def progress_page(
         schedule_scan(deck)
     warnings: list[str] = []
     log_decided = {rid for rid, row in choices.items() if not row.get("later")}
-    warming = idx.scanning or outdated or idx.stale
     if not idx.ordered:
-        if warming:
-            kick_background_scan(deck)
-            decided = len(log_decided)
-            return [], decided, 0, decided, warnings, None, True
-        return [], len(log_decided), 0, len(log_decided), warnings, None, False
-    from choice.pile_view import view_order_ids
-    from choice.view_prefs import load_view_prefs
-
-    prefs = load_view_prefs(deck)
-    ordered = view_order_ids(deck, idx, prefs)
+        total, decided, left, _ = plugin_pile_counts(log_decided, frozenset(), frozenset())
+        return [], total, decided, left, warnings, None, False, 0
+    ordered = folder_view_ordered(deck, idx)
     if ordered and not _any_indexed_files(deck, ordered):
         kick_background_scan(deck)
-        universe = frozenset(ordered)
-        total, decided, left, _ = plugin_pile_counts(log_decided, universe, frozenset())
-        return [], total, decided, left, warnings, None, True
-    universe = frozenset(ordered)
-    total, decided, left, _ = plugin_pile_counts(log_decided, universe, frozenset())
+        total, decided, left, _ = folder_meter_counts(deck, idx, log_decided)
+        return [], total, decided, left, warnings, None, True, len(ordered)
+    total, decided, left, _ = folder_meter_counts(deck, idx, log_decided)
     pile: list[str] = []
     for rid in ordered:
         choice = choices.get(rid)
@@ -580,7 +584,7 @@ def progress_page(
     else:
         page = pile[offset : offset + limit]
         next_after = page[-1] if page and offset + len(page) < len(pile) else None
-    return page, total, decided, left, warnings, next_after, False
+    return page, total, decided, left, warnings, next_after, False, len(pile)
 
 
 def admit_if_on_disk(deck: Deck, item_id: str) -> bool:

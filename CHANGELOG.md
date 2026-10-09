@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.8 (2026-10-09)
+
+### Fixed
+
+- Folder `progress_page` empty-pile counts use `(total, decided, left)` correctly; `scanning` only when indexed paths vanished, not when a sort pile is finished.
+- Home and `/items` share folder view-filtered counts and plugin log universe (including when the in-memory snapshot expired).
+- Offset paging exposes `next_offset` past the first 200 cards.
+
 ## 0.4.7 (2026-10-09)
 
 ### Fixed
