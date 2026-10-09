@@ -402,7 +402,10 @@ class Handler(BaseHTTPRequestHandler):
             if served.data is not None:
                 payload = served.data
             elif served.path is not None:
-                payload = served.path.read_bytes()
+                from choice.source_reads import hold_source_read
+
+                with hold_source_read(served.path):
+                    payload = served.path.read_bytes()
             else:
                 return self._json(404, {"ok": False, "message": "No such image."})
         except OSError:

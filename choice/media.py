@@ -289,11 +289,14 @@ def _encode_image_file(path: Path, edge: int) -> tuple[bytes | None, str]:
     except ImportError:
         return None, ""
     try:
-        with Image.open(path) as image:
-            image = ImageOps.exif_transpose(image)
-            image.thumbnail((edge, edge))
-            image = _flatten(image)
-            return _save_image(image)
+        from choice.source_reads import hold_source_read
+
+        with hold_source_read(path):
+            with Image.open(path) as image:
+                image = ImageOps.exif_transpose(image)
+                image.thumbnail((edge, edge))
+                image = _flatten(image)
+                return _save_image(image)
     except Exception:
         return None, ""
 

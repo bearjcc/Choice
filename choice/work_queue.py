@@ -27,6 +27,7 @@ from choice.load import Deck, inside
 _QUEUE_NAME = "work_queue.json"
 _MAX_ATTEMPTS = 12
 _BACKOFF = (0.05, 0.1, 0.2, 0.4, 0.8, 1.6, 3.2)
+_SLOW_FILE_BACKOFF = 120.0
 
 _deck_resolver: Callable[[str, str], Deck | None] | None = None
 _workers: dict[str, threading.Thread] = {}
@@ -299,7 +300,7 @@ def reconcile_deck(deck: Deck) -> int:
         active = {
             j.decision_id
             for j in jobs
-            if j.status in {"pending", "running", "failed"}
+            if j.status in {"pending", "running"}
             and j.kind in {"file", "file_reverse"}
         }
         undone = {row.get("ref") for row in _read_log(deck) if row.get("type") == "undo"}
@@ -436,11 +437,42 @@ def reconcile_orphan_jobs(deck: Deck) -> int:
 
 
 def boot_deck(deck: Deck) -> None:
+    revive_file_jobs(deck)
     reconcile_orphan_jobs(deck)
     reconcile_deck(deck)
     jobs = _snapshot_jobs(deck.state_dir)
     if any(j.status in {"pending", "running"} for j in jobs):
         _ensure_worker(deck.state_dir)
+
+
+def revive_file_jobs(deck: Deck) -> int:
+    """Reset failed file jobs when the move is still needed on disk."""
+    if deck.folder_scan is None or deck.folder_scan.output != "sort":
+        return 0
+    root = deck.root.resolve()
+    revived = 0
+
+    def _revive(jobs: list[WorkJob]) -> None:
+        nonlocal revived
+        for job in jobs:
+            if job.kind not in {"file", "file_reverse"}:
+                continue
+            if job.status != "failed":
+                continue
+            if _file_move_still_needed(job, root):
+                job.status = "pending"
+                job.last_error = ""
+                job.updated_at = time.time()
+                revived += 1
+            elif _file_move_already_done(job, root):
+                job.status = "done"
+                job.last_error = ""
+                job.updated_at = time.time()
+
+    _mutate_jobs(deck.state_dir, _revive)
+    if revived:
+        _ensure_worker(deck.state_dir)
+    return revived
 
 
 def _ensure_worker(state_dir: Path) -> None:
@@ -499,12 +531,11 @@ def _worker_loop(state_dir: Path) -> bool:
                 break
             else:
                 row.attempts += 1
-                if row.attempts >= _MAX_ATTEMPTS:
+                if _should_mark_failed(row):
                     row.status = "failed"
                 else:
                     row.status = "pending"
-                    delay = _BACKOFF[min(row.attempts - 1, len(_BACKOFF) - 1)]
-                    time.sleep(delay)
+                    time.sleep(_retry_delay_for_job(row))
             row.updated_at = time.time()
             break
         _persist_jobs(state_dir, jobs)
@@ -670,6 +701,86 @@ def _under(root: Path, relative: str) -> Path:
 
 class _RetryLater(Exception):
     pass
+
+
+def _file_op_paths(job: WorkJob, root: Path) -> tuple[Path, Path | None]:
+    op = job.file_op or {}
+    src = (root / str(op.get("from") or "")).resolve()
+    to_rel = str(op.get("to") or "")
+    dest = (root / to_rel).resolve() if to_rel else None
+    return src, dest
+
+
+def _file_move_still_needed(job: WorkJob, root: Path) -> bool:
+    if job.kind == "file_reverse":
+        src, dest = _file_op_paths(job, root)
+        if dest is not None and dest.is_file() and not src.is_file():
+            return True
+        return False
+    if job.kind != "file":
+        return False
+    src, dest = _file_op_paths(job, root)
+    if not src.is_file():
+        return False
+    if dest is not None and dest.is_file() and files_equal(src, dest):
+        return True
+    if dest is not None and dest.is_file():
+        return True
+    return True
+
+
+def _file_move_already_done(job: WorkJob, root: Path) -> bool:
+    if job.kind != "file":
+        return False
+    src, dest = _file_op_paths(job, root)
+    if src.is_file():
+        return False
+    return dest is not None and dest.is_file()
+
+
+def _transient_file_error(job: WorkJob) -> bool:
+    err = (job.last_error or "").lower()
+    needles = (
+        "winerror 32",
+        "sharing violation",
+        "rename blocked",
+        "cannot delete source",
+        "file in use",
+        "source remains",
+        "source still present",
+        "errno 32",
+        "errno 13",
+    )
+    return any(n in err for n in needles)
+
+
+def _source_still_exists(job: WorkJob) -> bool:
+    if job.kind not in {"file", "file_reverse"} or not job.deck_root:
+        return False
+    root = Path(job.deck_root)
+    src, _dest = _file_op_paths(job, root)
+    return src.is_file()
+
+
+def _should_mark_failed(job: WorkJob) -> bool:
+    if job.kind in {"file", "file_reverse"}:
+        if _file_move_still_needed(job, Path(job.deck_root)):
+            return False
+        if _transient_file_error(job):
+            return False
+    return job.attempts >= _MAX_ATTEMPTS
+
+
+def _retry_delay_for_job(job: WorkJob) -> float:
+    if job.kind in {"file", "file_reverse"} and job.deck_root:
+        root = Path(job.deck_root)
+        use_slow = _transient_file_error(job)
+        if not use_slow and _file_move_still_needed(job, root):
+            use_slow = job.attempts > len(_BACKOFF)
+        if use_slow:
+            step = max(1, job.attempts // 2)
+            return min(600.0, _SLOW_FILE_BACKOFF * step)
+    return _BACKOFF[min(job.attempts - 1, len(_BACKOFF) - 1)]
 
 
 def _queue_lock(state_dir: Path) -> threading.RLock:

@@ -32,6 +32,9 @@ class WorkQueueTests(unittest.TestCase):
             )
             op = {"op": "move", "from": "a.jpg", "to": "keep/a.jpg"}
             enqueue_file_op(deck, "dec-1", op)
+            from choice.work_queue import wait_idle
+
+            wait_idle(state, timeout=30.0)
             self.assertFalse(src.is_file())
             self.assertTrue((dest_dir / "a.jpg").is_file())
             from choice.work_queue import snapshot_for

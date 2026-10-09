@@ -990,8 +990,13 @@ function paintQueueBadge() {
   }
   btn.hidden = false;
   btn.classList.toggle("has-failed", failed > 0);
+  const running = (q && q.running) || 0;
+  const active = pending + running;
   const parts = [];
-  if (pending) parts.push(pending + " queued");
+  if (active) {
+    const label = active === 1 ? "1 move pending or retrying" : active + " moves pending or retrying";
+    parts.push(label);
+  }
   if (failed) parts.push(failed + " failed");
   btn.textContent = parts.join(" · ");
 }

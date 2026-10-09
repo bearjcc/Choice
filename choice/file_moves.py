@@ -44,6 +44,9 @@ def fsync_file(path: Path) -> None:
 
 def move_file(src: Path, dest: Path) -> None:
     """Move src to dest. Source must be gone before this returns."""
+    from choice.source_reads import wait_source_idle
+
+    wait_source_idle(src, timeout=8.0)
     dest.parent.mkdir(parents=True, exist_ok=True)
     if not src.is_file():
         if dest.is_file():
