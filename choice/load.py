@@ -499,6 +499,13 @@ def _from_config(folder: Path, data: dict, warnings: list[str] | None = None) ->
         if scan.output == "sort":
             deck.directions = wire_sort_directions(deck.directions, scan.sort_targets)
             deck.buttons = wire_sort_buttons(deck.buttons, scan.sort_targets)
+
+        def _load_folder() -> tuple[list[Item], list[str]]:
+            from choice.folder_index import load_deck_items
+
+            return load_deck_items(deck)
+
+        deck._load = _load_folder
     return deck
 
 

@@ -325,8 +325,10 @@ async function showLibrary() {
     card.type = "button";
     const copy = el("span", "deck-copy");
     copy.append(el("span", "deck-name", deck.title));
-    const left = deck.count_label || (deck.left + " left");
-    copy.append(el("span", "deck-meta", left));
+    let meta = deck.count_label;
+    if (!meta && deck.stale) meta = "Scanning…";
+    else if (!meta && deck.left != null) meta = deck.left + " left";
+    copy.append(el("span", "deck-meta deck-meta" + (deck.stale ? " stale" : ""), meta || ""));
     const row = el("span", "deck-row");
     appendSourceIcon(row, deck.source_type || "deck");
     row.append(copy);

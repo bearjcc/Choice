@@ -47,28 +47,30 @@ def decide(deck: Deck, item_id: str, direction: str, note: str | None) -> dict:
         return _fail("Note is longer than 500 characters.")
 
     with _lock(deck):
-        try:
-            item = _item_for_decide(deck, item_id)
-        except DeckProblem as exc:
-            return _fail(str(exc))
-        if item is None:
-            return _fail("That card is not in the pile.")
-        if _plugin_done(item):
-            return _fail("That card was already decided elsewhere.")
-        prior = _choices(deck).get(item.id)
-        if prior is not None:
-            if (
-                prior.get("direction") == action.id
-                and (prior.get("note") or "") == note
-                and not prior.get("later")
-            ):
+        prior = _choices(deck).get(item_id)
+        if prior is not None and not prior.get("later"):
+            if prior.get("direction") == action.id and (prior.get("note") or "") == note:
+                label = prior.get("label") or action.label
+                title = prior.get("file") or item_id
                 return {
                     "ok": True,
-                    "message": "{}: {} (already recorded)".format(
-                        prior.get("label") or action.label, item.title
-                    ),
+                    "message": f"{label}: {title} (already recorded)",
                     "can_undo": _has_undo(deck),
                 }
+            scan = deck.folder_scan
+            if scan is not None and scan.output == "sort" and prior.get("file_op"):
+                return _fail("That card is already decided.")
+
+    try:
+        item = _item_for_decide(deck, item_id)
+    except DeckProblem as exc:
+        return _fail(str(exc))
+    if item is None:
+        return _fail("That card is not in the pile.")
+    if _plugin_done(item):
+        return _fail("That card was already decided elsewhere.")
+
+    with _lock(deck):
         token = uuid.uuid4().hex
         record = {
             "type": "decision",
@@ -758,15 +760,21 @@ def _find(items: list[Item], item_id: str) -> Item | None:
     return None
 
 
+def item_by_id(deck: Deck, item_id: str) -> Item | None:
+    """Resolve one card without loading the full pile."""
+    if deck.folder_scan is not None:
+        from choice.folder_index import item_for_id
+
+        return item_for_id(deck, item_id)
+    flow = view(deck)
+    return _find(flow.items, item_id)
+
+
 def _item_for_decide(deck: Deck, item_id: str) -> Item | None:
     if deck.folder_scan is not None:
-        from choice.folder_index import item_for_id, load_index, scan_incremental
+        from choice.folder_index import admit_if_on_disk, item_for_id
 
-        idx = load_index(deck.state_dir)
-        if item_id not in idx.ordered:
-            scan_incremental(deck)
-            idx = load_index(deck.state_dir)
-        if item_id not in idx.ordered:
+        if not admit_if_on_disk(deck, item_id):
             return None
         return item_for_id(deck, item_id)
     flow = view(deck)

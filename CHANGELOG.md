@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.3 (2026-10-09)
+
+### Fixed
+
+- Folder `/decide`, `/undo`, and `/media` no longer load the full pile; O(1) index lookup and a narrower decide lock.
+- Sort destination folders are excluded from the index; moves remove pile ids instead of re-listing at the new path; already-decided ids cannot move again.
+- `work_queue.json` uses a file lock, Windows-safe `atomic_replace`, prunes finished jobs, and supervises the mover thread.
+- Home deck row shows "Scanning…" while the folder index is warming instead of misleading counts.
+
+### Tests
+
+- Sort-index smoke tests, version parity (`pyproject` vs `choice.__version__`), atomic replace retries, 30k async load with media 304 timing.
+
 ## 0.3.2 (2026-10-09)
 
 ### Added

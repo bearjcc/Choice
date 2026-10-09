@@ -10,6 +10,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from choice.atomic_io import atomic_replace
 from choice.bounded_cache import LruDict
 from choice.deck_index import plugin_pile_counts
 from choice.folder_deck import FolderScanOptions, match_globs
@@ -94,7 +95,7 @@ def save_index(state_dir: Path, idx: FolderIndex) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(idx.to_dict()), encoding="utf-8")
-    tmp.replace(path)
+    atomic_replace(tmp, path)
 
 
 def schedule_scan(deck: Deck) -> None:
@@ -150,7 +151,14 @@ def _scan_locked(deck: Deck) -> None:
         except OSError:
             continue
         prev = idx.dir_mtimes.get(dir_rel)
-        if prev is not None and prev == mtime:
+        in_dir = sum(1 for rid in idx.ordered if _dir_of(rid) == dir_rel)
+        try:
+            n_files = sum(
+                1 for e in os.scandir(dir_path) if e.is_file(follow_symlinks=False)
+            )
+        except OSError:
+            n_files = -1
+        if prev is not None and prev == mtime and in_dir == n_files and n_files >= 0:
             continue
         idx.dir_mtimes[dir_rel] = mtime
         seen_here: set[str] = set()
@@ -181,6 +189,9 @@ def _scan_locked(deck: Deck) -> None:
             idx.ordered = [rid for rid in idx.ordered if rid not in gone]
             known -= set(gone)
             changed = True
+    purged = _purge_sorted_from_index(idx, root, skip_dirs)
+    if purged:
+        changed = True
     if changed:
         idx.generation += 1
     idx.stale = False
@@ -189,15 +200,33 @@ def _scan_locked(deck: Deck) -> None:
 
 
 def apply_move(state_dir: Path, from_rel: str, to_rel: str, *, reverse: bool = False) -> None:
-    if reverse:
-        from_rel, to_rel = to_rel, from_rel
     idx = load_index(state_dir)
+    if reverse:
+        if from_rel and from_rel not in idx.ordered:
+            idx.ordered.append(from_rel)
+            idx.generation += 1
+            idx.stale = False
+            save_index(state_dir, idx)
+        return
     if from_rel in idx.ordered:
-        pos = idx.ordered.index(from_rel)
-        idx.ordered[pos] = to_rel
+        idx.ordered = [rid for rid in idx.ordered if rid != from_rel]
         idx.generation += 1
         idx.stale = False
         save_index(state_dir, idx)
+
+
+def _purge_sorted_from_index(idx: FolderIndex, root: Path, skip_dirs: set[Path]) -> bool:
+    kept: list[str] = []
+    changed = False
+    for rid in idx.ordered:
+        path = (root / rid).resolve()
+        if _under_sort(path, skip_dirs):
+            changed = True
+            continue
+        kept.append(rid)
+    if changed:
+        idx.ordered = kept
+    return changed
 
 
 def summary(deck: Deck, log_decided: set[str]) -> dict:
@@ -207,6 +236,18 @@ def summary(deck: Deck, log_decided: set[str]) -> dict:
         schedule_scan(deck)
     elif idx.stale or idx.scanning or outdated:
         schedule_scan(deck)
+    stale = idx.stale or idx.scanning or outdated or not idx.ordered
+    if idx.scanning or (stale and len(idx.ordered) < 50):
+        return {
+            "ok": True,
+            "total": None,
+            "decided": len(log_decided),
+            "left": None,
+            "list_size": len(idx.ordered) if idx.ordered else None,
+            "meter": False,
+            "stale": True,
+            "count_label": "Scanning…",
+        }
     universe = frozenset(idx.ordered)
     total, decided, left, list_size = plugin_pile_counts(log_decided, universe, frozenset())
     return {
@@ -216,7 +257,7 @@ def summary(deck: Deck, log_decided: set[str]) -> dict:
         "left": left,
         "list_size": list_size if idx.ordered else None,
         "meter": True,
-        "stale": idx.stale or idx.scanning or outdated or not idx.ordered,
+        "stale": stale,
     }
 
 
@@ -272,6 +313,30 @@ def progress_page(
         limit = min(200, len(pile))
     page = pile[offset : offset + limit]
     return page, total, decided, left, warnings
+
+
+def admit_if_on_disk(deck: Deck, item_id: str) -> bool:
+    """O(1) add one new file to the index when it already exists on disk."""
+    scan = deck.folder_scan
+    if scan is None:
+        return False
+    idx = load_index(deck.state_dir)
+    if item_id in idx.ordered:
+        return True
+    root = deck.root.resolve()
+    skip_dirs = set(scan.sort_dirs(root))
+    skip_dirs.add((root / ".choice").resolve())
+    path = (root / item_id).resolve()
+    if not path.is_file() or not inside(root, path):
+        return False
+    rel = _relative(root, path)
+    if _under_sort(path, skip_dirs) or not _passes(scan, root, path, rel, skip_dirs):
+        return False
+    idx.ordered.append(rel)
+    idx.generation += 1
+    idx.stale = False
+    save_index(deck.state_dir, idx)
+    return True
 
 
 def item_for_id(deck: Deck, rel_id: str) -> Item | None:

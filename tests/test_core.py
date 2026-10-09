@@ -222,6 +222,7 @@ class ChoiceTests(unittest.TestCase):
         (self.tmp / "one.png").write_bytes(b"png")
         (self.tmp / "two.png").write_bytes(b"png")
         deck = resolve(self.tmp).decks[0]
+        deck.load_items()
         self.assertEqual(deck.directions["left"].does, "label")
         result = decide(deck, "one.png", "left", None)
         self.assertTrue(result["ok"], result)

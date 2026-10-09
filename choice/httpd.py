@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from choice.act import decide, index_summary, progress, run_plugin_action, undo, view
+from choice.act import decide, index_summary, item_by_id, progress, run_plugin_action, undo
 from choice.config import ConfigProblem, load_config, mask_secrets, save_config, write_secret
 from choice.load import DeckProblem
 from choice.media import ServedMedia, prepare_bytes, prepare_file, snap_edge
@@ -278,10 +278,9 @@ class Handler(BaseHTTPRequestHandler):
         full, width = self._media_options(query)
         cache_dir = (deck.state_dir / "media_cache").resolve()
         try:
-            flow = view(deck)
+            item = item_by_id(deck, item_id)
         except DeckProblem as exc:
             return self._json(404, {"ok": False, "message": str(exc)})
-        item = next((it for it in flow.items if it.id == item_id), None)
         plugin = deck.plugin
         if plugin is not None and callable(getattr(plugin, "media_bytes", None)):
             if item is None:

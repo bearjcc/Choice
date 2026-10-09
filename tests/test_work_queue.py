@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from choice.load import Deck
-from choice.work_queue import _load_jobs, enqueue_file_op
+from choice.work_queue import enqueue_file_op
 
 
 class WorkQueueTests(unittest.TestCase):
@@ -34,5 +34,8 @@ class WorkQueueTests(unittest.TestCase):
             enqueue_file_op(deck, "dec-1", op)
             self.assertFalse(src.is_file())
             self.assertTrue((dest_dir / "a.jpg").is_file())
-            jobs = _load_jobs(state)
-            self.assertTrue(any(j.status == "done" for j in jobs))
+            from choice.work_queue import snapshot_for
+
+            snap = snapshot_for(deck)
+            self.assertEqual(snap.pending, 0)
+            self.assertEqual(snap.running, 0)
