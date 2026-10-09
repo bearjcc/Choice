@@ -27,7 +27,8 @@ from choice.load import Deck, inside
 _QUEUE_NAME = "work_queue.json"
 _MAX_ATTEMPTS = 12
 _BACKOFF = (0.05, 0.1, 0.2, 0.4, 0.8, 1.6, 3.2)
-_SLOW_FILE_BACKOFF = 120.0
+_FILE_IN_USE_FAST = (1.0, 2.0, 5.0, 10.0, 30.0)
+_FILE_IN_USE_SLOW = 120.0
 
 _deck_resolver: Callable[[str, str], Deck | None] | None = None
 _workers: dict[str, threading.Thread] = {}
@@ -35,6 +36,7 @@ _worker_lock = threading.Lock()
 _dest_locks: dict[str, threading.Lock] = {}
 _dest_guard = threading.Lock()
 _queue_locks: LruDict[str, threading.RLock] = LruDict(64)
+_queue_conds: LruDict[str, threading.Condition] = LruDict(64)
 _job_lists: LruDict[str, list[WorkJob]] = LruDict(64)
 _loaded: set[str] = set()
 
@@ -49,6 +51,7 @@ class WorkJob:
     last_error: str = ""
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
+    retry_after: float = 0.0
     file_op: dict | None = None
     plugin: dict | None = None
     deck_id: str = ""
@@ -70,6 +73,7 @@ class WorkJob:
             last_error=str(row.get("last_error") or ""),
             created_at=float(row.get("created_at") or 0),
             updated_at=float(row.get("updated_at") or 0),
+            retry_after=float(row.get("retry_after") or 0),
             file_op=row.get("file_op") if isinstance(row.get("file_op"), dict) else None,
             plugin=row.get("plugin") if isinstance(row.get("plugin"), dict) else None,
             deck_id=str(row.get("deck_id") or ""),
@@ -508,16 +512,22 @@ def _worker_supervisor(state_dir: Path) -> None:
 
 def _worker_loop(state_dir: Path) -> bool:
     job: WorkJob | None = None
+    wait_until: float | None = None
+    now = time.time()
     with _queue_lock(state_dir):
         jobs = _ensure_loaded(state_dir)
-        next_job = next((j for j in jobs if j.status == "pending"), None)
-        if next_job is None:
-            return False
-        next_job.status = "running"
-        next_job.updated_at = time.time()
-        job = next_job
-        _persist_jobs(state_dir, jobs)
-    assert job is not None
+        job = _pick_runnable_job(jobs, now)
+        if job is not None:
+            job.status = "running"
+            job.updated_at = now
+            _persist_jobs(state_dir, jobs)
+        else:
+            wait_until = _next_wake_time(jobs, now)
+            if wait_until is None:
+                return False
+    if job is None:
+        _wait_for_worker(state_dir, wait_until)
+        return True
     ok = _run_job(state_dir, job)
     with _queue_lock(state_dir):
         jobs = _ensure_loaded(state_dir)
@@ -527,23 +537,70 @@ def _worker_loop(state_dir: Path) -> bool:
             if ok:
                 row.status = "done"
                 row.last_error = ""
+                row.retry_after = 0.0
             elif row.status == "cancelled":
                 break
             else:
                 row.attempts += 1
                 if _should_mark_failed(row):
                     row.status = "failed"
+                    row.retry_after = 0.0
                 else:
                     row.status = "pending"
-                    time.sleep(_retry_delay_for_job(row))
+                    row.retry_after = time.time() + _retry_delay_for_job(row)
             row.updated_at = time.time()
             break
         _persist_jobs(state_dir, jobs)
-        retry = any(j.id == job.id and j.status == "pending" for j in jobs)
-        pending = any(j.status == "pending" for j in jobs)
-    if retry or pending:
-        return True
-    return False
+        more = _queue_has_work(jobs)
+    _poke_worker(state_dir)
+    return more
+
+
+def _pick_runnable_job(jobs: list[WorkJob], now: float) -> WorkJob | None:
+    for row in jobs:
+        if row.status != "pending":
+            continue
+        if row.retry_after <= now:
+            return row
+    return None
+
+
+def _next_wake_time(jobs: list[WorkJob], now: float) -> float | None:
+    if any(j.status == "running" for j in jobs):
+        return now + 0.05
+    pending = [j for j in jobs if j.status == "pending"]
+    if not pending:
+        return None
+    return min(j.retry_after for j in pending)
+
+
+def _queue_has_work(jobs: list[WorkJob]) -> bool:
+    return any(j.status in {"pending", "running"} for j in jobs)
+
+
+def _queue_cond(state_dir: Path) -> threading.Condition:
+    key = _state_key(state_dir)
+    cond = _queue_conds.get(key)
+    if cond is None:
+        cond = threading.Condition(_queue_lock(state_dir))
+        _queue_conds.set(key, cond)
+    return cond
+
+
+def _poke_worker(state_dir: Path) -> None:
+    cond = _queue_cond(state_dir)
+    with cond:
+        cond.notify_all()
+
+
+def _wait_for_worker(state_dir: Path, deadline: float | None) -> None:
+    cond = _queue_cond(state_dir)
+    with cond:
+        if deadline is None:
+            return
+        timeout = max(0.0, deadline - time.time())
+        if timeout > 0:
+            cond.wait(timeout=timeout)
 
 
 def _run_job(state_dir: Path, job: WorkJob) -> bool:
@@ -774,12 +831,12 @@ def _should_mark_failed(job: WorkJob) -> bool:
 def _retry_delay_for_job(job: WorkJob) -> float:
     if job.kind in {"file", "file_reverse"} and job.deck_root:
         root = Path(job.deck_root)
-        use_slow = _transient_file_error(job)
-        if not use_slow and _file_move_still_needed(job, root):
-            use_slow = job.attempts > len(_BACKOFF)
-        if use_slow:
-            step = max(1, job.attempts // 2)
-            return min(600.0, _SLOW_FILE_BACKOFF * step)
+        if _transient_file_error(job) or _file_move_still_needed(job, root):
+            idx = max(0, job.attempts - 1)
+            if idx < len(_FILE_IN_USE_FAST):
+                return _FILE_IN_USE_FAST[idx]
+            step = idx - len(_FILE_IN_USE_FAST) + 1
+            return min(600.0, _FILE_IN_USE_SLOW * step)
     return _BACKOFF[min(job.attempts - 1, len(_BACKOFF) - 1)]
 
 
@@ -845,6 +902,7 @@ def _mutate_jobs(state_dir: Path, fn: Callable[[list[WorkJob]], None]) -> None:
         jobs = _ensure_loaded(state_dir)
         fn(jobs)
         _persist_jobs(state_dir, jobs)
+    _poke_worker(state_dir)
 
 
 def _snapshot_jobs(state_dir: Path) -> list[WorkJob]:

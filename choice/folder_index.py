@@ -23,6 +23,7 @@ _mem: LruDict[str, FolderIndex] = LruDict(32)
 _timers: dict[str, threading.Timer] = {}
 _timer_lock = threading.Lock()
 _scan_locks: LruDict[str, threading.Lock] = LruDict(32)
+_index_mutate_locks: LruDict[str, threading.Lock] = LruDict(32)
 
 
 @dataclass
@@ -267,15 +268,30 @@ def _unpin_pending_front(idx: FolderIndex, rel: str) -> None:
     idx.pending_front = [r for r in idx.pending_front if r != rel]
 
 
+def _index_mutate_lock(state_dir: Path) -> threading.Lock:
+    key = str(state_dir.resolve())
+    lock = _index_mutate_locks.get(key)
+    if lock is None:
+        lock = threading.Lock()
+        _index_mutate_locks.set(key, lock)
+    return lock
+
+
 def _readmit_to_pile_front(idx: FolderIndex, rel: str) -> bool:
     if not rel:
         return False
+    changed = False
     if rel in idx.ordered:
-        idx.ordered = [rel] + [r for r in idx.ordered if r != rel]
+        if idx.ordered[0] != rel:
+            idx.ordered = [rel] + [r for r in idx.ordered if r != rel]
+            changed = True
     else:
         idx.ordered.insert(0, rel)
-    _pin_pending_front(idx, rel)
-    return True
+        changed = True
+    if rel not in idx.pending_front or idx.pending_front[0] != rel:
+        _pin_pending_front(idx, rel)
+        changed = True
+    return changed
 
 
 def apply_pending_front(idx: FolderIndex, pile: list[str]) -> list[str]:
@@ -296,28 +312,29 @@ def apply_move(
     reverse: bool = False,
     deck: Deck | None = None,
 ) -> None:
-    idx = load_index(state_dir)
-    touched: list[str] = []
-    if reverse:
-        if from_rel and _readmit_to_pile_front(idx, from_rel):
+    with _index_mutate_lock(state_dir):
+        idx = load_index(state_dir)
+        touched: list[str] = []
+        if reverse:
+            if from_rel and _readmit_to_pile_front(idx, from_rel):
+                touched = [from_rel]
+                idx.generation += 1
+                idx.stale = False
+                if deck is not None:
+                    _refresh_dir_mtimes(deck, idx, touched)
+                save_index(state_dir, idx)
+            return
+        if from_rel in idx.ordered:
+            _unpin_pending_front(idx, from_rel)
+            idx.ordered = [rid for rid in idx.ordered if rid != from_rel]
             touched = [from_rel]
+            if to_rel:
+                touched.append(to_rel)
             idx.generation += 1
             idx.stale = False
             if deck is not None:
                 _refresh_dir_mtimes(deck, idx, touched)
             save_index(state_dir, idx)
-        return
-    if from_rel in idx.ordered:
-        _unpin_pending_front(idx, from_rel)
-        idx.ordered = [rid for rid in idx.ordered if rid != from_rel]
-        touched = [from_rel]
-        if to_rel:
-            touched.append(to_rel)
-        idx.generation += 1
-        idx.stale = False
-        if deck is not None:
-            _refresh_dir_mtimes(deck, idx, touched)
-        save_index(state_dir, idx)
 
 
 def _refresh_dir_mtimes(deck: Deck, idx: FolderIndex, rels: list[str]) -> None:
@@ -340,16 +357,16 @@ def readmit_path(state_dir: Path, rel: str, *, deck: Deck | None = None) -> bool
     """Put a source path back on the pile when a sort move did not land."""
     if not rel:
         return False
-    idx = load_index(state_dir)
-    if rel in idx.ordered and idx.ordered[0] == rel and idx.pending_front[:1] == [rel]:
-        return False
-    _readmit_to_pile_front(idx, rel)
-    idx.generation += 1
-    idx.stale = False
-    if deck is not None:
-        _refresh_dir_mtimes(deck, idx, [rel])
-    save_index(state_dir, idx)
-    return True
+    with _index_mutate_lock(state_dir):
+        idx = load_index(state_dir)
+        if not _readmit_to_pile_front(idx, rel):
+            return False
+        idx.generation += 1
+        idx.stale = False
+        if deck is not None:
+            _refresh_dir_mtimes(deck, idx, [rel])
+        save_index(state_dir, idx)
+        return True
 
 
 def kick_background_scan(deck: Deck) -> None:

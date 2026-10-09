@@ -28,6 +28,8 @@ _TYPES = {
     ".avif": "image/avif",
 }
 _lock = threading.Lock()
+_cache_write_guard = threading.Lock()
+_cache_write_locks: dict[str, threading.Lock] = {}
 _last_sweep = 0.0
 _pillow_checked = False
 _pillow_ok = False
@@ -266,13 +268,41 @@ def _cache_path(cache_dir: Path, key: str) -> Path:
     return cache_dir / f"{key[:32]}{ext}"
 
 
+def _cache_write_lock(cache_dir: Path, key: str) -> threading.Lock:
+    token = f"{cache_dir.resolve()}|{key}"
+    with _cache_write_guard:
+        lock = _cache_write_locks.get(token)
+        if lock is None:
+            lock = threading.Lock()
+            _cache_write_locks[token] = lock
+        return lock
+
+
 def _write_cache(cache_dir: Path, key: str, data: bytes) -> None:
     cache_dir.mkdir(parents=True, exist_ok=True)
     dest = _cache_path(cache_dir, key)
-    tmp = dest.with_suffix(dest.suffix + f".{threading.get_ident()}.tmp")
-    tmp.write_bytes(data)
-    tmp.replace(dest)
+    with _cache_write_lock(cache_dir, key):
+        if dest.is_file():
+            return
+        tmp = dest.with_suffix(dest.suffix + f".{threading.get_ident()}.tmp")
+        try:
+            tmp.write_bytes(data)
+            try:
+                tmp.replace(dest)
+            except OSError as exc:
+                if dest.is_file() or _cache_replace_race(exc):
+                    return
+                raise
+        finally:
+            tmp.unlink(missing_ok=True)
     maybe_sweep(cache_dir)
+
+
+def _cache_replace_race(exc: OSError) -> bool:
+    code = getattr(exc, "winerror", None)
+    if code is None:
+        code = exc.errno
+    return code in {5, 13, 17, 32}
 
 
 def _touch(path: Path) -> None:
