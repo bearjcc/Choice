@@ -6,6 +6,8 @@
 
 - Phone modals and sheets: viewport-fixed layout with safe-area and `visualViewport` when the keyboard opens, internal scroll, body scroll lock, backdrop tap and Escape; in-app confirms replace `window.confirm` for deck remove and plugin actions.
 - Headless layout checks at 360×640, 390×844, and landscape 844×390 for menu, counts, sort/filter, count display, queue failures, assign, browse picker, and confirm.
+- Folder `/items` decided counts follow the decision log on sort decks (`total == decided + left`); vanished index paths return `scanning: true` until rescan.
+- “Decisions today” ignores undone swipes; plugin home `left` matches pending `/items`; scan completion busts item and list caches so new cards appear with counts.
 
 ## 0.4.6 (2026-10-09)
 

@@ -6,11 +6,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from choice.act import decide, index_summary, progress, save_deck_counts
+from choice.act import decide, index_summary, progress, save_deck_counts, undo
 from choice.count_prefs import (
     counts_hidden,
+    decided_today,
     load_counts_mode,
     save_counts_mode,
+    today_count_label,
     write_folder_stats,
 )
 from choice.folder_index import load_index, scan_incremental, summary
@@ -103,6 +105,16 @@ class CountPrefsTests(unittest.TestCase):
         decide(deck, "p0.jpg", "right", None)
         snap = index_summary(deck)
         self.assertIn("today", (snap.get("count_label") or "").lower())
+
+    def test_decided_today_ignores_undone_swipes(self):
+        deck = self._folder_deck(files=2)
+        save_counts_mode(deck, "off")
+        decide(deck, "p0.jpg", "right", None)
+        self.assertEqual(decided_today(deck), 1)
+        self.assertIsNotNone(today_count_label(deck))
+        undo(deck)
+        self.assertEqual(decided_today(deck), 0)
+        self.assertIsNone(today_count_label(deck))
 
     def test_save_deck_counts_api(self):
         deck = self._folder_deck()

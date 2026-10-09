@@ -128,13 +128,11 @@ def write_folder_stats(state_dir: Path, pile_size: int) -> None:
 
 
 def decided_today(deck: Deck) -> int:
-    from choice.act import _read_log
+    from choice.act import _choices
 
     today = datetime.now().astimezone().date()
     count = 0
-    for row in _read_log(deck):
-        if row.get("type") not in (None, "decision"):
-            continue
+    for row in _choices(deck).values():
         if row.get("later"):
             continue
         ts = row.get("ts")

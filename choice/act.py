@@ -326,13 +326,13 @@ def index_summary(deck: Deck) -> dict:
         }
     if hidden:
         return _hidden_summary(deck, log_decided)
-    total, decided, left, list_size = plugin_pile_counts(log_decided, snap.ids, snap.plugin_decided)
+    counts = _plugin_index_counts(deck, choices, snap)
     return {
         "ok": True,
-        "total": total,
-        "decided": decided,
-        "left": left,
-        "list_size": list_size,
+        "total": counts["total"],
+        "decided": counts["decided"],
+        "left": counts["left"],
+        "list_size": len(snap.ids),
         "meter": True,
     }
 
@@ -425,6 +425,29 @@ def progress(
     return out
 
 
+def _plugin_decided_ids(deck: Deck, snap) -> frozenset[str]:
+    from choice.deck_index import snapshot as snap_now
+
+    if snap is None:
+        snap = snap_now(deck)
+    if snap is None:
+        return frozenset()
+    if snap.items:
+        return frozenset(item.id for item in snap.items if _plugin_done(item))
+    return snap.plugin_decided
+
+
+def _plugin_index_counts(deck: Deck, choices: dict, snap) -> dict[str, int]:
+    from choice.deck_index import plugin_pile_counts
+
+    log_decided = {item_id for item_id, row in choices.items() if not row.get("later")}
+    plugin_decided = _plugin_decided_ids(deck, snap)
+    row = _plugin_progress_page(deck, pending=True, offset=0, limit=200)
+    total, decided, _, _ = plugin_pile_counts(log_decided, snap.ids, plugin_decided)
+    left = row["left"]
+    return {"total": decided + left, "decided": decided, "left": left}
+
+
 def _plugin_progress_page(
     deck: Deck,
     pending: bool,
@@ -433,6 +456,7 @@ def _plugin_progress_page(
     *,
     after: str | None = None,
 ) -> dict:
+    from choice.deck_index import plugin_pile_counts
     from choice.pile_page import page_after
 
     choices = _choices(deck)
@@ -478,8 +502,14 @@ def _plugin_progress_page(
         if choice and choice.get("label"):
             shown["choice_label"] = choice.get("label")
         visible.append(shown)
-    total = decided + len(pile) if pending else len(ordered)
     left = len(pile)
+    if snap is not None:
+        log_decided = {rid for rid, row in choices.items() if not row.get("later")}
+        plugin_decided = _plugin_decided_ids(deck, snap)
+        total, decided, _, _ = plugin_pile_counts(log_decided, snap.ids, plugin_decided)
+        total = decided + left
+    else:
+        total = decided + len(pile) if pending else len(ordered)
     out = {
         "ok": True,
         "total": total,
@@ -509,7 +539,7 @@ def _folder_progress(
     from choice.folder_index import item_for_id, progress_page
 
     choices = _choices(deck)
-    page_ids, total, decided, left, warnings, next_after = progress_page(
+    page_ids, total, decided, left, warnings, next_after, scanning = progress_page(
         deck, choices, pending, offset, limit, after=after
     )
     visible = []
@@ -537,6 +567,7 @@ def _folder_progress(
         "meter": True,
         "view": _public_view(deck),
         "next_after": next_after,
+        "scanning": scanning,
     }
     if _counts_hidden(deck):
         out["meter"] = False

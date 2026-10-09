@@ -13,6 +13,7 @@ const state = {
   paged: null,
   queue: null,
   queuePoll: null,
+  scanRetry: null,
   busy: false,
   user: localStorage.getItem("choice.user") || "",
   picking: false,
@@ -1066,6 +1067,7 @@ async function loadItems(storedBlind) {
 
 function renderDeck() {
   state.picking = false;
+  clearScanRetry();
   const data = state.payload;
   paintWho();
   $("title").textContent = data.title;
@@ -1384,8 +1386,35 @@ function appendChips(parent, item) {
   parent.append(row);
 }
 
+function clearScanRetry() {
+  if (state.scanRetry) {
+    clearTimeout(state.scanRetry);
+    state.scanRetry = null;
+  }
+}
+
+function scheduleScanRetry() {
+  clearScanRetry();
+  state.scanRetry = setTimeout(() => {
+    state.scanRetry = null;
+    loadItems().then((ok) => {
+      if (ok) renderDeck();
+    });
+  }, 800);
+}
+
 function renderEmpty() {
   const data = state.payload;
+  clearScanRetry();
+  if (data.scanning) {
+    const box = el("div", "empty");
+    box.append(el("h2", null, "Scanning…"));
+    box.append(el("p", null, "The folder changed. Updating the pile."));
+    $("main").replaceChildren(box);
+    $("actions").hidden = true;
+    scheduleScanRetry();
+    return;
+  }
   const box = el("div", "empty");
   if (data.report) {
     box.classList.add("report");

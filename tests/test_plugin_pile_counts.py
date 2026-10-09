@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from choice.act import index_summary
+from choice.act import index_summary, progress
 from choice.deck_index import clear_index, plugin_pile_counts, refresh_persisted_summary
 from choice.open import open_config
 
@@ -86,6 +86,14 @@ mount = "{mount}"
         self.assertEqual(snap["left"], 3)
         self.assertEqual(snap["total"], 8)
         self.assertEqual(snap["list_size"], 3)
+
+    def test_home_left_matches_items_pending(self):
+        deck = self._deck("plugin_decided_mix")
+        deck.load_items()
+        home = index_summary(deck)
+        items = progress(deck, pending=True, limit=200)
+        self.assertEqual(home.get("left"), items.get("left"))
+        self.assertEqual(home.get("total"), items.get("total"))
 
     def test_plugin_decided_without_log(self):
         deck = self._deck("plugin_decided_mix")

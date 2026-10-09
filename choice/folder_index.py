@@ -285,6 +285,18 @@ def _scan_locked(deck: Deck) -> None:
     idx.stale = False
     idx.scanning = False
     save_index(state_dir, idx, save_meta=changed)
+    from choice.count_prefs import write_folder_stats
+
+    write_folder_stats(state_dir, len(idx.ordered))
+    from choice.deck_cache import bust as bust_item_cache
+    from choice.deck_index import clear_index
+
+    bust_item_cache(deck)
+    clear_index(deck)
+    if changed:
+        from choice.folder_list_cache import invalidate_under
+
+        invalidate_under(root)
 
 
 def _pin_pending_front(idx: FolderIndex, rel: str) -> None:
@@ -500,6 +512,14 @@ def _tree_dirs_changed(deck: Deck, idx: FolderIndex) -> bool:
     return False
 
 
+def _any_indexed_files(deck: Deck, ids: list[str]) -> bool:
+    root = deck.root.resolve()
+    for rid in ids:
+        if (root / rid).is_file():
+            return True
+    return False
+
+
 def progress_page(
     deck: Deck,
     choices: dict,
@@ -508,8 +528,10 @@ def progress_page(
     limit: int,
     *,
     after: str | None = None,
-) -> tuple[list[str], int, int, int, list[str], str | None]:
-    """Return page ids, total, decided, left, warnings."""
+) -> tuple[list[str], int, int, int, list[str], str | None, bool]:
+    """Return page ids, total, decided, left, warnings, next_after, scanning."""
+    from choice.deck_index import plugin_pile_counts
+
     scan = deck.folder_scan
     assert scan is not None
     idx = load_index(deck.state_dir)
@@ -520,26 +542,35 @@ def progress_page(
     elif not idx.scanning and (idx.stale or outdated):
         schedule_scan(deck)
     warnings: list[str] = []
+    log_decided = {rid for rid, row in choices.items() if not row.get("later")}
+    warming = idx.scanning or outdated or idx.stale
     if not idx.ordered:
-        return [], 0, 0, 0, warnings, None
+        if warming:
+            kick_background_scan(deck)
+            decided = len(log_decided)
+            return [], decided, 0, decided, warnings, None, True
+        return [], len(log_decided), 0, len(log_decided), warnings, None, False
     from choice.pile_view import view_order_ids
     from choice.view_prefs import load_view_prefs
 
     prefs = load_view_prefs(deck)
     ordered = view_order_ids(deck, idx, prefs)
+    if ordered and not _any_indexed_files(deck, ordered):
+        kick_background_scan(deck)
+        universe = frozenset(ordered)
+        total, decided, left, _ = plugin_pile_counts(log_decided, universe, frozenset())
+        return [], total, decided, left, warnings, None, True
+    universe = frozenset(ordered)
+    total, decided, left, _ = plugin_pile_counts(log_decided, universe, frozenset())
     pile: list[str] = []
-    decided = 0
     for rid in ordered:
         choice = choices.get(rid)
         log_done = choice is not None and not choice.get("later")
         if log_done:
-            decided += 1
             if pending:
                 continue
         pile.append(rid)
     pile = apply_pending_front(idx, pile)
-    left = len(pile)
-    total = decided + left
     from choice.pile_page import page_after
 
     if limit <= 0:
@@ -549,7 +580,7 @@ def progress_page(
     else:
         page = pile[offset : offset + limit]
         next_after = page[-1] if page and offset + len(page) < len(pile) else None
-    return page, total, decided, left, warnings, next_after
+    return page, total, decided, left, warnings, next_after, False
 
 
 def admit_if_on_disk(deck: Deck, item_id: str) -> bool:
