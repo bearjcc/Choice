@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.1 (2026-10-09)
+
+### Added
+
+- Persistent async work queue for folder sort moves (sync in tests via `CHOICE_SYNC_WORK`).
+- Incremental `folder_index.json`: stable append-only pile order, debounced background scans, non-blocking home counts with `stale`.
+
+### Fixed
+
+- `/api/index` no longer rescans the whole tree on every request; directory mtimes detect growth without listing every file.
+- Folder `/items` pages from the index (default limit 200) without building all cards per request.
+
+### Performance
+
+- Large folder decks: index and first `/items` page stay fast while files are still being copied in.
+- Plugin `/items` paging reuses the in-memory list snapshot when warm.
+
 ## 0.3.0 (2026-10-09)
 
 ### Added

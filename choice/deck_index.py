@@ -24,6 +24,8 @@ _warm_scheduled: set[str] = set()
 class _Snapshot:
     ids: frozenset[str]
     plugin_decided: frozenset[str]
+    order: list[str]
+    items: list[Item] | None = None
 
 
 def list_lock(deck: Deck) -> threading.RLock:
@@ -37,12 +39,13 @@ def list_lock(deck: Deck) -> threading.RLock:
 
 
 def record_items(deck: Deck, items: list[Item]) -> None:
-    ids = frozenset(item.id for item in items)
+    order = [item.id for item in items]
+    ids = frozenset(order)
     plugin_decided = frozenset(
         item.id for item in items if item.plugin_decided or item.fields.get("plugin_decided")
     )
     key = str(deck.state_dir)
-    snap = _Snapshot(ids=ids, plugin_decided=plugin_decided)
+    snap = _Snapshot(ids=ids, plugin_decided=plugin_decided, order=order, items=items)
     with _guard:
         _index.set(key, (time.monotonic() + _INDEX_TTL, snap))
     _persist_counts(deck, snap)
@@ -98,6 +101,7 @@ def _persist_counts(deck: Deck, snap: _Snapshot) -> None:
             "total": len(snap.ids),
             "plugin_decided": sorted(snap.plugin_decided),
             "ids": sorted(snap.ids),
+            "order": snap.order,
         }
         path.write_text(json.dumps(payload), encoding="utf-8")
     except OSError:

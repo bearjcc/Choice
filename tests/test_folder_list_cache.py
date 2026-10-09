@@ -72,6 +72,9 @@ recursive = true
             encoding="utf-8",
         )
         deck = open_config(cfg).decks[0]
+        from choice.folder_index import scan_incremental
+
+        scan_incremental(deck)
         snap = index_summary(deck)
         self.assertTrue(snap.get("ok"))
         self.assertEqual(snap.get("list_size"), 50)

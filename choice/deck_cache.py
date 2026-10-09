@@ -26,13 +26,13 @@ def load_items(deck: Deck) -> tuple[list, list]:
     return items, warnings
 
 
-def bust(deck: Deck) -> None:
+def bust(deck: Deck, *, invalidate_folder: bool = False) -> None:
     from choice.deck_index import clear_index
     from choice.folder_list_cache import invalidate_under
 
     key = f"{deck.id}:{deck.state_dir}"
     _cache.pop(key)
-    if getattr(deck, "folder_scan", None) is not None:
+    if invalidate_folder and getattr(deck, "folder_scan", None) is not None:
         invalidate_under(deck.root)
     clear_index(deck)
 
@@ -40,14 +40,9 @@ def bust(deck: Deck) -> None:
 def _stamp(deck: Deck) -> tuple:
     scan = getattr(deck, "folder_scan", None)
     if scan is not None:
-        from choice.folder_list_cache import cached_list_files
+        from choice.folder_index import generation
 
-        skip_dirs = set(scan.sort_dirs(deck.root))
-        skip_dirs.add((deck.root / ".choice").resolve())
-        files = cached_list_files(deck.root, scan.recursive, skip_dirs)
-        from choice.folder_list_cache import _stamp as folder_stamp
-
-        return ("folder", folder_stamp(files))
+        return ("folder_index", generation(deck.state_dir))
     root = deck.root
     try:
         return ("root", root.stat().st_mtime_ns)

@@ -887,7 +887,7 @@ async function loadItems(storedBlind) {
     updateMediaWidth();
     const w = state.mediaWidth || 1280;
     data = await api(
-      "/api/decks/" + encodeURIComponent(state.deckId) + "/items?pending=" + (state.pending ? "1" : "0") + "&w=" + w
+      "/api/decks/" + encodeURIComponent(state.deckId) + "/items?pending=" + (state.pending ? "1" : "0") + "&limit=200&offset=0&w=" + w
     );
   } catch (_err) {
     return showProblem("Could not reach Choice.");

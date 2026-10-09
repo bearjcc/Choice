@@ -16,6 +16,36 @@ def invalidate_under(_root: Path) -> None:
     _CACHE.clear()
 
 
+def apply_file_move(root: Path, from_rel: str, to_rel: str, *, reverse: bool = False) -> None:
+    """Update cached listings after a move without rescanning the tree."""
+    root = root.resolve()
+    if reverse:
+        from_rel, to_rel = to_rel, from_rel
+    src = (root / from_rel).resolve()
+    dst = (root / to_rel).resolve()
+    for key, hit in _CACHE.items():
+        if key[0] != str(root):
+            continue
+        stamp, files = hit
+        new_files: list[Path] = []
+        changed = False
+        for path in files:
+            resolved = path.resolve()
+            if resolved == src:
+                if dst.is_file():
+                    new_files.append(dst)
+                changed = True
+                continue
+            if resolved == dst and src != dst:
+                changed = True
+                continue
+            new_files.append(path)
+        if not changed:
+            continue
+        new_stamp = (len(new_files), stamp[1])
+        _CACHE.set(key, (new_stamp, new_files))
+
+
 def _stamp(files: list[Path]) -> tuple[int, int]:
     max_ns = 0
     for path in files:

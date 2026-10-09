@@ -53,6 +53,7 @@ class ChoiceSite(ThreadingHTTPServer):
         self.config_path = config_path
         self.base_path = normalize_base_path(base_path)
         super().__init__(address, Handler)
+        _boot_work_queue(self)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -249,8 +250,10 @@ class Handler(BaseHTTPRequestHandler):
         pending = query.get("pending", ["1"])[0] != "0"
         limit = int((query.get("limit") or ["0"])[0] or 0)
         offset = int((query.get("offset") or ["0"])[0] or 0)
-        snap = progress(deck, pending=pending)
-        if limit > 0 and snap.get("ok") and snap.get("items"):
+        if deck.folder_scan is not None and limit <= 0:
+            limit = 200
+        snap = progress(deck, pending=pending, limit=limit, offset=offset)
+        if limit > 0 and snap.get("ok") and snap.get("items") and deck.folder_scan is None:
             items = snap["items"]
             paged, token = page_items(deck.id, items, offset=offset, limit=limit)
             snap["items"] = paged
@@ -617,15 +620,19 @@ class Handler(BaseHTTPRequestHandler):
         deck = self._opened(deck_id, self._requested_user(query, None))
         if isinstance(deck, dict):
             return self._reply(deck)
+        from choice.work_queue import snapshot_for as queue_snapshot
+
         plugin = deck.plugin
         if plugin is not None and hasattr(plugin, "stats"):
             data = plugin.stats()
             if data:
+                data = dict(data)
+                data["queue"] = queue_snapshot(deck).to_dict()
                 return self._json(200, {"ok": True, "stats": data})
-        snap = progress(deck, pending=False)
-        return self._json(
-            200, {"ok": True, "stats": {"tally": snap.get("tally"), "total": snap.get("total")}}
-        )
+        snap = progress(deck, pending=False, limit=1, offset=0)
+        payload = {"tally": snap.get("tally"), "total": snap.get("total")}
+        payload["queue"] = queue_snapshot(deck).to_dict()
+        return self._json(200, {"ok": True, "stats": payload})
 
     def _export(self, deck_id, query):
         deck = self._opened(deck_id, self._requested_user(query, None))
@@ -816,6 +823,8 @@ def _rows(decks, deck_meta: dict[str, dict] | None = None) -> list[dict]:
             row["source_type"] = meta.get("source_type")
         if snap.get("count_label"):
             row["count_label"] = snap["count_label"]
+        if snap.get("stale"):
+            row["stale"] = True
         if snap.get("meter") is False:
             row["meter"] = False
         elif snap.get("meter") is True:
@@ -866,6 +875,32 @@ def _media_source(item, side_key: str, image_index: int | None = None):
         if item.path is not None and item.path.is_file():
             return item.path
     return None
+
+
+def _boot_work_queue(server: ChoiceSite) -> None:
+    from choice.work_queue import resume_workers, set_deck_resolver
+
+    def _resolve(deck_id: str, actor: str):
+        lib = server.config_path if server.config_path is not None else server.choice_root
+        try:
+            opened = open_library(lib)
+        except DeckProblem:
+            return None
+        for deck in opened.decks:
+            if deck.id == deck_id:
+                if actor:
+                    deck.actor = actor
+                return deck
+        return None
+
+    set_deck_resolver(_resolve)
+    path = server.config_path
+    if path is not None and path.is_file():
+        try:
+            cfg = load_config(path)
+            resume_workers(cfg.state_dir)
+        except ConfigProblem:
+            pass
 
 
 def serve(

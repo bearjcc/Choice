@@ -177,7 +177,11 @@ def build_file_deck(
         blind=False,
         warnings=[],
         folder_scan=scan,
-        _load=lambda: (items_from_folder_scan(folder.resolve(), folder.resolve(), scan), []),
+        _load=lambda: (
+            __import__("choice.folder_index", fromlist=["load_items_for"]).load_items_for(
+                folder.resolve(), state_dir, scan
+            )
+        ),
     )
     return deck
 

@@ -39,3 +39,7 @@ class LruDict(Generic[K, V]):
     def clear(self) -> None:
         with self._lock:
             self._data.clear()
+
+    def items(self) -> list[tuple[K, V]]:
+        with self._lock:
+            return list(self._data.items())

@@ -31,6 +31,7 @@ from choice.deck_index import (
 )
 from choice.flow import Flow, arrange, report_lines
 from choice.load import Deck, DeckProblem, Item, inside
+from choice.work_queue import cancel_for_decision, enqueue_file_op
 
 _GUARD = threading.Lock()
 _LOCKS: dict[str, threading.Lock] = {}
@@ -83,34 +84,30 @@ def decide(deck: Deck, item_id: str, direction: str, note: str | None) -> dict:
             "file": item.path.name if item.path else None,
         }
         _apply_pick(deck, item, action, record)
-        moved = None
         try:
             if deck.plugin is not None:
-                try:
-                    plugin_result = _plugin_handle(deck, item, action.id, note)
-                except Exception as exc:
-                    return _fail(_plugin_error_text(exc))
-                if not plugin_result.get("ok", True):
-                    msg = _plugin_message(plugin_result.get("message"))
-                    msg = msg or "Plugin refused the swipe."
-                    return _fail(msg)
-                if plugin_result.get("undo_token") is not None:
-                    record["undo_token"] = plugin_result.get("undo_token")
-            if action.does in {"move", "copy"}:
-                moved = _transfer(deck, item, action.does, action.into or "")
-                record["file_op"] = moved
+                if action.id == "left":
+                    record["undo_token"] = item.id
+                result = _plugin_handle(deck, item, action.id, note)
+                if not result.get("ok", True):
+                    raise _OpError(
+                        _plugin_message(result.get("message")) or "Plugin failed."
+                    )
+            elif action.does in {"move", "copy"}:
+                planned = _plan_transfer(deck, item, action.does, action.into or "")
+                record["file_op"] = planned
+                record["file_op_pending"] = True
+                enqueue_file_op(deck, token, planned)
+                from choice.folder_index import apply_move
+
+                apply_move(deck.state_dir, planned["from"], planned["to"])
             if deck.hook and deck.hook_required:
                 _run_hook(deck, _hook_body("decide", deck, item, record))
         except _OpError as exc:
-            if moved is not None:
-                try:
-                    _reverse_file_op(deck, moved)
-                except _OpError:
-                    return _fail(f"{exc} Choice could not reverse the file change.")
             return _fail(str(exc))
 
         _append(deck, record)
-        bust_item_cache(deck)
+        bust_item_cache(deck, invalidate_folder=False)
         message = "{}: {}".format(record["label"], item.title)
         if deck.hook and not deck.hook_required:
             try:
@@ -133,26 +130,35 @@ def undo(deck: Deck) -> dict:
             path=None,
             fields={"item": latest["item"]},
         )
-        reversed_op = False
         try:
-            if deck.plugin is not None and latest.get("undo_token") is not None:
-                result = _plugin_undo(deck, latest["item"], latest.get("undo_token"))
+            cancel_for_decision(deck, str(latest.get("id") or ""))
+            if deck.plugin is not None:
+                result = _plugin_undo(
+                    deck,
+                    latest["item"],
+                    latest.get("undo_token"),
+                )
                 if not result.get("ok", True):
-                    return _fail(result.get("message") or "Plugin could not undo.")
-            if latest.get("file_op"):
-                _reverse_file_op(deck, latest.get("file_op"))
-                reversed_op = True
+                    raise _OpError(
+                        _plugin_message(result.get("message")) or "Plugin undo failed."
+                    )
+            elif latest.get("file_op"):
+                enqueue_file_op(
+                    deck,
+                    str(latest.get("id") or ""),
+                    latest.get("file_op"),
+                    reverse=True,
+                )
+                from choice.folder_index import apply_move
+
+                op = latest.get("file_op") or {}
+                apply_move(deck.state_dir, op.get("from") or "", op.get("to") or "", reverse=True)
             if deck.hook and deck.hook_required:
                 _run_hook(deck, _hook_body("undo", deck, item, latest))
         except _OpError as exc:
-            if reversed_op:
-                try:
-                    _reapply_file_op(deck, latest.get("file_op"))
-                except _OpError:
-                    return _fail(f"{exc} Choice could not put the file back.")
             return _fail(str(exc))
         _append(deck, {"type": "undo", "ref": latest["id"], "item": latest["item"], "ts": _now()})
-        bust_item_cache(deck)
+        bust_item_cache(deck, invalidate_folder=False)
         if deck.hook and not deck.hook_required:
             try:
                 _run_hook(deck, _hook_body("undo", deck, item, latest))
@@ -197,20 +203,9 @@ def index_summary(deck: Deck) -> dict:
     log_decided = {item_id for item_id, row in choices.items() if not row.get("later")}
     if snap is None:
         if deck.plugin is None and deck.folder_scan is not None:
-            from choice.folder_list_cache import folder_item_ids
+            from choice.folder_index import summary as folder_summary
 
-            ids = folder_item_ids(deck.root, deck.folder_scan)
-            total, decided, left, list_size = plugin_pile_counts(
-                log_decided, ids, frozenset()
-            )
-            return {
-                "ok": True,
-                "total": total,
-                "decided": decided,
-                "left": left,
-                "list_size": list_size,
-                "meter": True,
-            }
+            return folder_summary(deck, log_decided)
         if deck.plugin is None:
             snap_full = progress(deck, pending=True)
             if not snap_full.get("ok"):
@@ -282,8 +277,19 @@ def run_plugin_action(deck: Deck, action_id: str) -> dict:
         return {"ok": True, "message": message}
 
 
-def progress(deck: Deck, pending: bool, items: list[Item] | None = None) -> dict:
+def progress(
+    deck: Deck,
+    pending: bool,
+    items: list[Item] | None = None,
+    *,
+    limit: int = 0,
+    offset: int = 0,
+) -> dict:
     """Counts, tally, and the cards still to show. Caller may pass items it already loaded."""
+    if items is None and deck.folder_scan is not None:
+        return _folder_progress(deck, pending, offset, limit)
+    if items is None and deck.plugin is not None and limit > 0:
+        return _plugin_progress_page(deck, pending, offset, limit)
     try:
         flow = view(deck, items)
     except DeckProblem as exc:
@@ -336,6 +342,91 @@ def progress(deck: Deck, pending: bool, items: list[Item] | None = None) -> dict
     if flow.replay is not None:
         out["replay"] = flow.replay
     return out
+
+
+def _plugin_progress_page(deck: Deck, pending: bool, offset: int, limit: int) -> dict:
+    choices = _choices(deck)
+    snap = snapshot(deck)
+    warnings: list[str] = []
+    if snap is not None and snap.order:
+        ordered = list(snap.order)
+        items = snap.items
+    else:
+        items, warnings = cached_load_items(deck)
+        ordered = [item.id for item in items]
+    pile: list[str] = []
+    decided = 0
+    for rid in ordered:
+        choice = choices.get(rid)
+        log_done = choice is not None and not choice.get("later")
+        if log_done:
+            decided += 1
+            if pending:
+                continue
+        pile.append(rid)
+    page_ids = pile[offset : offset + limit]
+    if items is None:
+        items, more = cached_load_items(deck)
+        warnings = list(more) + warnings
+    by_id = {item.id: item for item in items}
+    visible = []
+    for rid in page_ids:
+        item = by_id.get(rid)
+        if item is None:
+            continue
+        choice = choices.get(rid)
+        current = choice.get("value") if choice else None
+        shown = item.public(current)
+        if choice and choice.get("label"):
+            shown["choice_label"] = choice.get("label")
+        visible.append(shown)
+    total = len(ordered)
+    left = len(pile)
+    return {
+        "ok": True,
+        "total": total,
+        "decided": decided,
+        "left": left,
+        "can_undo": _has_undo(deck),
+        "tally": _tally(deck, choices),
+        "items": visible,
+        "warnings": warnings,
+        "pending": pending,
+        "meter": True,
+    }
+
+
+def _folder_progress(deck: Deck, pending: bool, offset: int, limit: int) -> dict:
+    from choice.folder_index import item_for_id, progress_page
+
+    choices = _choices(deck)
+    page_ids, total, decided, left, warnings = progress_page(
+        deck, choices, pending, offset, limit
+    )
+    visible = []
+    for rid in page_ids:
+        item = item_for_id(deck, rid)
+        if item is None:
+            continue
+        choice = choices.get(rid)
+        current = choice.get("value") if choice else None
+        shown = item.public(current)
+        if choice and choice.get("label"):
+            shown["choice_label"] = choice.get("label")
+        visible.append(shown)
+    tally = _tally(deck, choices)
+    return {
+        "ok": True,
+        "total": total,
+        "decided": decided,
+        "left": left,
+        "can_undo": _has_undo(deck),
+        "tally": tally,
+        "items": visible,
+        "warnings": warnings,
+        "pending": pending,
+        "meter": True,
+    }
 
 
 def tally_lines(deck: Deck) -> list[str]:
@@ -413,6 +504,35 @@ def _latest_undoable(deck: Deck) -> dict | None:
         if record.get("type") == "decision" and record.get("id") not in dead:
             last = record
     return last
+
+
+def _plan_transfer(deck: Deck, item: Item, does: str, into: str) -> dict:
+    if item.path is None:
+        raise _OpError(f"This card has no file to {does}.")
+    if not item.path.is_file():
+        raise _OpError(f"File is already gone: {item.title}")
+    if not inside(deck.root, item.path):
+        raise _OpError(f"Choice will not {does} a file outside the deck folder.")
+    dest_root = (deck.root / into).resolve()
+    if not inside(deck.root, dest_root):
+        raise _OpError("into leaves the deck folder.")
+    try:
+        rel = item.path.resolve().relative_to(deck.root.resolve())
+    except ValueError as exc:
+        raise _OpError(f"Choice will not {does} a file outside the deck folder.") from exc
+    into_norm = into.replace("\\", "/")
+    if "/" in into_norm or into_norm.startswith("."):
+        dest = (dest_root / rel).resolve()
+    else:
+        dest = (dest_root / rel.name).resolve()
+    if not inside(deck.root, dest):
+        raise _OpError("That destination leaves the deck folder.")
+    dest = _unique_dest(dest)
+    return {
+        "op": does,
+        "from": rel.as_posix(),
+        "to": dest.relative_to(deck.root.resolve()).as_posix(),
+    }
 
 
 def _transfer(deck: Deck, item: Item, does: str, into: str) -> dict:
@@ -658,12 +778,15 @@ def _fail(message: str) -> dict:
 def _plugin_handle(deck: Deck, item: Item, direction: str, note: str) -> dict:
     plugin = deck.plugin
     item_id = item.id
-    if hasattr(plugin, "handle"):
-        return dict(plugin.handle(item_id, direction, note=note) or {})
-    from choice.swipe_plugin import SwipePlugin
+    try:
+        if hasattr(plugin, "handle"):
+            return dict(plugin.handle(item_id, direction, note=note) or {})
+        from choice.swipe_plugin import SwipePlugin
 
-    if isinstance(plugin, SwipePlugin):
-        return plugin.handle(item_id, direction, note=note)
+        if isinstance(plugin, SwipePlugin):
+            return plugin.handle(item_id, direction, note=note)
+    except Exception as exc:
+        return {"ok": False, "message": str(exc)}
     return {"ok": True}
 
 
