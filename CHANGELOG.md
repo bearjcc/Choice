@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.7 (2026-10-09)
+
+### Fixed
+
+- Sort move planning reserves destination paths under the work-queue lock (disk plus pending/running jobs). Execution picks a new unique name when the path is taken; jobs are not done until the source is gone. Reconcile replans logged moves whose source remains and whose destination is missing or holds another file.
+
+### Tests
+
+- Concurrent same-name files across folders with kill/restart; reconcile after a falsely completed collision.
+
 ## 0.3.6 (2026-10-09)
 
 ### Fixed

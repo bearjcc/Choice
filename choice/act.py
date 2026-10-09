@@ -523,19 +523,30 @@ def _plan_transfer(deck: Deck, item: Item, does: str, into: str) -> dict:
         rel = item.path.resolve().relative_to(deck.root.resolve())
     except ValueError as exc:
         raise _OpError(f"Choice will not {does} a file outside the deck folder.") from exc
-    into_norm = into.replace("\\", "/")
-    if "/" in into_norm or into_norm.startswith("."):
-        dest = (dest_root / rel).resolve()
-    else:
-        dest = (dest_root / rel.name).resolve()
-    if not inside(deck.root, dest):
-        raise _OpError("That destination leaves the deck folder.")
-    dest = _unique_dest(dest)
-    return {
-        "op": does,
-        "from": rel.as_posix(),
-        "to": dest.relative_to(deck.root.resolve()).as_posix(),
-    }
+    from choice.work_queue import allocate_transfer_dest
+
+    return allocate_transfer_dest(deck, does, rel.as_posix(), into, item)
+
+
+def patch_decision_file_op(deck: Deck, decision_id: str, file_op: dict) -> None:
+    path = _log_path(deck)
+    if not path.is_file():
+        return
+    lines = path.read_text(encoding="utf-8").splitlines()
+    out: list[str] = []
+    changed = False
+    for line in lines:
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        if row.get("type") == "decision" and str(row.get("id") or "") == decision_id:
+            row["file_op"] = dict(file_op)
+            changed = True
+        out.append(json.dumps(row, ensure_ascii=False))
+    if not changed:
+        return
+    path.write_text("\n".join(out) + "\n", encoding="utf-8")
+    _LOG_SNAP.pop(str(path))
 
 
 def _transfer(deck: Deck, item: Item, does: str, into: str) -> dict:

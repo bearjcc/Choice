@@ -14,12 +14,11 @@ from pathlib import Path
 
 from choice.atomic_io import atomic_replace
 from choice.bounded_cache import LruDict
+from choice.dest_plan import allocate_dest_rel, replan_dest_rel, taken_destinations
 from choice.file_moves import (
     MoveNotReady,
-    conflict_dest_path,
     copy_file,
     files_equal,
-    log_move_conflict,
     move_file,
     remove_source,
 )
@@ -134,6 +133,25 @@ def wait_idle(state_dir: Path, timeout: float = 180.0) -> bool:
     return False
 
 
+def allocate_transfer_dest(
+    deck: Deck, does: str, from_rel: str, into: str, item
+) -> dict:
+    from choice.dest_plan import preferred_dest_rel
+
+    preferred = preferred_dest_rel(deck, item, into)
+    root = deck.root.resolve()
+    planned: dict = {}
+
+    def _reserve(jobs: list[WorkJob]) -> None:
+        taken = taken_destinations(jobs, root)
+        to_rel = allocate_dest_rel(root, preferred, taken)
+        planned.clear()
+        planned.update({"op": does, "from": from_rel, "to": to_rel})
+
+    _mutate_jobs(deck.state_dir, _reserve)
+    return dict(planned)
+
+
 def enqueue_file_op(deck: Deck, decision_id: str, file_op: dict, *, reverse: bool = False) -> str:
     kind = "file_reverse" if reverse else "file"
     job = WorkJob(
@@ -208,12 +226,14 @@ def cancel_for_decision(deck: Deck, decision_id: str) -> int:
 
 def reconcile_deck(deck: Deck) -> int:
     """Re-enqueue sort moves logged but not applied on disk."""
-    from choice.act import _read_log
+    from choice.act import _read_log, patch_decision_file_op
+    from choice.folder_index import readmit_path
 
     if deck.folder_scan is None or deck.folder_scan.output != "sort":
         return 0
     root = deck.root.resolve()
     n = 0
+    pending_patch: list[tuple[str, dict]] = []
 
     def _scan(jobs: list[WorkJob]) -> None:
         nonlocal n
@@ -243,53 +263,39 @@ def reconcile_deck(deck: Deck) -> int:
                 continue
             to_rel = str(op.get("to") or "")
             dest = (root / to_rel).resolve() if to_rel else None
-            if dest is not None and dest.is_file() and src.is_file():
-                if files_equal(src, dest):
-                    try:
-                        remove_source(src)
-                    except MoveNotReady:
-                        jobs.append(
-                            WorkJob(
-                                id=uuid.uuid4().hex,
-                                decision_id=decision_id,
-                                kind="file",
-                                file_op=dict(op),
-                                deck_id=deck.id,
-                                actor=deck.actor or "",
-                                deck_root=str(root),
-                                state_dir=str(deck.state_dir.resolve()),
-                            )
-                        )
-                        active.add(decision_id)
-                        n += 1
-                    continue
-                try:
-                    renamed = conflict_dest_path(dest)
-                    dest.rename(renamed)
-                    log_move_conflict(
-                        deck.state_dir,
-                        {
-                            "type": "move_conflict",
-                            "decision_id": decision_id,
-                            "from": from_rel,
-                            "to": to_rel,
-                            "renamed_to": str(renamed.relative_to(root).as_posix()),
-                            "ts": time.time(),
-                        },
-                    )
-                except OSError:
-                    pass
             if dest is not None and dest.is_file() and not src.is_file():
                 continue
-            from choice.folder_index import readmit_path
-
+            if dest is not None and dest.is_file() and src.is_file() and files_equal(src, dest):
+                try:
+                    remove_source(src)
+                except MoveNotReady:
+                    jobs.append(
+                        WorkJob(
+                            id=uuid.uuid4().hex,
+                            decision_id=decision_id,
+                            kind="file",
+                            file_op=dict(op),
+                            deck_id=deck.id,
+                            actor=deck.actor or "",
+                            deck_root=str(root),
+                            state_dir=str(deck.state_dir.resolve()),
+                        )
+                    )
+                    active.add(decision_id)
+                    n += 1
+                continue
+            new_op = dict(op)
+            new_to = replan_dest_rel(root, from_rel, new_op, jobs)
+            if new_to != new_op.get("to"):
+                new_op["to"] = new_to
+                pending_patch.append((decision_id, dict(new_op)))
             readmit_path(deck.state_dir, from_rel)
             jobs.append(
                 WorkJob(
                     id=uuid.uuid4().hex,
                     decision_id=decision_id,
                     kind="file",
-                    file_op=dict(op),
+                    file_op=dict(new_op),
                     deck_id=deck.id,
                     actor=deck.actor or "",
                     deck_root=str(root),
@@ -300,6 +306,8 @@ def reconcile_deck(deck: Deck) -> int:
             n += 1
 
     _mutate_jobs(deck.state_dir, _scan)
+    for decision_id, new_op in pending_patch:
+        patch_decision_file_op(deck, decision_id, new_op)
     if n:
         _ensure_worker(deck.state_dir)
     return n
@@ -414,13 +422,18 @@ def _run_file_job(job: WorkJob) -> bool:
     if not job.file_op:
         return True
     root = Path(job.deck_root)
+    state_dir = Path(job.state_dir)
     op = job.file_op
     reverse = job.kind == "file_reverse"
     try:
         if reverse:
             _reverse_file_op(root, op)
         else:
-            _apply_file_op(root, op)
+            _apply_file_op(root, op, job, state_dir)
+        if job.kind == "file" and str(op.get("op") or "move") == "move":
+            src = _under(root, str(op.get("from") or ""))
+            if src.is_file():
+                raise MoveNotReady("source remains")
         return True
     except (MoveNotReady, _RetryLater) as exc:
         job.last_error = str(exc)
@@ -468,7 +481,11 @@ def _run_plugin_job(job: WorkJob) -> bool:
         return False
 
 
-def _apply_file_op(root: Path, file_op: dict) -> None:
+def _apply_file_op(
+    root: Path, file_op: dict, job: WorkJob, state_dir: Path
+) -> None:
+    from choice.act import patch_decision_file_op
+
     src = _under(root, str(file_op.get("from") or ""))
     dest = _under(root, str(file_op.get("to") or ""))
     op = str(file_op.get("op") or "move")
@@ -481,7 +498,30 @@ def _apply_file_op(root: Path, file_op: dict) -> None:
             if dest.is_file():
                 return
             raise _RetryLater("source missing")
+        if dest.is_file() and not files_equal(src, dest):
+            new_to = _replan_dest_locked(root, file_op, job, state_dir)
+            dest = _under(root, new_to)
+            if _deck_resolver is not None:
+                deck = _deck_resolver(job.deck_id, job.actor)
+                if deck is not None:
+                    patch_decision_file_op(deck, job.decision_id, dict(job.file_op or {}))
         move_file(src, dest)
+        if src.is_file():
+            raise MoveNotReady("source remains")
+
+
+def _replan_dest_locked(
+    root: Path, file_op: dict, job: WorkJob, state_dir: Path
+) -> str:
+    from_rel = str(file_op.get("from") or "")
+
+    def _fn(jobs: list[WorkJob]) -> None:
+        new_to = replan_dest_rel(root, from_rel, file_op, jobs)
+        file_op["to"] = new_to
+        job.file_op = dict(file_op)
+
+    _mutate_jobs(state_dir, _fn)
+    return str(file_op.get("to") or "")
 
 
 def _reverse_file_op(root: Path, file_op: dict) -> None:
