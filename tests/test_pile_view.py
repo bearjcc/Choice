@@ -82,6 +82,17 @@ class PileViewTests(unittest.TestCase):
         order = view_order_ids(deck, idx, ViewPrefs(sort_mode="mtime_desc"))
         self.assertEqual(order[0], "new.jpg")
 
+    def test_folder_sort_order(self):
+        (self.tmp / "b").mkdir()
+        (self.tmp / "a").mkdir()
+        (self.tmp / "b" / "z.jpg").write_bytes(b"x")
+        (self.tmp / "a" / "m.jpg").write_bytes(b"x")
+        deck = self._deck()
+        scan_incremental(deck)
+        idx = load_index(deck.state_dir)
+        order = view_order_ids(deck, idx, ViewPrefs(sort_mode="folder"))
+        self.assertEqual(order, ["a/m.jpg", "b/z.jpg"])
+
     def test_folder_filter(self):
         deck = self._deck()
         (self.tmp / "keep").mkdir()
@@ -102,6 +113,30 @@ class PileViewTests(unittest.TestCase):
         idx = load_index(deck.state_dir)
         order = view_order_ids(deck, idx, ViewPrefs(file_types=["image"]))
         self.assertEqual(order, ["a.jpg"])
+
+    def test_locked_rated_knockout_and_story_ignore_sort(self):
+        for kind, extra in (
+            ("rated", {"contest": {"kind": "rated"}}),
+            ("knockout", {"contest": {"kind": "bracket"}}),
+            ("story", {"story": {"left": "lid", "right": "rid"}}),
+        ):
+            sub = self.tmp / kind
+            sub.mkdir()
+            (sub / "items.jsonl").write_text('{"id":"1","lid":"a","rid":"b"}\n', encoding="utf-8")
+            cfg = {
+                "source": {"type": "jsonl", "path": "items.jsonl"},
+                "directions": {
+                    "right": {"label": "R", "value": "r"},
+                    "left": {"label": "L", "value": "l"},
+                },
+            }
+            cfg.update(extra)
+            (sub / "deck.json").write_text(json.dumps(cfg), encoding="utf-8")
+            deck = resolve(sub).decks[0]
+            self.assertTrue(pile_view_locked(deck))
+            deck.state_dir.mkdir(parents=True, exist_ok=True)
+            save_view_prefs(deck, ViewPrefs(sort_mode="filename"))
+            self.assertEqual(load_view_prefs(deck).sort_mode, "scan")
 
     def test_locked_contest_ignores_sort(self):
         (self.tmp / "deck.json").write_text(
