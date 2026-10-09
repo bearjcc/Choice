@@ -48,10 +48,9 @@ def decide(deck: Deck, item_id: str, direction: str, note: str | None) -> dict:
 
     with _lock(deck):
         try:
-            flow = view(deck)
+            item = _item_for_decide(deck, item_id)
         except DeckProblem as exc:
             return _fail(str(exc))
-        item = _find(flow.items, item_id)
         if item is None:
             return _fail("That card is not in the pile.")
         if _plugin_done(item):
@@ -757,6 +756,21 @@ def _find(items: list[Item], item_id: str) -> Item | None:
         if item.id == item_id:
             return item
     return None
+
+
+def _item_for_decide(deck: Deck, item_id: str) -> Item | None:
+    if deck.folder_scan is not None:
+        from choice.folder_index import item_for_id, load_index, scan_incremental
+
+        idx = load_index(deck.state_dir)
+        if item_id not in idx.ordered:
+            scan_incremental(deck)
+            idx = load_index(deck.state_dir)
+        if item_id not in idx.ordered:
+            return None
+        return item_for_id(deck, item_id)
+    flow = view(deck)
+    return _find(flow.items, item_id)
 
 
 def _lock(deck: Deck) -> threading.Lock:

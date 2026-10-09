@@ -9,6 +9,10 @@ const state = {
   blind: false,
   payload: null,
   pos: 0,
+  pageSize: 200,
+  paged: null,
+  queue: null,
+  queuePoll: null,
   note: "",
   noteFor: null,
   busy: false,
@@ -221,6 +225,7 @@ async function boot() {
   $("blind").addEventListener("click", toggleBlind);
   $("counts").addEventListener("click", openCounts);
   $("menu").addEventListener("click", openMenu);
+  $("queue-badge").addEventListener("click", openQueueFailures);
   $("fab-undo").addEventListener("click", () => undoLast());
   $("dialog").addEventListener("close", () => $("dialog-body").replaceChildren());
   document.addEventListener("keydown", onKey);
@@ -266,6 +271,7 @@ function route() {
 
 function showProblem(message) {
   state.picking = false;
+  stopQueuePoll();
   $("title").textContent = "Choice";
   $("tools").hidden = true;
   $("track").hidden = true;
@@ -283,8 +289,10 @@ function showProblem(message) {
 }
 
 async function showLibrary() {
+  stopQueuePoll();
   state.deckId = null;
   state.payload = null;
+  state.paged = null;
   if (location.search) clearAppSearch();
   state.picking = false;
   try {
@@ -878,17 +886,137 @@ async function openDeck(id, push) {
   if (deck && deck.error) return showProblem(deck.error);
   if (push) setAppSearch("deck=" + encodeURIComponent(id));
   const ok = await loadItems(stored);
-  if (ok) renderDeck();
+  if (ok) {
+    startQueuePoll();
+    renderDeck();
+  }
+}
+
+function itemsApiPath(offset, limit) {
+  const w = state.mediaWidth || 1280;
+  return (
+    "/api/decks/" +
+    encodeURIComponent(state.deckId) +
+    "/items?pending=" +
+    (state.pending ? "1" : "0") +
+    "&limit=" +
+    limit +
+    "&offset=" +
+    offset +
+    "&w=" +
+    w
+  );
+}
+
+function applyPagedMeta(data, offset) {
+  const n = (data.items || []).length;
+  state.paged = {
+    nextOffset: offset + n,
+    hasMore: n > 0 && offset + n < data.left,
+    loading: false,
+  };
+}
+
+async function ensureCardsAhead() {
+  const minAhead = 3;
+  const items = (state.payload && state.payload.items) || [];
+  if (!state.paged || !state.paged.hasMore || state.paged.loading) return false;
+  if (items.length - state.pos >= minAhead) return false;
+  state.paged.loading = true;
+  let added = false;
+  try {
+    const data = await api(itemsApiPath(state.paged.nextOffset, state.pageSize));
+    if (!data.ok || !data.items || !data.items.length) {
+      state.paged.hasMore = false;
+      return false;
+    }
+    const seen = new Set(items.map((row) => row.id));
+    data.items.forEach((row) => {
+      if (!seen.has(row.id)) {
+        items.push(row);
+        seen.add(row.id);
+        added = true;
+      }
+    });
+    state.paged.nextOffset += data.items.length;
+    state.paged.hasMore = state.paged.nextOffset < data.left;
+    state.payload.left = data.left;
+    state.payload.total = data.total;
+    state.payload.decided = data.decided;
+    return added;
+  } catch (_err) {
+    return false;
+  } finally {
+    state.paged.loading = false;
+  }
+}
+
+function stopQueuePoll() {
+  if (state.queuePoll) clearInterval(state.queuePoll);
+  state.queuePoll = null;
+  state.queue = null;
+  const badge = $("queue-badge");
+  if (badge) badge.hidden = true;
+}
+
+function startQueuePoll() {
+  stopQueuePoll();
+  refreshQueueBadge();
+  state.queuePoll = setInterval(refreshQueueBadge, 3000);
+}
+
+async function refreshQueueBadge() {
+  if (!state.deckId) return;
+  try {
+    const data = await api("/api/decks/" + encodeURIComponent(state.deckId) + "/stats");
+    if (!data.ok || !data.stats) return;
+    state.queue = data.stats.queue || null;
+    paintQueueBadge();
+  } catch (_err) {
+    /* offline */
+  }
+}
+
+function paintQueueBadge() {
+  const btn = $("queue-badge");
+  if (!btn) return;
+  const q = state.queue;
+  const pending = (q && q.pending) || 0;
+  const failed = (q && q.failed) || 0;
+  if (!pending && !failed) {
+    btn.hidden = true;
+    return;
+  }
+  btn.hidden = false;
+  btn.classList.toggle("has-failed", failed > 0);
+  const parts = [];
+  if (pending) parts.push(pending + " queued");
+  if (failed) parts.push(failed + " failed");
+  btn.textContent = parts.join(" · ");
+}
+
+function openQueueFailures() {
+  const q = state.queue;
+  const failures = (q && q.failures) || [];
+  if (!failures.length) {
+    if (q && q.failed) setStatus(q.failed + " move(s) failed.");
+    return;
+  }
+  const body = $("dialog-body");
+  body.replaceChildren();
+  body.append(el("h2", null, "Queue failures"));
+  failures.forEach((row) => {
+    const label = row.from || row.item || row.id;
+    body.append(el("p", "warn", label + ": " + (row.error || "Failed")));
+  });
+  $("dialog").showModal();
 }
 
 async function loadItems(storedBlind) {
   let data;
   try {
     updateMediaWidth();
-    const w = state.mediaWidth || 1280;
-    data = await api(
-      "/api/decks/" + encodeURIComponent(state.deckId) + "/items?pending=" + (state.pending ? "1" : "0") + "&limit=200&offset=0&w=" + w
-    );
+    data = await api(itemsApiPath(0, state.pageSize));
   } catch (_err) {
     return showProblem("Could not reach Choice.");
   }
@@ -897,6 +1025,7 @@ async function loadItems(storedBlind) {
     return false;
   }
   state.payload = data;
+  applyPagedMeta(data, 0);
   if (storedBlind !== undefined) {
     state.blind = storedBlind === null ? !!data.blind : storedBlind === "1";
   }
@@ -921,7 +1050,14 @@ function renderDeck() {
   $("track").setAttribute("aria-valuemax", String(data.total));
   $("track").setAttribute("aria-label", data.count_label || (data.decided + " of " + data.total + " decided"));
   renderActions();
-  const item = current();
+  let item = current();
+  if (!item && state.paged && state.paged.hasMore) {
+    ensureCardsAhead().then((added) => {
+      if (added && current()) renderDeck();
+      else if (!current()) renderEmpty();
+    });
+    return;
+  }
   if (!item) return renderEmpty();
   $("status").hidden = false;
   const card = el("article", "card" + (item.kind === "image" ? " image" : ""));
@@ -944,6 +1080,9 @@ function renderDeck() {
   preloadMedia();
   paintFabUndo();
   applyDemoDrag(card);
+  ensureCardsAhead().then((added) => {
+    if (added && current()) renderDeck();
+  });
 }
 
 function applyDemoDrag(card) {
@@ -1407,6 +1546,7 @@ function advanceAfterSwipe(itemId, later) {
     return;
   }
   state.pos = (state.pos + 1) % items.length;
+  ensureCardsAhead();
 }
 
 async function act(direction) {
@@ -1448,7 +1588,10 @@ async function act(direction) {
   state.noteFor = null;
   setStatus(data.message || label);
   loadItems().then((ok) => {
-    if (ok) renderDeck();
+    if (ok) {
+      refreshQueueBadge();
+      renderDeck();
+    }
   });
 }
 

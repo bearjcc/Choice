@@ -93,6 +93,34 @@ def snapshot_for(deck: Deck) -> QueueSnapshot:
     return QueueSnapshot(pending=pending, running=running, failed=failed)
 
 
+def failures_for(deck: Deck, limit: int = 20) -> list[dict]:
+    jobs = _load_jobs(deck.state_dir)
+    out: list[dict] = []
+    for job in jobs:
+        if job.status != "failed":
+            continue
+        row = {"id": job.id, "error": job.last_error or "Failed"}
+        if job.file_op:
+            row["from"] = job.file_op.get("from")
+            row["to"] = job.file_op.get("to")
+        if job.plugin:
+            row["item"] = job.plugin.get("item_id")
+        out.append(row)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def wait_idle(state_dir: Path, timeout: float = 180.0) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        jobs = _load_jobs(state_dir)
+        if not any(j.status in {"pending", "running"} for j in jobs):
+            return True
+        time.sleep(0.02)
+    return False
+
+
 def enqueue_file_op(deck: Deck, decision_id: str, file_op: dict, *, reverse: bool = False) -> str:
     kind = "file_reverse" if reverse else "file"
     job = WorkJob(

@@ -620,18 +620,23 @@ class Handler(BaseHTTPRequestHandler):
         deck = self._opened(deck_id, self._requested_user(query, None))
         if isinstance(deck, dict):
             return self._reply(deck)
+        from choice.work_queue import failures_for
         from choice.work_queue import snapshot_for as queue_snapshot
 
         plugin = deck.plugin
+        qsnap = queue_snapshot(deck)
+        queue_payload = qsnap.to_dict()
+        if qsnap.failed:
+            queue_payload["failures"] = failures_for(deck)
         if plugin is not None and hasattr(plugin, "stats"):
             data = plugin.stats()
             if data:
                 data = dict(data)
-                data["queue"] = queue_snapshot(deck).to_dict()
+                data["queue"] = queue_payload
                 return self._json(200, {"ok": True, "stats": data})
         snap = progress(deck, pending=False, limit=1, offset=0)
         payload = {"tally": snap.get("tally"), "total": snap.get("total")}
-        payload["queue"] = queue_snapshot(deck).to_dict()
+        payload["queue"] = queue_payload
         return self._json(200, {"ok": True, "stats": payload})
 
     def _export(self, deck_id, query):

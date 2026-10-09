@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.2 (2026-10-09)
+
+### Added
+
+- Queue badge on the deck screen (pending / failed counts); tap failed badge for error lines from `stats.queue.failures`.
+- Client prefetches the next `/items` page when fewer than three cards remain in the buffer (limit 200).
+
+### Fixed
+
+- Folder `decide` resolves the card via `folder_index` instead of loading the full pile.
+
+### Tests
+
+- Async load test: 20k-file sort deck, 4 decides/s for 60s, p95 decide ≤ 30 ms, queue drain, log vs disk, undo before and after move.
+
 ## 0.3.1 (2026-10-09)
 
 ### Added
