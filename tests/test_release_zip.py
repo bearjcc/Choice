@@ -11,54 +11,56 @@ FORBIDDEN_FRAGMENTS = (
     ".egg-info/",
     ".pytest_cache/",
     ".ruff_cache/",
+    "node_modules/",
+    "PrintDeps.exe",
     "examples/taste/.choice/",
     "examples/yes-no/.choice/decisions.jsonl",
     "examples/taste/.choice/decisions.jsonl",
+    "tests/fixtures/modal_layout/state/",
+    "tests/fixtures/modal_layout/.choice/",
 )
 
-ZIP_EXCLUDES = [
-    "*/.git/*",
-    ".git/*",
-    "uploads/*",
-    "*/__pycache__/*",
-    "*.pyc",
-    ".ruff_cache/*",
-    "*/.ruff_cache/*",
-    ".pytest_cache/*",
-    "*/.pytest_cache/*",
-    "build/*",
-    "*/build/*",
-    "*.egg-info/*",
-    "*/*.egg-info/*",
-    ".choice-smoke-state/*",
-    "examples/*/.choice/*",
-    "examples/**/.choice/**",
-]
+
+def git_tracked_files(ref: str = "HEAD") -> set[str]:
+    proc = subprocess.run(
+        ["git", "ls-tree", "-r", "--name-only", ref],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return {line.strip() for line in proc.stdout.splitlines() if line.strip()}
 
 
-def build_release_zip(dest: Path) -> None:
-    args = ["zip", "-q", "-r", str(dest), "."]
-    for pattern in ZIP_EXCLUDES:
-        args.extend(["-x", pattern])
-    subprocess.run(args, check=True, cwd=ROOT)
+def build_release_zip(dest: Path, ref: str = "HEAD") -> None:
+    env = {"CHOICE_RELEASE_GIT_REF": ref}
+    subprocess.run(
+        ["bash", str(ROOT / "scripts" / "make_release_zip.sh"), str(dest)],
+        check=True,
+        cwd=ROOT,
+        env={**dict(__import__("os").environ), **env},
+    )
 
 
 class ReleaseZipTests(unittest.TestCase):
-    def test_release_zip_has_no_forbidden_paths(self):
+    def test_release_zip_matches_git_tree_only(self):
         out = ROOT / "tmp-release-test.zip"
         if out.exists():
             out.unlink()
-        build_release_zip(out)
+        ref = "HEAD"
+        build_release_zip(out, ref=ref)
+        tracked = git_tracked_files(ref)
         with zipfile.ZipFile(out) as archive:
-            names = archive.namelist()
+            names = {name for name in archive.namelist() if not name.endswith("/")}
+        self.assertEqual(names, tracked)
         for bad in FORBIDDEN_FRAGMENTS:
             hits = [name for name in names if bad in name.replace("\\", "/")]
             self.assertEqual(hits, [], msg=f"forbidden {bad!r}: {hits[:5]}")
         out.unlink(missing_ok=True)
 
-    def test_shell_script_matches_python_exclusions(self):
+    def test_shell_script_uses_git_archive(self):
         script = ROOT / "scripts" / "make_release_zip.sh"
         self.assertTrue(script.is_file())
         text = script.read_text(encoding="utf-8")
-        self.assertIn("egg-info", text)
-        self.assertIn("pytest_cache", text)
+        self.assertIn("git archive", text)
+        self.assertNotIn("zip -q -r", text)
