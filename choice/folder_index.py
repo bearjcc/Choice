@@ -215,6 +215,38 @@ def apply_move(state_dir: Path, from_rel: str, to_rel: str, *, reverse: bool = F
         save_index(state_dir, idx)
 
 
+def readmit_path(state_dir: Path, rel: str) -> bool:
+    """Put a source path back on the pile when a sort move did not land."""
+    if not rel:
+        return False
+    idx = load_index(state_dir)
+    if rel in idx.ordered:
+        return False
+    idx.ordered.append(rel)
+    idx.generation += 1
+    idx.stale = False
+    save_index(state_dir, idx)
+    return True
+
+
+def kick_background_scan(deck: Deck) -> None:
+    """Start an incremental scan without waiting on the debounced timer."""
+    if deck.folder_scan is None:
+        return
+    idx = load_index(deck.state_dir)
+    if idx.scanning:
+        return
+
+    def _run() -> None:
+        scan_incremental(deck)
+
+    threading.Thread(
+        target=_run,
+        name=f"folder-scan-{deck.id}",
+        daemon=True,
+    ).start()
+
+
 def _purge_sorted_from_index(idx: FolderIndex, root: Path, skip_dirs: set[Path]) -> bool:
     kept: list[str] = []
     changed = False
@@ -233,7 +265,7 @@ def summary(deck: Deck, log_decided: set[str]) -> dict:
     idx = load_index(deck.state_dir)
     outdated = _tree_dirs_changed(deck, idx)
     if not idx.ordered and not idx.scanning:
-        schedule_scan(deck)
+        kick_background_scan(deck)
     elif idx.stale or idx.scanning or outdated:
         schedule_scan(deck)
     stale = idx.stale or idx.scanning or outdated or not idx.ordered

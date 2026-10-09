@@ -26,7 +26,9 @@ _workers: dict[str, threading.Thread] = {}
 _worker_lock = threading.Lock()
 _dest_locks: dict[str, threading.Lock] = {}
 _dest_guard = threading.Lock()
-_queue_file_locks: LruDict[str, threading.RLock] = LruDict(64)
+_queue_locks: LruDict[str, threading.RLock] = LruDict(64)
+_job_lists: LruDict[str, list[WorkJob]] = LruDict(64)
+_loaded: set[str] = set()
 
 
 @dataclass
@@ -89,7 +91,7 @@ def queue_path(deck: Deck) -> Path:
 
 
 def snapshot_for(deck: Deck) -> QueueSnapshot:
-    jobs = _load_jobs(deck.state_dir)
+    jobs = _snapshot_jobs(deck.state_dir)
     pending = sum(1 for j in jobs if j.status == "pending")
     running = sum(1 for j in jobs if j.status == "running")
     failed = sum(1 for j in jobs if j.status == "failed")
@@ -97,7 +99,7 @@ def snapshot_for(deck: Deck) -> QueueSnapshot:
 
 
 def failures_for(deck: Deck, limit: int = 20) -> list[dict]:
-    jobs = _load_jobs(deck.state_dir)
+    jobs = _snapshot_jobs(deck.state_dir)
     out: list[dict] = []
     for job in jobs:
         if job.status != "failed":
@@ -117,7 +119,7 @@ def failures_for(deck: Deck, limit: int = 20) -> list[dict]:
 def wait_idle(state_dir: Path, timeout: float = 180.0) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        jobs = _load_jobs(state_dir)
+        jobs = _snapshot_jobs(state_dir)
         if not any(j.status in {"pending", "running"} for j in jobs):
             return True
         time.sleep(0.02)
@@ -136,7 +138,11 @@ def enqueue_file_op(deck: Deck, decision_id: str, file_op: dict, *, reverse: boo
         deck_root=str(deck.root.resolve()),
         state_dir=str(deck.state_dir.resolve()),
     )
-    _append_job(deck.state_dir, job)
+
+    def _add(jobs: list[WorkJob]) -> None:
+        jobs.append(job)
+
+    _mutate_jobs(deck.state_dir, _add)
     _ensure_worker(deck.state_dir)
     return job.id
 
@@ -166,38 +172,116 @@ def enqueue_plugin(
         deck_root=str(deck.root.resolve()),
         state_dir=str(deck.state_dir.resolve()),
     )
-    _append_job(deck.state_dir, job)
+
+    def _add(jobs: list[WorkJob]) -> None:
+        jobs.append(job)
+
+    _mutate_jobs(deck.state_dir, _add)
     _ensure_worker(deck.state_dir)
     return job.id
 
 
 def cancel_for_decision(deck: Deck, decision_id: str) -> int:
-    jobs = _load_jobs(deck.state_dir)
+    cancelled = 0
+
+    def _cancel(jobs: list[WorkJob]) -> None:
+        nonlocal cancelled
+        for job in jobs:
+            if job.decision_id != decision_id:
+                continue
+            if job.status == "pending":
+                job.status = "cancelled"
+                job.updated_at = time.time()
+                cancelled += 1
+
+    _mutate_jobs(deck.state_dir, _cancel)
+    return cancelled
+
+
+def reconcile_deck(deck: Deck) -> int:
+    """Re-enqueue sort moves logged but not applied on disk."""
+    from choice.act import _read_log
+
+    if deck.folder_scan is None or deck.folder_scan.output != "sort":
+        return 0
+    root = deck.root.resolve()
     n = 0
-    for job in jobs:
-        if job.decision_id != decision_id:
-            continue
-        if job.status in {"pending"}:
-            job.status = "cancelled"
-            job.updated_at = time.time()
+
+    def _scan(jobs: list[WorkJob]) -> None:
+        nonlocal n
+        active = {
+            j.decision_id
+            for j in jobs
+            if j.status in {"pending", "running", "failed"}
+            and j.kind in {"file", "file_reverse"}
+        }
+        undone = {row.get("ref") for row in _read_log(deck) if row.get("type") == "undo"}
+        for row in _read_log(deck):
+            if row.get("type") != "decision" or row.get("id") in undone:
+                continue
+            if row.get("later"):
+                continue
+            op = row.get("file_op")
+            if not isinstance(op, dict):
+                continue
+            decision_id = str(row.get("id") or "")
+            if not decision_id or decision_id in active:
+                continue
+            from_rel = str(op.get("from") or "")
+            if not from_rel:
+                continue
+            src = (root / from_rel).resolve()
+            if not src.is_file():
+                continue
+            to_rel = str(op.get("to") or "")
+            dest = (root / to_rel).resolve() if to_rel else None
+            if dest is not None and dest.is_file() and not src.is_file():
+                continue
+            from choice.folder_index import readmit_path
+
+            readmit_path(deck.state_dir, from_rel)
+            jobs.append(
+                WorkJob(
+                    id=uuid.uuid4().hex,
+                    decision_id=decision_id,
+                    kind="file",
+                    file_op=dict(op),
+                    deck_id=deck.id,
+                    actor=deck.actor or "",
+                    deck_root=str(root),
+                    state_dir=str(deck.state_dir.resolve()),
+                )
+            )
+            active.add(decision_id)
             n += 1
+
+    _mutate_jobs(deck.state_dir, _scan)
     if n:
-        _save_jobs(deck.state_dir, jobs)
+        _ensure_worker(deck.state_dir)
     return n
 
 
 def resume_workers(state_root: Path) -> None:
     if not state_root.is_dir():
         return
+    candidates: list[Path] = []
+    if (state_root / _QUEUE_NAME).is_file():
+        candidates.append(state_root)
     for child in state_root.iterdir():
-        if not child.is_dir():
-            continue
-        path = child / _QUEUE_NAME
-        if not path.is_file():
-            continue
-        jobs = _load_jobs(child)
+        if child.is_dir() and (child / _QUEUE_NAME).is_file():
+            candidates.append(child)
+    for state_dir in candidates:
+        _ensure_loaded(state_dir)
+        jobs = _snapshot_jobs(state_dir)
         if any(j.status in {"pending", "running"} for j in jobs):
-            _ensure_worker(child)
+            _ensure_worker(state_dir)
+
+
+def boot_deck(deck: Deck) -> None:
+    reconcile_deck(deck)
+    jobs = _snapshot_jobs(deck.state_dir)
+    if any(j.status in {"pending", "running"} for j in jobs):
+        _ensure_worker(deck.state_dir)
 
 
 def _ensure_worker(state_dir: Path) -> None:
@@ -226,44 +310,49 @@ def _worker_supervisor(state_dir: Path) -> None:
                 return
         except Exception:
             time.sleep(0.05)
-            jobs = _load_jobs(state_dir)
+            jobs = _snapshot_jobs(state_dir)
             if not any(j.status in {"pending", "running"} for j in jobs):
                 return
 
 
 def _worker_loop(state_dir: Path) -> bool:
-    """Process jobs until idle. Returns False when no pending work remains."""
-    while True:
-        jobs = _load_jobs(state_dir)
+    job: WorkJob | None = None
+    with _queue_lock(state_dir):
+        jobs = _ensure_loaded(state_dir)
         next_job = next((j for j in jobs if j.status == "pending"), None)
         if next_job is None:
             return False
         next_job.status = "running"
         next_job.updated_at = time.time()
-        _save_jobs(state_dir, jobs)
-        ok = _run_job(state_dir, next_job)
-        jobs = _load_jobs(state_dir)
-        for job in jobs:
-            if job.id != next_job.id:
+        job = next_job
+        _persist_jobs(state_dir, jobs)
+    assert job is not None
+    ok = _run_job(state_dir, job)
+    with _queue_lock(state_dir):
+        jobs = _ensure_loaded(state_dir)
+        for row in jobs:
+            if row.id != job.id:
                 continue
             if ok:
-                job.status = "done"
-                job.last_error = ""
-            elif job.status == "cancelled":
+                row.status = "done"
+                row.last_error = ""
+            elif row.status == "cancelled":
                 break
             else:
-                job.attempts += 1
-                if job.attempts >= _MAX_ATTEMPTS:
-                    job.status = "failed"
+                row.attempts += 1
+                if row.attempts >= _MAX_ATTEMPTS:
+                    row.status = "failed"
                 else:
-                    job.status = "pending"
-                    delay = _BACKOFF[min(job.attempts - 1, len(_BACKOFF) - 1)]
+                    row.status = "pending"
+                    delay = _BACKOFF[min(row.attempts - 1, len(_BACKOFF) - 1)]
                     time.sleep(delay)
-            job.updated_at = time.time()
+            row.updated_at = time.time()
             break
-        _save_jobs(state_dir, jobs)
-        if not ok and next_job.status == "pending":
-            continue
+        _persist_jobs(state_dir, jobs)
+        retry = any(j.id == job.id and j.status == "pending" for j in jobs)
+        pending = any(j.status == "pending" for j in jobs)
+    if retry or pending:
+        return True
     return False
 
 
@@ -419,58 +508,91 @@ class _RetryLater(Exception):
 
 def _queue_lock(state_dir: Path) -> threading.RLock:
     key = str(state_dir.resolve())
-    lock = _queue_file_locks.get(key)
+    lock = _queue_locks.get(key)
     if lock is None:
         lock = threading.RLock()
-        _queue_file_locks.set(key, lock)
+        _queue_locks.set(key, lock)
     return lock
 
 
-def _prune_jobs(jobs: list[WorkJob]) -> list[WorkJob]:
-    return [j for j in jobs if j.status in {"pending", "running", "failed"}]
+def _state_key(state_dir: Path) -> str:
+    return str(state_dir.resolve())
+
+
+def _read_disk(state_dir: Path) -> list[WorkJob]:
+    path = state_dir / _QUEUE_NAME
+    if not path.is_file():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    rows = data.get("jobs") if isinstance(data, dict) else None
+    if not isinstance(rows, list):
+        return []
+    out: list[WorkJob] = []
+    for row in rows:
+        if isinstance(row, dict):
+            job = WorkJob.from_dict(row)
+            if job.status == "running":
+                job.status = "pending"
+            out.append(job)
+    return out
+
+
+def _ensure_loaded(state_dir: Path) -> list[WorkJob]:
+    key = _state_key(state_dir)
+    if key not in _loaded:
+        jobs = _read_disk(state_dir)
+        _job_lists.set(key, jobs)
+        _loaded.add(key)
+    hit = _job_lists.get(key)
+    if hit is None:
+        hit = []
+        _job_lists.set(key, hit)
+    return hit
+
+
+def _persist_jobs(state_dir: Path, jobs: list[WorkJob]) -> None:
+    path = state_dir / _QUEUE_NAME
+    path.parent.mkdir(parents=True, exist_ok=True)
+    kept = [j for j in jobs if j.status in {"pending", "running", "failed"}]
+    payload = {"jobs": [job.to_dict() for job in kept]}
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(payload), encoding="utf-8")
+    atomic_replace(tmp, path)
+
+
+def _mutate_jobs(state_dir: Path, fn: Callable[[list[WorkJob]], None]) -> None:
+    with _queue_lock(state_dir):
+        jobs = _ensure_loaded(state_dir)
+        fn(jobs)
+        _persist_jobs(state_dir, jobs)
+
+
+def _snapshot_jobs(state_dir: Path) -> list[WorkJob]:
+    with _queue_lock(state_dir):
+        jobs = _ensure_loaded(state_dir)
+        return list(jobs)
 
 
 def _load_jobs(state_dir: Path) -> list[WorkJob]:
-    with _queue_lock(state_dir):
-        path = state_dir / _QUEUE_NAME
-        if not path.is_file():
-            return []
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return []
-        rows = data.get("jobs") if isinstance(data, dict) else None
-        if not isinstance(rows, list):
-            return []
-        out: list[WorkJob] = []
-        for row in rows:
-            if isinstance(row, dict):
-                job = WorkJob.from_dict(row)
-                if job.status == "running":
-                    job.status = "pending"
-                out.append(job)
-        return out
+    """Tests only: current in-memory queue snapshot."""
+    return _snapshot_jobs(state_dir)
 
 
 def _save_jobs(state_dir: Path, jobs: list[WorkJob]) -> None:
+    """Tests only: replace queue under lock."""
     with _queue_lock(state_dir):
-        path = state_dir / _QUEUE_NAME
-        path.parent.mkdir(parents=True, exist_ok=True)
-        kept = _prune_jobs(jobs)
-        payload = {"jobs": [job.to_dict() for job in kept]}
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(payload), encoding="utf-8")
-        atomic_replace(tmp, path)
+        key = _state_key(state_dir)
+        _job_lists.set(key, list(jobs))
+        _loaded.add(key)
+        _persist_jobs(state_dir, jobs)
 
 
-def _append_job(state_dir: Path, job: WorkJob) -> None:
+def drop_memory_state(state_dir: Path) -> None:
+    """Simulate process restart for tests."""
+    key = _state_key(state_dir)
     with _queue_lock(state_dir):
-        jobs = _load_jobs(state_dir)
-        jobs.append(job)
-        kept = _prune_jobs(jobs)
-        path = state_dir / _QUEUE_NAME
-        path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {"jobs": [j.to_dict() for j in kept]}
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(payload), encoding="utf-8")
-        atomic_replace(tmp, path)
+        _loaded.discard(key)
+        _job_lists.pop(key)

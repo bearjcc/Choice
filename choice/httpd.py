@@ -882,7 +882,8 @@ def _media_source(item, side_key: str, image_index: int | None = None):
 
 
 def _boot_work_queue(server: ChoiceSite) -> None:
-    from choice.work_queue import resume_workers, set_deck_resolver
+    from choice.folder_index import kick_background_scan
+    from choice.work_queue import boot_deck, resume_workers, set_deck_resolver
 
     def _resolve(deck_id: str, actor: str):
         lib = server.config_path if server.config_path is not None else server.choice_root
@@ -898,13 +899,29 @@ def _boot_work_queue(server: ChoiceSite) -> None:
         return None
 
     set_deck_resolver(_resolve)
-    path = server.config_path
-    if path is not None and path.is_file():
-        try:
-            cfg = load_config(path)
-            resume_workers(cfg.state_dir)
-        except ConfigProblem:
-            pass
+    lib = server.config_path if server.config_path is not None else server.choice_root
+    try:
+        opened = open_library(lib)
+    except DeckProblem:
+        opened = None
+    if opened is not None:
+        if server.config_path is not None and server.config_path.is_file():
+            try:
+                cfg = load_config(server.config_path)
+                resume_workers(cfg.state_dir)
+            except ConfigProblem:
+                pass
+        else:
+            seen: set[Path] = set()
+            for deck in opened.decks:
+                key = deck.state_dir.resolve()
+                if key in seen:
+                    continue
+                seen.add(key)
+                resume_workers(deck.state_dir)
+        for deck in opened.decks:
+            boot_deck(deck)
+            kick_background_scan(deck)
 
 
 def serve(

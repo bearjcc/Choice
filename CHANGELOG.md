@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.4 (2026-10-09)
+
+### Fixed
+
+- Work queue keeps one in-memory job list per deck under a single lock; every enqueue, status change, and persist runs in that critical section so concurrent decides cannot be overwritten by a stale save.
+- On deck boot, reconcile re-enqueues logged sort moves whose files are still at the source path and readmits them to the folder index.
+- Folder index kicks a background scan at server boot and on the first home summary when the pile is still empty.
+
+### Tests
+
+- 300-thread decide burst and mid-burst memory drop with restart reconcile (log, disk, index).
+
 ## 0.3.3 (2026-10-09)
 
 ### Fixed
