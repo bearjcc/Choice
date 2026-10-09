@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.2 (2026-10-09)
+
+### Fixed
+
+- Undo readmits sort cards to the front of the pending pile (and pins them for paginated `/items`) so large decks keep the restored card on the first page in scan and random order.
+- Sort `decide` writes the decision log before enqueueing the move and updating the index; boot reconciles queue jobs that have no matching decision by reversing the index change.
+
 ## 0.4.1 (2026-10-09)
 
 ### Changed

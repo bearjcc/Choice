@@ -179,6 +179,26 @@ def enqueue_planned_transfer(
     return dict(planned)
 
 
+def enqueue_planned_op(deck: Deck, decision_id: str, planned: dict) -> None:
+    """Enqueue a file move after the decision is already in the log."""
+    job = WorkJob(
+        id=uuid.uuid4().hex,
+        decision_id=decision_id,
+        kind="file",
+        file_op=dict(planned),
+        deck_id=deck.id,
+        actor=deck.actor or "",
+        deck_root=str(deck.root.resolve()),
+        state_dir=str(deck.state_dir.resolve()),
+    )
+
+    def _add(jobs: list[WorkJob]) -> None:
+        jobs.append(job)
+
+    _mutate_jobs(deck.state_dir, _add)
+    _ensure_worker(deck.state_dir)
+
+
 def _plan_transfer_op(
     deck: Deck, does: str, from_rel: str, into: str, item, jobs: list[WorkJob]
 ) -> dict:
@@ -328,7 +348,12 @@ def reconcile_deck(deck: Deck) -> int:
             if new_to != new_op.get("to"):
                 new_op["to"] = new_to
                 pending_patch.append((decision_id, dict(new_op)))
-            readmit_path(deck.state_dir, from_rel, deck=deck)
+            from choice.folder_index import apply_move, load_index
+
+            if from_rel in load_index(deck.state_dir).ordered:
+                apply_move(deck.state_dir, from_rel, str(new_op.get("to") or ""), deck=deck)
+            else:
+                readmit_path(deck.state_dir, from_rel, deck=deck)
             jobs.append(
                 WorkJob(
                     id=uuid.uuid4().hex,
@@ -368,7 +393,50 @@ def resume_workers(state_root: Path) -> None:
             _ensure_worker(state_dir)
 
 
+def reconcile_orphan_jobs(deck: Deck) -> int:
+    """Drop queue jobs with no matching decision (e.g. crash between index and log)."""
+    from choice.act import _read_log
+    from choice.folder_index import apply_move
+
+    if deck.folder_scan is None or deck.folder_scan.output != "sort":
+        return 0
+    undone = {row.get("ref") for row in _read_log(deck) if row.get("type") == "undo"}
+    logged: set[str] = set()
+    for row in _read_log(deck):
+        if row.get("type") == "decision" and row.get("id") not in undone:
+            logged.add(str(row.get("id") or ""))
+    removed = 0
+
+    def _prune(jobs: list[WorkJob]) -> None:
+        nonlocal removed
+        keep: list[WorkJob] = []
+        for job in jobs:
+            if job.kind not in {"file", "file_reverse"}:
+                keep.append(job)
+                continue
+            if job.decision_id in logged:
+                keep.append(job)
+                continue
+            op = job.file_op or {}
+            from_rel = str(op.get("from") or "")
+            to_rel = str(op.get("to") or "")
+            if job.kind == "file" and from_rel:
+                apply_move(
+                    deck.state_dir,
+                    from_rel,
+                    to_rel,
+                    reverse=True,
+                    deck=deck,
+                )
+            removed += 1
+        jobs[:] = keep
+
+    _mutate_jobs(deck.state_dir, _prune)
+    return removed
+
+
 def boot_deck(deck: Deck) -> None:
+    reconcile_orphan_jobs(deck)
     reconcile_deck(deck)
     jobs = _snapshot_jobs(deck.state_dir)
     if any(j.status in {"pending", "running"} for j in jobs):

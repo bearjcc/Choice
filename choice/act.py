@@ -31,7 +31,28 @@ from choice.deck_index import (
 )
 from choice.flow import Flow, arrange, report_lines
 from choice.load import Deck, DeckProblem, Item, inside, swipe_item_public
-from choice.work_queue import cancel_for_decision, enqueue_file_op, enqueue_planned_transfer
+from choice.work_queue import (
+    allocate_transfer_dest,
+    cancel_for_decision,
+    enqueue_file_op,
+    enqueue_planned_op,
+)
+
+class DecideTestAbort(Exception):
+    """Test hook: simulate a hard stop after the decision is logged."""
+
+
+_DECIDE_TEST_HOOK: str | None = None
+
+
+def set_decide_test_hook(point: str | None) -> None:
+    global _DECIDE_TEST_HOOK
+    _DECIDE_TEST_HOOK = point
+
+
+def _fire_decide_test_hook(point: str) -> None:
+    if _DECIDE_TEST_HOOK == point:
+        raise DecideTestAbort(point)
 
 _GUARD = threading.Lock()
 _LOCKS: dict[str, threading.Lock] = {}
@@ -86,6 +107,7 @@ def decide(deck: Deck, item_id: str, direction: str, note: str | None) -> dict:
             "file": item.path.name if item.path else None,
         }
         _apply_pick(deck, item, action, record)
+        planned_move: dict | None = None
         try:
             if deck.plugin is not None:
                 if action.id == "left":
@@ -97,27 +119,45 @@ def decide(deck: Deck, item_id: str, direction: str, note: str | None) -> dict:
                     )
             elif action.does in {"move", "copy"}:
                 _validate_transfer(deck, item, action.does, action.into or "")
-                planned = enqueue_planned_transfer(
-                    deck, token, item, action.does, action.into or ""
+                from_rel = item.path.resolve().relative_to(deck.root.resolve()).as_posix()
+                planned_move = allocate_transfer_dest(
+                    deck, action.does, from_rel, action.into or "", item
                 )
-                record["file_op"] = planned
+                record["file_op"] = planned_move
                 record["file_op_pending"] = True
-                from choice.folder_index import apply_move
-
-                apply_move(deck.state_dir, planned["from"], planned["to"], deck=deck)
             if deck.hook and deck.hook_required:
                 _run_hook(deck, _hook_body("decide", deck, item, record))
         except _OpError as exc:
             return _fail(str(exc))
 
         _append(deck, record)
+        _fire_decide_test_hook("after_log")
+        hook_note = ""
+        try:
+            if planned_move is not None:
+                enqueue_planned_op(deck, token, planned_move)
+                from choice.folder_index import apply_move
+
+                apply_move(
+                    deck.state_dir,
+                    planned_move["from"],
+                    planned_move["to"],
+                    deck=deck,
+                )
+            if deck.hook and not deck.hook_required:
+                try:
+                    _run_hook(deck, _hook_body("decide", deck, item, record))
+                except _OpError as exc:
+                    hook_note = f" Saved here, but the hook failed: {exc}"
+        except _OpError as exc:
+            _append(
+                deck,
+                {"type": "undo", "ref": token, "item": item.id, "ts": _now()},
+            )
+            return _fail(str(exc))
+
         bust_item_cache(deck, invalidate_folder=False)
-        message = "{}: {}".format(record["label"], item.title)
-        if deck.hook and not deck.hook_required:
-            try:
-                _run_hook(deck, _hook_body("decide", deck, item, record))
-            except _OpError as exc:
-                message += f" Saved here, but the hook failed: {exc}"
+        message = "{}: {}".format(record["label"], item.title) + hook_note
         return {"ok": True, "message": message, "can_undo": _has_undo(deck), "allow_undo": _undo_allowed(deck)}
 
 

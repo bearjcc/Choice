@@ -34,15 +34,19 @@ class FolderIndex:
     updated_at: float = 0.0
     scanning: bool = False
     stale: bool = True
+    pending_front: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
-        return {
+        out = {
             "ordered": self.ordered,
             "dir_mtimes": self.dir_mtimes,
             "generation": self.generation,
             "updated_at": self.updated_at,
             "stale": self.stale,
         }
+        if self.pending_front:
+            out["pending_front"] = list(self.pending_front)
+        return out
 
     @staticmethod
     def from_dict(data: dict) -> FolderIndex:
@@ -59,6 +63,9 @@ class FolderIndex:
         for k, v in meta.items():
             if isinstance(v, dict):
                 clean_meta[str(k)] = dict(v)
+        front = data.get("pending_front")
+        if not isinstance(front, list):
+            front = []
         return FolderIndex(
             ordered=[str(x) for x in ordered if x],
             dir_mtimes={str(k): int(v) for k, v in mtimes.items()},
@@ -66,6 +73,7 @@ class FolderIndex:
             generation=int(data.get("generation") or 0),
             updated_at=float(data.get("updated_at") or 0),
             stale=bool(data.get("stale", True)),
+            pending_front=[str(x) for x in front if x],
         )
 
 
@@ -247,6 +255,39 @@ def _scan_locked(deck: Deck) -> None:
     save_index(state_dir, idx, save_meta=changed)
 
 
+def _pin_pending_front(idx: FolderIndex, rel: str) -> None:
+    if not rel:
+        return
+    idx.pending_front = [rel] + [r for r in idx.pending_front if r != rel]
+
+
+def _unpin_pending_front(idx: FolderIndex, rel: str) -> None:
+    if not rel:
+        return
+    idx.pending_front = [r for r in idx.pending_front if r != rel]
+
+
+def _readmit_to_pile_front(idx: FolderIndex, rel: str) -> bool:
+    if not rel:
+        return False
+    if rel in idx.ordered:
+        idx.ordered = [rel] + [r for r in idx.ordered if r != rel]
+    else:
+        idx.ordered.insert(0, rel)
+    _pin_pending_front(idx, rel)
+    return True
+
+
+def apply_pending_front(idx: FolderIndex, pile: list[str]) -> list[str]:
+    if not idx.pending_front:
+        return pile
+    front = [r for r in idx.pending_front if r in pile]
+    if not front:
+        return pile
+    seen = set(front)
+    return front + [r for r in pile if r not in seen]
+
+
 def apply_move(
     state_dir: Path,
     from_rel: str,
@@ -258,8 +299,7 @@ def apply_move(
     idx = load_index(state_dir)
     touched: list[str] = []
     if reverse:
-        if from_rel and from_rel not in idx.ordered:
-            idx.ordered.append(from_rel)
+        if from_rel and _readmit_to_pile_front(idx, from_rel):
             touched = [from_rel]
             idx.generation += 1
             idx.stale = False
@@ -268,6 +308,7 @@ def apply_move(
             save_index(state_dir, idx)
         return
     if from_rel in idx.ordered:
+        _unpin_pending_front(idx, from_rel)
         idx.ordered = [rid for rid in idx.ordered if rid != from_rel]
         touched = [from_rel]
         if to_rel:
@@ -300,9 +341,9 @@ def readmit_path(state_dir: Path, rel: str, *, deck: Deck | None = None) -> bool
     if not rel:
         return False
     idx = load_index(state_dir)
-    if rel in idx.ordered:
+    if rel in idx.ordered and idx.ordered[0] == rel and idx.pending_front[:1] == [rel]:
         return False
-    idx.ordered.append(rel)
+    _readmit_to_pile_front(idx, rel)
     idx.generation += 1
     idx.stale = False
     if deck is not None:
@@ -446,6 +487,7 @@ def progress_page(
             if pending:
                 continue
         pile.append(rid)
+    pile = apply_pending_front(idx, pile)
     total = len(ordered)
     left = len(pile)
     if limit <= 0:
