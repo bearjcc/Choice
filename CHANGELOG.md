@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.9 (2026-10-09)
+
+### Fixed
+
+- Plugin `/items` offset paging no longer slices twice (page 2+ empty while `left` still showed cards).
+- Plugin home counts refresh from the live list on cold read (including with warm-up disabled); totals stay numeric after hot reload.
+- Sort decks honour `sort_<dir>_label` and labelled sort targets in the API and swipe UI.
+- Single-image cards: photo fills the frame with `object-fit: contain`, caption sits below without overlapping or a blurred top band; duplicate title under the image removed.
+- Linux tests wait on work-queue and move readiness instead of fixed sleeps; release zip test skips outside a git checkout.
+
 ## 0.4.8 (2026-10-09)
 
 ### Fixed

@@ -125,6 +125,14 @@ class MoveRetryBootTests(unittest.TestCase):
         from choice.file_moves import move_file
         from choice.source_reads import wait_source_idle
 
+        def wait_until(predicate, timeout: float = 5.0) -> bool:
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                if predicate():
+                    return True
+                time.sleep(0.01)
+            return False
+
         with tempfile.TemporaryDirectory() as tmpname:
             tmp = Path(tmpname)
             src = tmp / "card.jpg"
@@ -141,7 +149,7 @@ class MoveRetryBootTests(unittest.TestCase):
 
             reader_thread = threading.Thread(target=reader)
             reader_thread.start()
-            holding.wait(timeout=5.0)
+            self.assertTrue(holding.wait(timeout=5.0))
             self.assertFalse(wait_source_idle(src, timeout=0.05))
 
             moved = threading.Event()
@@ -152,12 +160,19 @@ class MoveRetryBootTests(unittest.TestCase):
 
             move_thread = threading.Thread(target=do_move)
             move_thread.start()
-            time.sleep(0.15)
-            self.assertTrue(src.is_file())
+            self.assertTrue(
+                wait_until(
+                    lambda: move_thread.is_alive()
+                    and not moved.is_set()
+                    and src.is_file()
+                    and not wait_source_idle(src, timeout=0.0),
+                    timeout=5.0,
+                )
+            )
             release.set()
             reader_thread.join(timeout=5.0)
-            move_thread.join(timeout=10.0)
-            moved.wait(timeout=1.0)
+            self.assertTrue(moved.wait(timeout=10.0))
+            move_thread.join(timeout=1.0)
             self.assertTrue(dest.is_file())
 
 

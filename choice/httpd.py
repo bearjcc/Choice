@@ -322,7 +322,13 @@ class Handler(BaseHTTPRequestHandler):
         snap = progress(
             deck, pending=pending, limit=limit, offset=offset, after=after
         )
-        if limit > 0 and snap.get("ok") and snap.get("items") and deck.folder_scan is None:
+        if (
+            limit > 0
+            and snap.get("ok")
+            and snap.get("items")
+            and deck.folder_scan is None
+            and deck.plugin is None
+        ):
             items = snap["items"]
             paged, token = page_items(deck.id, items, offset=offset, limit=limit)
             snap["items"] = paged

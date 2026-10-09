@@ -8,7 +8,8 @@ from typing import Any
 
 from choice.config import ConfigProblem
 from choice.deck_index import list_lock, record_items
-from choice.load import Deck, DeckProblem, Direction
+from choice.folder_deck import apply_sort_direction_labels
+from choice.load import Deck, DeckProblem, Direction, _directions
 from choice.plugin_pool import get_plugin
 from choice.sources.base import PreviewItem, Source
 from choice.swipe_plugin import SwipePlugin, load_swipe_class, swipe_item_to_choice
@@ -76,6 +77,7 @@ class SwipeSource(Source):
         if deck_id != plugin.deck_id:
             plugin.deck_id = deck_id
         directions, buttons = _directions(plugin)
+        directions = _merge_deck_option_directions(directions, deck_options)
         blind = bool(getattr(plugin.obj, "blind_default", False) or deck_options.get("blind"))
         folder = self._folder(mount)
         private_feed = bool(deck_options.get("private") or deck_options.get("notify") is False)
@@ -134,6 +136,16 @@ class SwipeSource(Source):
         if plugin.title != str(getattr(plugin.obj, "title", folder_id)):
             plugin.title = str(getattr(plugin.obj, "title", folder_id))
         return plugin
+
+
+def _merge_deck_option_directions(
+    directions: dict[str, Direction], deck_options: dict[str, Any]
+) -> dict[str, Direction]:
+    raw = deck_options.get("directions")
+    if isinstance(raw, dict):
+        for key, direction in _directions(raw).items():
+            directions[key] = direction
+    return apply_sort_direction_labels(directions, deck_options)
 
 
 def _directions(plugin: SwipePlugin) -> tuple[dict[str, Direction], list[Direction]]:

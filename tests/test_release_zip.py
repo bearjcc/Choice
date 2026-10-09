@@ -7,6 +7,16 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
+
+def _git_checkout() -> bool:
+    proc = subprocess.run(
+        ["git", "rev-parse", "--git-dir"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    return proc.returncode == 0
+
 FORBIDDEN_FRAGMENTS = (
     ".egg-info/",
     ".pytest_cache/",
@@ -43,6 +53,7 @@ def build_release_zip(dest: Path, ref: str = "HEAD") -> None:
 
 
 class ReleaseZipTests(unittest.TestCase):
+    @unittest.skipUnless(_git_checkout(), "not run inside a git checkout")
     def test_release_zip_matches_git_tree_only(self):
         out = ROOT / "tmp-release-test.zip"
         if out.exists():

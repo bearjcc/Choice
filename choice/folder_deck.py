@@ -83,6 +83,37 @@ def merge_folder_options(source: dict, deck_options: dict) -> FolderScanOptions:
     return parse_folder_options(merged)
 
 
+def apply_sort_direction_labels(
+    directions: dict[str, Direction], raw: dict | None
+) -> dict[str, Direction]:
+    """Apply sort_<dir>_label keys and object sort entries with a label field."""
+    if not raw:
+        return directions
+    labels = _parse_sort_label_overrides(raw)
+    if not labels:
+        return directions
+    out: dict[str, Direction] = {}
+    for key, direction in directions.items():
+        label = labels.get(key)
+        if not label:
+            out[key] = direction
+            continue
+        out[key] = Direction(
+            id=direction.id,
+            label=label,
+            value=direction.value,
+            later=direction.later,
+            does=direction.does,
+            into=direction.into,
+            color=direction.color,
+        )
+    for key, label in labels.items():
+        if key in out:
+            continue
+        out[key] = Direction(id=key, label=label, value=label.lower(), does="label")
+    return out
+
+
 def wire_sort_directions(
     directions: dict[str, Direction], targets: dict[str, str]
 ) -> dict[str, Direction]:
@@ -167,6 +198,7 @@ def build_file_deck(
     directions = default_results_directions()
     if scan.output == "sort":
         directions = wire_sort_directions(directions, scan.sort_targets)
+        directions = apply_sort_direction_labels(directions, options)
     view_defaults = _view_defaults_from_options(options)
     counts_defaults = _counts_defaults_from_options(options)
     allow_undo = True
@@ -338,16 +370,44 @@ def _glob_list(raw) -> list[str]:
     return []
 
 
+def _parse_sort_label_overrides(raw: dict) -> dict[str, str]:
+    labels: dict[str, str] = {}
+    sort = raw.get("sort") or raw.get("sort_targets")
+    if isinstance(sort, dict):
+        for key, value in sort.items():
+            if isinstance(value, dict):
+                label = value.get("label")
+                if label:
+                    labels[str(key)] = str(label)
+    for key, value in raw.items():
+        if not key.startswith("sort_") or key == "sort_targets":
+            continue
+        tail = key[5:]
+        if tail.endswith("_label") and value:
+            direction = tail[: -len("_label")]
+            if direction:
+                labels[direction] = str(value)
+    return labels
+
+
 def _parse_sort_targets(raw: dict) -> dict[str, str]:
     targets: dict[str, str] = {}
     sort = raw.get("sort") or raw.get("sort_targets")
     if isinstance(sort, dict):
         for key, value in sort.items():
-            if value:
-                targets[str(key)] = str(value).strip("/\\")
+            if not value:
+                continue
+            if isinstance(value, dict):
+                folder = value.get("into") or value.get("folder") or value.get("path")
+                if folder:
+                    targets[str(key)] = str(folder).strip("/\\")
+                continue
+            targets[str(key)] = str(value).strip("/\\")
     for key, value in raw.items():
         if key.startswith("sort_") and key != "sort_targets":
             direction = key[5:]
-            if direction and value:
+            if direction.endswith("_label"):
+                continue
+            if direction and value and not isinstance(value, dict):
                 targets[direction] = str(value).strip("/\\")
     return targets

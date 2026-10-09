@@ -75,6 +75,21 @@ def clear_warm_scheduled(deck: Deck) -> None:
         _warm_scheduled.discard(str(deck.state_dir))
 
 
+def ensure_plugin_snapshot(deck: Deck) -> None:
+    """Load plugin items when the in-memory snapshot is missing."""
+    if deck.plugin is None or deck.problem:
+        return
+    if snapshot(deck) is not None:
+        return
+    with list_lock(deck):
+        if snapshot(deck) is not None:
+            return
+        try:
+            deck.load_items()
+        except Exception:
+            return
+
+
 def schedule_plugin_warm(deck: Deck) -> None:
     if os.environ.get("CHOICE_DISABLE_WARM"):
         return

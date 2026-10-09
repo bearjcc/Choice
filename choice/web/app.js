@@ -1199,14 +1199,13 @@ function paintCard(card, item) {
     const frame = el("div", "frame");
     appendPhoto(frame, mediaSrc(item, null), cardLabel(item, "Photo"));
     const cap = el("div", "cap");
-    if (showTitle) cap.append(el("h2", null, item.title));
     if (item.body) cap.append(el("p", "body", item.body));
     const call = callText(item);
     if (call) cap.append(el("p", "fine", "Your call: " + call));
     appendMark(cap, item);
     appendChips(cap, item);
-    if (cap.childNodes.length) frame.append(cap);
     card.append(frame);
+    if (cap.childNodes.length) card.append(cap);
     return;
   }
   if (showTitle || item.body || callText(item) || item.mark) {
@@ -1371,12 +1370,7 @@ function appendPhoto(frame, src, alt) {
   img.alt = alt;
   img.src = src;
   img.draggable = false;
-  const bleed = el("img", "bleed");
-  bleed.alt = "";
-  bleed.draggable = false;
-  bleed.setAttribute("aria-hidden", "true");
-  bleed.src = src;
-  frame.append(bleed, img);
+  frame.append(img);
 }
 
 function appendChips(parent, item) {
@@ -2347,6 +2341,28 @@ function installTestHooks() {
         confirmLabel: "OK",
         cancelLabel: "Cancel",
       });
+    },
+    cardLayoutMetrics() {
+      const card = document.querySelector("article.card.image");
+      if (!card) return { ok: false, reason: "no-image-card" };
+      const frame = card.querySelector(".frame");
+      const img = frame && frame.querySelector("img");
+      const cap = card.querySelector(":scope > .cap");
+      if (!frame || !img) return { ok: false, reason: "no-frame-or-img" };
+      const fr = frame.getBoundingClientRect();
+      const ir = img.getBoundingClientRect();
+      const cr = cap ? cap.getBoundingClientRect() : null;
+      const gap = cr ? cr.top - ir.bottom : 0;
+      const overlap = cr ? ir.bottom - cr.top > 1 : false;
+      const topBand = ir.top - fr.top;
+      return {
+        ok: !overlap && topBand <= 2,
+        overlap,
+        topBand,
+        gap,
+        frameHeight: fr.height,
+        imgHeight: ir.height,
+      };
     },
   };
 }

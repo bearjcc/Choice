@@ -12,6 +12,7 @@ from choice.folder_deck import (
     build_file_deck,
     items_from_folder_scan,
     merge_folder_options,
+    apply_sort_direction_labels,
     wire_sort_buttons,
     wire_sort_directions,
 )
@@ -101,6 +102,8 @@ class FolderSource(Source):
                 deck.counts_defaults = merged_counts
             if scan.output == "sort":
                 deck.directions = wire_sort_directions(deck.directions, scan.sort_targets)
+                merged_raw = {**src, **deck_options}
+                deck.directions = apply_sort_direction_labels(deck.directions, merged_raw)
                 deck.buttons = wire_sort_buttons(deck.buttons, scan.sort_targets)
 
             def load_files():

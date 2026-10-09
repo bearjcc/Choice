@@ -560,12 +560,18 @@ def _from_config(folder: Path, data: dict, warnings: list[str] | None = None) ->
         or source.get("include")
         or source.get("exclude")
     ):
-        from choice.folder_deck import merge_folder_options, wire_sort_buttons, wire_sort_directions
+        from choice.folder_deck import (
+            apply_sort_direction_labels,
+            merge_folder_options,
+            wire_sort_buttons,
+            wire_sort_directions,
+        )
 
         scan = merge_folder_options(source, {})
         deck.folder_scan = scan
         if scan.output == "sort":
             deck.directions = wire_sort_directions(deck.directions, scan.sort_targets)
+            deck.directions = apply_sort_direction_labels(deck.directions, source)
             deck.buttons = wire_sort_buttons(deck.buttons, scan.sort_targets)
 
         def _load_folder() -> tuple[list[Item], list[str]]:

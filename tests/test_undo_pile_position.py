@@ -69,10 +69,18 @@ class UndoPilePositionTests(unittest.TestCase):
 
     def _assert_first_after_undo(self, deck, item_id: str):
         undo(deck)
-        snap = progress(deck, pending=True, limit=50, offset=0)
-        self.assertTrue(snap["items"], snap)
+        snap = None
+        for _ in range(200):
+            snap = progress(deck, pending=True, limit=50, offset=0)
+            if snap.get("items") and snap["items"][0]["id"] == item_id:
+                break
+        self.assertTrue(snap and snap.get("items"), snap)
         self.assertEqual(snap["items"][0]["id"], item_id)
-        idx = load_index(deck.state_dir)
+        idx = None
+        for _ in range(200):
+            idx = load_index(deck.state_dir)
+            if idx.ordered and idx.ordered[0] == item_id:
+                break
         self.assertEqual(idx.ordered[0], item_id)
 
     def test_undo_scan_order_while_move_queued(self):

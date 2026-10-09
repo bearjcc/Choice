@@ -1,0 +1,13 @@
+[state]
+dir = "state"
+
+[[sources]]
+id = "swipe"
+type = "swipe"
+path = "../swipe"
+
+[[decks]]
+id = "images"
+title = "Images"
+source = "swipe"
+mount = "example_images"

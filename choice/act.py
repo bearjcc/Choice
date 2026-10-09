@@ -302,6 +302,21 @@ def index_summary(deck: Deck) -> dict:
                 "count_label": snap_full.get("count_label"),
             }
         schedule_plugin_warm(deck)
+        from choice.deck_index import ensure_plugin_snapshot
+
+        if os.environ.get("CHOICE_DISABLE_WARM"):
+            ensure_plugin_snapshot(deck)
+        snap_cold = snapshot(deck)
+        if snap_cold is not None:
+            counts = _plugin_index_counts(deck, choices, snap_cold)
+            return {
+                "ok": True,
+                "total": counts["total"],
+                "decided": counts["decided"],
+                "left": counts["left"],
+                "list_size": len(snap_cold.ids),
+                "meter": True,
+            }
         saved = refresh_persisted_summary(deck)
         if saved is not None and saved.ids:
             total, decided, left, list_size = plugin_pile_counts(
@@ -315,13 +330,25 @@ def index_summary(deck: Deck) -> dict:
                 "list_size": list_size,
                 "meter": True,
             }
+        ensure_plugin_snapshot(deck)
+        snap_cold = snapshot(deck)
+        if snap_cold is not None:
+            counts = _plugin_index_counts(deck, choices, snap_cold)
+            return {
+                "ok": True,
+                "total": counts["total"],
+                "decided": counts["decided"],
+                "left": counts["left"],
+                "list_size": len(snap_cold.ids),
+                "meter": True,
+            }
         decided = len(log_decided)
         return {
             "ok": True,
-            "total": None,
+            "total": decided if decided else 0,
             "decided": decided,
-            "left": None,
-            "meter": False,
+            "left": 0,
+            "meter": decided > 0,
             "count_label": f"{decided} decided" if decided else None,
         }
     if hidden:

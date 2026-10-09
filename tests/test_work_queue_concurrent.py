@@ -132,4 +132,5 @@ class WorkQueueConcurrentTests(unittest.TestCase):
         for t in threads:
             t.join(timeout=120)
         self.assertEqual(errors, [])
+        self.assertTrue(wait_idle(deck.state_dir, timeout=120.0))
         self._assert_consistent(deck, 300)

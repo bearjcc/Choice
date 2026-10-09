@@ -461,16 +461,22 @@ main {
 }
 
 .card.image {
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   padding: 0;
   background: var(--photo);
   border-color: transparent;
   flex: 1 1 auto;
-  min-height: min(72vh, 100%);
+  min-height: 0;
 }
 
 .card.image .frame {
-  min-height: min(72vh, 100%);
+  flex: 1 1 0;
+  min-height: min(52vh, 60%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .frame {
@@ -481,49 +487,34 @@ main {
 }
 
 .frame img {
-  position: absolute;
-  inset: 0;
+  display: block;
   width: 100%;
   height: 100%;
+  max-height: 100%;
   object-fit: contain;
-  z-index: 1;
+  object-position: center top;
 }
 
-.frame .bleed {
-  inset: -12%;
-  width: 124%;
-  height: 124%;
-  object-fit: cover;
-  filter: blur(28px);
-  opacity: 0.72;
-  z-index: 0;
+.card.image .cap {
+  flex-shrink: 0;
 }
 
 .cap {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  padding: 52px 18px 16px;
-  background: linear-gradient(transparent, #000000b8 38%, #000000e6);
-  color: #f4f4f0;
+  position: relative;
+  padding: 12px 18px 14px;
+  background: var(--surface);
+  color: var(--ink);
+  border-top: 1px solid var(--line);
 }
 
 .cap h2 {
   margin: 0 0 4px;
-  color: #fff;
-  font-size: 1.35rem;
-  text-shadow: 0 1px 2px #00000080;
+  font-size: 1.15rem;
 }
 
-.cap .body { margin: 0; color: #e7e7e2; }
-.cap .fine { color: #c9c9c2; }
+.cap .body { margin: 0; }
+.cap .fine { color: var(--muted); }
 .cap .chips { padding: 10px 0 0; }
-.cap .chip {
-  background: #ffffff24;
-  color: #fff;
-  border-color: #ffffff38;
-}
 
 .pad { padding: 20px 18px 8px; }
 
