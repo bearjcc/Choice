@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -eu
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-OUT="${1:-/opt/cursor/artifacts/choice-0.2.10.zip}"
+OUT="${1:-/opt/cursor/artifacts/choice-0.3.0.zip}"
 # Version tag is bumped in choice/__init__.py; default outfile name should match release.
 rm -f "$OUT"
 cd "$ROOT"

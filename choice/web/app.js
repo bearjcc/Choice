@@ -3,6 +3,8 @@
 const state = {
   index: null,
   deckId: null,
+  mediaWidth: 1280,
+  prefetchDeckId: null,
   pending: true,
   blind: false,
   payload: null,
@@ -223,6 +225,8 @@ async function boot() {
   $("dialog").addEventListener("close", () => $("dialog-body").replaceChildren());
   document.addEventListener("keydown", onKey);
   window.addEventListener("popstate", route);
+  updateMediaWidth();
+  window.addEventListener("resize", updateMediaWidth);
   try {
     state.index = await api("/api/index");
   } catch (_err) {
@@ -322,6 +326,7 @@ async function showLibrary() {
     let pressTimer = null;
     let longPressed = false;
     card.addEventListener("pointerdown", () => {
+      prefetchDeckItems(deck.id);
       longPressed = false;
       pressTimer = window.setTimeout(() => {
         pressTimer = null;
@@ -743,6 +748,12 @@ function setupStepSave(wizard) {
   const saveBtn = el("button", "primary", "Save");
   saveBtn.type = "button";
   saveBtn.addEventListener("click", () => saveSetupDeck(wizard));
+  if (wizard.editDeckId) {
+    const removeBtn = el("button", null, "Remove from Choice");
+    removeBtn.type = "button";
+    removeBtn.addEventListener("click", () => removeSetupDeck(wizard));
+    wrap.append(removeBtn);
+  }
   const back = el("button", null, "Back");
   back.type = "button";
   back.addEventListener("click", () => {
@@ -782,6 +793,24 @@ async function runSetupTest(wizard) {
     list.append(li);
   });
   wizard.preview = res.preview || [];
+}
+
+async function removeSetupDeck(wizard) {
+  const cfg = wizard.cfg;
+  const deckId = wizard.editDeckId;
+  if (!deckId) return;
+  if (!window.confirm("Remove this deck from Choice? Files and state stay on disk.")) return;
+  const removed = (cfg.decks || []).find((d) => d.id === deckId);
+  const decks = (cfg.decks || []).filter((d) => d.id !== deckId);
+  const sources = (cfg.sources || []).filter((s) => {
+    if (!removed || s.id !== removed.source) return true;
+    return decks.some((d) => d.source === s.id);
+  });
+  const res = await api("/api/config", { sources, decks });
+  if (!res.ok) return setStatus(res.message || "Could not save.");
+  setStatus("Deck removed.");
+  await refreshIndex();
+  showLibrary();
 }
 
 async function saveSetupDeck(wizard) {
@@ -838,6 +867,7 @@ function splitGlobs(text) {
 }
 
 async function openDeck(id, push) {
+  updateMediaWidth();
   state.deckId = id;
   state.pos = 0;
   state.note = "";
@@ -854,7 +884,11 @@ async function openDeck(id, push) {
 async function loadItems(storedBlind) {
   let data;
   try {
-    data = await api("/api/decks/" + encodeURIComponent(state.deckId) + "/items?pending=" + (state.pending ? "1" : "0"));
+    updateMediaWidth();
+    const w = state.mediaWidth || 1280;
+    data = await api(
+      "/api/decks/" + encodeURIComponent(state.deckId) + "/items?pending=" + (state.pending ? "1" : "0") + "&w=" + w
+    );
   } catch (_err) {
     return showProblem("Could not reach Choice.");
   }
@@ -952,7 +986,17 @@ function preloadMedia() {
     const img = new Image();
     img.decoding = "async";
     img.src = url;
+    if (img.decode) {
+      img.decode().catch(() => {});
+    }
   });
+}
+
+function prefetchDeckItems(deckId) {
+  if (!deckId || state.prefetchDeckId === deckId) return;
+  state.prefetchDeckId = deckId;
+  const w = state.mediaWidth || 1280;
+  api("/api/decks/" + encodeURIComponent(deckId) + "/items?pending=1&limit=3&w=" + w).catch(() => {});
 }
 
 function paintCard(card, item) {
@@ -1100,6 +1144,18 @@ function sideLabel(side) {
   return side.key === "b" ? "B" : "A";
 }
 
+function updateMediaWidth() {
+  const css = Math.min(window.innerWidth || 400, 520);
+  const dpr = window.devicePixelRatio || 1;
+  const raw = Math.round(css * dpr);
+  const buckets = [640, 960, 1280, 1600];
+  let pick = buckets[0];
+  buckets.forEach((b) => {
+    if (raw >= b) pick = b;
+  });
+  state.mediaWidth = pick;
+}
+
 function mediaSrc(item, side, imageIndex) {
   let url = apiPath("/api/decks/" + encodeURIComponent(state.deckId) + "/media?item=" + encodeURIComponent(item.id));
   if (side) url += "&side=" + encodeURIComponent(side.key);
@@ -1111,6 +1167,7 @@ function mediaSrc(item, side, imageIndex) {
       url += "&n=" + encodeURIComponent(String(row.index != null ? row.index : imageIndex));
     }
   }
+  url += "&w=" + encodeURIComponent(String(state.mediaWidth || 1280));
   return withUser(url + "&v=" + encodeURIComponent(token || ""));
 }
 
@@ -1341,6 +1398,17 @@ function flingCard(card, direction) {
   card.style.transform = "translate(" + dx + "," + dy + ") rotate(" + rot + "deg)";
 }
 
+function advanceAfterSwipe(itemId, later) {
+  const items = (state.payload && state.payload.items) || [];
+  if (!items.length) return;
+  if (later || !state.pending) {
+    const idx = items.findIndex((row) => row.id === itemId);
+    state.pos = idx === -1 ? 0 : (idx + 1) % items.length;
+    return;
+  }
+  state.pos = (state.pos + 1) % items.length;
+}
+
 async function act(direction) {
   const spec = specFor(direction);
   const item = current();
@@ -1351,6 +1419,13 @@ async function act(direction) {
   renderActions();
   const card = document.querySelector(".card");
   if (card && !card.style.transition) flingCard(card, direction);
+  const snapshot = state.payload;
+  const itemId = item.id;
+  const later = !!spec.later;
+  advanceAfterSwipe(itemId, later);
+  if (!reduceMotion()) await wait(40);
+  state.busy = false;
+  renderDeck();
   let data;
   try {
     data = await api("/api/decks/" + encodeURIComponent(state.deckId) + "/decide", {
@@ -1361,31 +1436,20 @@ async function act(direction) {
   } catch (_err) {
     data = { ok: false, message: "Could not reach Choice." };
   }
-  if (!reduceMotion()) await wait(180);
   if (!data.ok) {
-    if (card) card.style.transform = "";
+    state.payload = snapshot;
+    state.pos = (snapshot.items || []).findIndex((row) => row.id === itemId);
+    if (state.pos < 0) state.pos = 0;
+    renderDeck();
     setStatus(data.message || "Not saved");
-    state.busy = false;
-    renderActions();
     return;
   }
   state.note = "";
   state.noteFor = null;
   setStatus(data.message || label);
-  const id = item.id;
-  const later = !!spec.later;
-  const ok = await loadItems();
-  if (!ok) {
-    state.busy = false;
-    return;
-  }
-  const items = (state.payload && state.payload.items) || [];
-  if (later || !state.pending) {
-    const idx = items.findIndex((row) => row.id === id);
-    if (idx !== -1) state.pos = items.length ? (idx + 1) % items.length : 0;
-  }
-  state.busy = false;
-  renderDeck();
+  loadItems().then((ok) => {
+    if (ok) renderDeck();
+  });
 }
 
 async function runPluginAction(spec) {

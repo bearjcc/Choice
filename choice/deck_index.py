@@ -9,13 +9,14 @@ import threading
 import time
 from dataclasses import dataclass
 
+from choice.bounded_cache import LruDict
 from choice.load import Deck, Item
 
 _INDEX_TTL = 45.0
 _COUNTS_NAME = "list_counts.json"
-_list_locks: dict[str, threading.RLock] = {}
+_list_locks: LruDict[str, threading.RLock] = LruDict(128)
 _guard = threading.Lock()
-_index: dict[str, tuple[float, _Snapshot]] = {}
+_index: LruDict[str, tuple[float, _Snapshot]] = LruDict(128)
 _warm_scheduled: set[str] = set()
 
 
@@ -28,9 +29,11 @@ class _Snapshot:
 def list_lock(deck: Deck) -> threading.RLock:
     key = str(deck.state_dir)
     with _guard:
-        if key not in _list_locks:
-            _list_locks[key] = threading.RLock()
-        return _list_locks[key]
+        lock = _list_locks.get(key)
+        if lock is None:
+            lock = threading.RLock()
+            _list_locks.set(key, lock)
+        return lock
 
 
 def record_items(deck: Deck, items: list[Item]) -> None:
@@ -41,7 +44,7 @@ def record_items(deck: Deck, items: list[Item]) -> None:
     key = str(deck.state_dir)
     snap = _Snapshot(ids=ids, plugin_decided=plugin_decided)
     with _guard:
-        _index[key] = (time.monotonic() + _INDEX_TTL, snap)
+        _index.set(key, (time.monotonic() + _INDEX_TTL, snap))
     _persist_counts(deck, snap)
 
 
@@ -54,14 +57,14 @@ def snapshot(deck: Deck) -> _Snapshot | None:
     expires, snap = hit
     if expires < time.monotonic():
         with _guard:
-            _index.pop(key, None)
+            _index.pop(key)
         return None
     return snap
 
 
 def clear_index(deck: Deck) -> None:
     with _guard:
-        _index.pop(str(deck.state_dir), None)
+        _index.pop(str(deck.state_dir))
 
 
 def schedule_plugin_warm(deck: Deck) -> None:

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.0 (2026-10-09)
+
+### Added
+
+- Remove deck from config UI (state and files on disk stay; roster updated).
+- Fixed `/media` width buckets (640/960/1280/1600), optimistic swipes with rollback, image decode preload, deck hover prefetch, server media warm pool.
+- Folder listing cache with invalidation; home counts for large folder decks without building cards; bounded LRU caches; config open cache.
+
+### Performance
+
+- Decision log snapshot cache; faster repeat API calls when `choice.toml` unchanged.
+
 ## 0.2.10 (2026-10-08)
 
 ### Fixed

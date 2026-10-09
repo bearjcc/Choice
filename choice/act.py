@@ -20,6 +20,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
+from choice.bounded_cache import LruDict
 from choice.deck_cache import bust as bust_item_cache
 from choice.deck_cache import load_items as cached_load_items
 from choice.deck_index import (
@@ -33,6 +34,7 @@ from choice.load import Deck, DeckProblem, Item, inside
 
 _GUARD = threading.Lock()
 _LOCKS: dict[str, threading.Lock] = {}
+_LOG_SNAP: LruDict[str, tuple[int, int, list[dict]]] = LruDict(64)
 
 
 def decide(deck: Deck, item_id: str, direction: str, note: str | None) -> dict:
@@ -194,6 +196,21 @@ def index_summary(deck: Deck) -> dict:
     snap = snapshot(deck)
     log_decided = {item_id for item_id, row in choices.items() if not row.get("later")}
     if snap is None:
+        if deck.plugin is None and deck.folder_scan is not None:
+            from choice.folder_list_cache import folder_item_ids
+
+            ids = folder_item_ids(deck.root, deck.folder_scan)
+            total, decided, left, list_size = plugin_pile_counts(
+                log_decided, ids, frozenset()
+            )
+            return {
+                "ok": True,
+                "total": total,
+                "decided": decided,
+                "left": left,
+                "list_size": list_size,
+                "meter": True,
+            }
         if deck.plugin is None:
             snap_full = progress(deck, pending=True)
             if not snap_full.get("ok"):
@@ -558,12 +575,31 @@ def _append(deck: Deck, record: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+    key = str(path)
+    hit = _LOG_SNAP.get(key)
+    if hit is not None:
+        rows = list(hit[2])
+        rows.append(record)
+        try:
+            st = path.stat()
+            _LOG_SNAP.set(key, (st.st_mtime_ns, st.st_size, rows))
+        except OSError:
+            pass
 
 
 def _read_log(deck: Deck) -> list[dict]:
     path = _log_path(deck)
+    key = str(path)
     if not path.is_file():
+        _LOG_SNAP.pop(key)
         return []
+    try:
+        st = path.stat()
+    except OSError:
+        return []
+    hit = _LOG_SNAP.get(key)
+    if hit and hit[0] == st.st_mtime_ns and hit[1] == st.st_size:
+        return hit[2]
     rows = []
     for line in path.read_text(encoding="utf-8").splitlines():
         if not line.strip():
@@ -574,6 +610,7 @@ def _read_log(deck: Deck) -> list[dict]:
             continue
         if isinstance(row, dict):
             rows.append(row)
+    _LOG_SNAP.set(key, (st.st_mtime_ns, st.st_size, rows))
     return rows
 
 

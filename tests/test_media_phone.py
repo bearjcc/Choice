@@ -91,7 +91,7 @@ class MediaPhoneTests(unittest.TestCase):
         from PIL import Image
 
         with Image.open(served.path) as image:
-            self.assertLessEqual(max(image.size), 400)
+            self.assertLessEqual(max(image.size), 640)
 
     def test_no_pillow_returns_original_bytes(self):
         from unittest.mock import patch

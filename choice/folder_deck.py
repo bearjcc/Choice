@@ -183,9 +183,11 @@ def build_file_deck(
 
 
 def items_from_folder_scan(root: Path, folder: Path, scan: FolderScanOptions) -> list[Item]:
+    from choice.folder_list_cache import cached_list_files
+
     skip_dirs = set(scan.sort_dirs(root))
     skip_dirs.add((root / ".choice").resolve())
-    files = list_files(folder, scan.recursive, skip_dirs)
+    files = cached_list_files(folder, scan.recursive, skip_dirs)
     items: list[Item] = []
     for path in files:
         if scan.images_only and not _is_image(path):

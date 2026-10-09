@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 _MAX_EDGE = 1600
+_WIDTH_BUCKETS = (640, 960, 1280, 1600)
 _QUALITY = 85
 _CACHE_MAX_BYTES = 1536 * 2**20
 _CACHE_MAX_AGE = 30 * 86400
@@ -187,10 +188,30 @@ def sweep_cache(cache_dir: Path) -> None:
             continue
 
 
+def snap_edge(width: int | None) -> int | None:
+    """Snap requested width up to a fixed bucket (or None for default max)."""
+    if width is None or width <= 0:
+        return None
+    if width >= _MAX_EDGE:
+        return _MAX_EDGE
+    for bucket in _WIDTH_BUCKETS:
+        if width <= bucket:
+            return bucket
+    return _MAX_EDGE
+
+
+def edge_for_viewport(css_width: int, dpr: float = 1.0) -> int:
+    raw = int(css_width * max(1.0, dpr))
+    snapped = snap_edge(raw)
+    return snapped or _MAX_EDGE
+
+
 def _edge_limit(max_edge: int, width: int | None) -> int:
     edge = max(320, min(max_edge, _MAX_EDGE))
     if width is not None and width > 0:
-        edge = min(edge, width)
+        snapped = snap_edge(width)
+        if snapped is not None:
+            edge = min(edge, snapped)
     return edge
 
 

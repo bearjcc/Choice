@@ -20,9 +20,17 @@ from urllib.parse import parse_qs, urlparse
 from choice.act import decide, index_summary, progress, run_plugin_action, undo, view
 from choice.config import ConfigProblem, load_config, mask_secrets, save_config, write_secret
 from choice.load import DeckProblem
-from choice.media import ServedMedia, prepare_bytes, prepare_file
-from choice.open import open_path
-from choice.people import assignment_warnings, load_roster, parse_users, remove_roster, save_roster
+from choice.media import ServedMedia, prepare_bytes, prepare_file, snap_edge
+from choice.media_warm import warm_file_paths
+from choice.open_cache import bust_config, open_library
+from choice.people import (
+    assignment_warnings,
+    drop_deck_from_roster,
+    load_roster,
+    parse_users,
+    remove_roster,
+    save_roster,
+)
 from choice.queue import page_items
 from choice.sources.registry import build_source, source_types
 from choice.web_paths import web_root
@@ -170,7 +178,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _index(self, query):
         try:
-            opened = open_path(self._library_path())
+            opened = open_library(self._library_path())
             roster = load_roster(self.server.choice_root)
         except DeckProblem as exc:
             return self._json(200, {"ok": False, "message": str(exc), "direct": True, "decks": []})
@@ -218,7 +226,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _feed(self, query):
         try:
-            opened = open_path(self._library_path())
+            opened = open_library(self._library_path())
             roster = load_roster(self.server.choice_root)
         except DeckProblem as exc:
             return self._json(200, {"ok": False, "message": str(exc), "decks": []})
@@ -252,6 +260,7 @@ class Handler(BaseHTTPRequestHandler):
         warnings = list(snap.get("warnings") or [])
         snap.update(deck.public_meta())
         snap["warnings"] = warnings
+        self._warm_upcoming(deck, snap.get("items") or [], query)
         self._json(200, snap)
 
     def _media(self, deck_id, query):
@@ -312,8 +321,25 @@ class Handler(BaseHTTPRequestHandler):
         full = (query.get("full") or ["0"])[0].lower() in {"1", "true", "yes"}
         w_raw = (query.get("w") or [""])[0]
         if str(w_raw).isdigit() and int(w_raw) > 0:
-            return full, int(w_raw)
+            return full, snap_edge(int(w_raw))
         return full, None
+
+    def _warm_upcoming(self, deck, rows: list[dict], query) -> None:
+        if not rows or getattr(deck, "folder_scan", None) is None:
+            return
+        w_raw = (query.get("w") or [""])[0]
+        width = snap_edge(int(w_raw)) if str(w_raw).isdigit() else None
+        root = deck.root.resolve()
+        paths: list[Path] = []
+        for row in rows[:4]:
+            item_id = str(row.get("id") or "")
+            if not item_id:
+                continue
+            candidate = (root / item_id).resolve()
+            if candidate.is_file():
+                paths.append(candidate)
+        if paths:
+            warm_file_paths(paths, deck.state_dir / "media_cache", width)
 
     def _media_cache_identity(
         self,
@@ -355,7 +381,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _save_users(self, body):
         try:
-            opened = open_path(self._library_path())
+            opened = open_library(self._library_path())
         except DeckProblem as exc:
             return self._json(400, {"ok": False, "message": str(exc)})
         known = {deck.id for deck in opened.decks}
@@ -443,7 +469,7 @@ class Handler(BaseHTTPRequestHandler):
         if not _ID.fullmatch(deck_id or ""):
             return {"ok": False, "message": "No such deck."}
         try:
-            opened = open_path(self._library_path())
+            opened = open_library(self._library_path())
         except DeckProblem as exc:
             return {"ok": False, "message": str(exc)}
         for deck in opened.decks:
@@ -536,7 +562,16 @@ class Handler(BaseHTTPRequestHandler):
         decks = body.get("decks")
         if not isinstance(sources, list) or not isinstance(decks, list):
             return self._json(400, {"ok": False, "message": "Send sources and decks arrays."})
+        old_ids = {d.id for d in cfg.decks}
         save_config(cfg, sources, decks)
+        new_ids = {str(row.get("id") or "") for row in decks if isinstance(row, dict)}
+        removed = old_ids - new_ids
+        if removed:
+            bust_config(path)
+            for deck_id in removed:
+                drop_deck_from_roster(self.server.choice_root, deck_id)
+        else:
+            bust_config(path)
         return self._json(200, {"ok": True})
 
     def _source_test(self, source_id, query):

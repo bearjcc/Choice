@@ -119,6 +119,30 @@ def save_roster(root: Path, people: list[Person]) -> None:
     _write(path, text)
 
 
+def drop_deck_from_roster(root: Path, deck_id: str) -> None:
+    """Remove one deck id from every person's assignment list."""
+    try:
+        roster = load_roster(root)
+    except DeckProblem:
+        return
+    if not roster.enabled:
+        return
+    changed = False
+    people: list[Person] = []
+    for person in roster.people:
+        if person.decks is None:
+            people.append(person)
+            continue
+        if deck_id not in person.decks:
+            people.append(person)
+            continue
+        kept = [d for d in person.decks if d != deck_id]
+        people.append(Person(person.id, person.name, kept))
+        changed = True
+    if changed:
+        save_roster(root, people)
+
+
 def remove_roster(root: Path) -> None:
     path = roster_path(root)
     with _WRITE:
