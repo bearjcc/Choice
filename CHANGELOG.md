@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.1 (2026-10-09)
+
+### Changed
+
+- Swipe deck UI: fixed bottom action bar (deck choices plus undo when allowed). Card tap no longer opens a menu; sub-threshold taps and drags spring back only.
+- Notes removed from the swipe UI (decide requests no longer send a note field from the browser).
+
 ## 0.4.0 (2026-10-09)
 
 ### Added

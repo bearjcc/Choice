@@ -13,8 +13,6 @@ const state = {
   paged: null,
   queue: null,
   queuePoll: null,
-  note: "",
-  noteFor: null,
   busy: false,
   user: localStorage.getItem("choice.user") || "",
   picking: false,
@@ -228,7 +226,6 @@ async function boot() {
   $("counts").addEventListener("click", openCounts);
   $("menu").addEventListener("click", openMenu);
   $("queue-badge").addEventListener("click", openQueueFailures);
-  $("fab-undo").addEventListener("click", () => undoLast());
   $("dialog").addEventListener("close", () => $("dialog-body").replaceChildren());
   document.addEventListener("keydown", onKey);
   window.addEventListener("popstate", route);
@@ -278,7 +275,6 @@ function showProblem(message) {
   $("tools").hidden = true;
   $("track").hidden = true;
   $("actions").hidden = true;
-  $("fab-undo").hidden = true;
   $("menu").hidden = false;
   $("count").textContent = "";
   paintWho();
@@ -309,7 +305,6 @@ async function showLibrary() {
   $("tools").hidden = true;
   $("track").hidden = true;
   $("actions").hidden = true;
-  $("fab-undo").hidden = true;
   $("menu").hidden = false;
   paintWho();
   $("status").textContent = "";
@@ -414,7 +409,6 @@ function showSetup(cfg, editDeckId) {
   $("tools").hidden = true;
   $("track").hidden = true;
   $("actions").hidden = true;
-  $("fab-undo").hidden = true;
   $("menu").hidden = false;
   const wizard = { step: 1, type: "folder", cfg, editDeckId: editDeckId || null, preview: [] };
   const existing = editDeckId ? (cfg.decks || []).find((d) => d.id === editDeckId) : null;
@@ -884,8 +878,6 @@ async function openDeck(id, push) {
   updateMediaWidth();
   state.deckId = id;
   state.pos = 0;
-  state.note = "";
-  state.noteFor = null;
   $("status").textContent = "";
   const stored = localStorage.getItem(blindKey(id));
   const deck = (state.index.decks || []).find((row) => row.id === id);
@@ -1109,9 +1101,8 @@ function renderDeck() {
   }
   paintCard(card, item);
   bindDrag(card, item);
-  bindCardTap(card, item);
   preloadMedia();
-  paintFabUndo();
+  renderActions();
   applyDemoDrag(card);
   ensureCardsAhead().then((added) => {
     if (added && current()) renderDeck();
@@ -1385,7 +1376,7 @@ function renderEmpty() {
     box.append(button);
   }
   $("main").replaceChildren(box);
-  $("actions").hidden = false;
+  $("actions").hidden = true;
 }
 
 function appendReport(box, report) {
@@ -1425,18 +1416,13 @@ function undoEnabled() {
   return !!(state.payload && state.payload.allow_undo !== false);
 }
 
-function paintFabUndo() {
-  const fab = $("fab-undo");
-  const show = state.deckId && undoEnabled() && state.payload && state.payload.can_undo && !isWide();
-  fab.hidden = !show;
-  fab.disabled = state.busy || !state.payload || !state.payload.can_undo;
-}
-
 function renderActions() {
   const row = $("actions");
   const item = current();
-  row.hidden = !isWide();
+  const onDeck = !!(state.deckId && state.payload);
+  row.hidden = !onDeck;
   row.replaceChildren();
+  if (!onDeck) return;
   if (item) {
     ["left", "down", "up", "right"].forEach((id) => {
       const spec = specFor(id);
@@ -1447,18 +1433,13 @@ function renderActions() {
     });
     (state.payload.buttons || []).forEach((spec) => row.append(actionButton(spec, spec.label)));
   }
-  if (isWide() && undoEnabled()) {
-    const undo = el("button", null, "Undo");
+  if (undoEnabled()) {
+    const undo = el("button", "action-undo", "Undo");
+    undo.type = "button";
     undo.disabled = !state.payload.can_undo || state.busy;
     undo.addEventListener("click", () => undoLast());
     row.append(undo);
-    if (item) {
-      const details = el("button", null, "Details");
-      details.addEventListener("click", openDetails);
-      row.append(details);
-    }
   }
-  paintFabUndo();
 }
 
 function actionButton(spec, label) {
@@ -1472,26 +1453,6 @@ function actionButton(spec, label) {
   button.disabled = state.busy;
   button.addEventListener("click", () => act(spec.id));
   return button;
-}
-
-function bindCardTap(card, item) {
-  let start = null;
-  card.addEventListener("pointerdown", (event) => {
-    if (event.button !== 0 || state.busy) return;
-    if (event.target.closest(".side, .path-browse")) return;
-    start = { x: event.clientX, y: event.clientY, t: Date.now() };
-  });
-  card.addEventListener("pointerup", (event) => {
-    if (!start || state.busy) return;
-    const dx = event.clientX - start.x;
-    const dy = event.clientY - start.y;
-    const moved = Math.abs(dx) > 14 || Math.abs(dy) > 14;
-    start = null;
-    if (moved) return;
-    if (item && item.kind === "pair" && !isWide()) return;
-    if (event.target.closest(".side")) return;
-    openDetails();
-  });
 }
 
 function bindDrag(card, item) {
@@ -1551,6 +1512,7 @@ function bindDrag(card, item) {
       act(side);
       return;
     }
+    card.style.transition = reduceMotion() ? "" : "transform 180ms ease-out";
     card.style.transform = "";
   };
   card.addEventListener("pointerup", finish);
@@ -1693,7 +1655,6 @@ async function act(direction) {
     data = await api("/api/decks/" + encodeURIComponent(state.deckId) + "/decide", {
       item: item.id,
       direction: direction,
-      note: state.note,
     });
   } catch (_err) {
     data = { ok: false, message: "Could not reach Choice." };
@@ -1706,8 +1667,6 @@ async function act(direction) {
     setStatus(data.message || "Not saved");
     return;
   }
-  state.note = "";
-  state.noteFor = null;
   setStatus(data.message || label);
   loadItems().then((ok) => {
     if (ok) {
@@ -1762,7 +1721,7 @@ async function undoLast() {
   unflingCard(card, direction);
   if (!reduceMotion()) await wait(40);
   state.busy = false;
-  paintFabUndo();
+  renderActions();
   let data;
   try {
     data = await api("/api/decks/" + encodeURIComponent(state.deckId) + "/undo", {});
@@ -1775,79 +1734,14 @@ async function undoLast() {
     state.lastSwipe = snapshot.lastSwipe;
     renderDeck();
     setStatus(data.message || "Undo failed");
-    paintFabUndo();
+    renderActions();
     return;
   }
   if (data.item) state.anchorAfterLoad = data.item;
   setStatus(data.message || "");
   const ok = await loadItems();
   if (ok) renderDeck();
-  else paintFabUndo();
-}
-
-function openDetails() {
-  const item = current();
-  if (!item) return;
-  if (state.noteFor !== item.id) {
-    state.note = "";
-    state.noteFor = item.id;
-  }
-  const body = $("dialog-body");
-  body.replaceChildren();
-  body.append(el("h2", null, "Details"));
-  if (item.kind === "pair" && item.sides && item.sides.length) {
-    if (item.title) body.append(el("p", null, item.title));
-    if (item.body) body.append(el("p", "body", item.body));
-    item.sides.forEach((side) => {
-      body.append(el("h3", "side-label", sideLabel(side)));
-      if (side.body) body.append(el("p", "body", side.body));
-    });
-    if (!state.blind) {
-      (item.chips || []).concat(item.reveal || []).forEach((chip) => {
-        body.append(el("p", null, chip.label + ": " + chip.text));
-      });
-    } else {
-      body.append(el("p", "fine", "Blind is on. Chips and reveal fields stay hidden."));
-    }
-  } else if (!state.blind) {
-    body.append(el("p", null, item.title));
-    if (item.body) body.append(el("p", "body", item.body));
-    if (item.file) body.append(el("p", "fine", item.file));
-    (item.chips || []).concat(item.reveal || []).forEach((chip) => {
-      body.append(el("p", null, chip.label + ": " + chip.text));
-    });
-  } else {
-    if (item.body) body.append(el("p", "body", item.body));
-    body.append(el("p", "fine", "Blind is on. Title, chips, and reveal fields stay hidden."));
-  }
-  const call = callText(item);
-  if (call) body.append(el("p", null, "Your call: " + call));
-  appendMark(body, item);
-  const note = el("input", "note");
-  note.type = "text";
-  note.maxLength = 500;
-  note.placeholder = "Note, sent with the next swipe";
-  note.value = state.note;
-  note.addEventListener("input", () => { state.note = note.value; });
-  body.append(note);
-  const row = el("div", "sheet-actions");
-  specs().forEach((spec) => {
-    const label = buttonLabel(spec, item);
-    if (!label) return;
-    row.append(actionButton(spec, label));
-  });
-  body.append(row);
-  body.append(
-    el(
-      "p",
-      "fine",
-      undoEnabled() ? "Arrow keys decide. U undoes. I opens this." : "Arrow keys decide. I opens this."
-    )
-  );
-  const close = el("button", null, "Close");
-  close.addEventListener("click", () => $("dialog").close());
-  body.append(close);
-  $("dialog").showModal();
+  else renderActions();
 }
 
 async function openMenu() {
@@ -2084,7 +1978,6 @@ function onKey(event) {
     }
   }
   if ((event.key === "u" || event.key === "U") && undoEnabled()) undoLast();
-  if (event.key === "i" || event.key === "I") openDetails();
 }
 
 function peopleOn() {
@@ -2191,7 +2084,6 @@ function renderPeople() {
   $("tools").hidden = true;
   $("track").hidden = true;
   $("actions").hidden = true;
-  $("fab-undo").hidden = true;
   $("menu").hidden = false;
   $("count").textContent = "";
   $("title").textContent = "People";
