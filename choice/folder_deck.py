@@ -172,6 +172,7 @@ def build_file_deck(
     allow_undo = True
     if options.get("allow_undo") is False or options.get("undo") is False:
         allow_undo = False
+    show_filename = bool(options.get("show_filename"))
     deck = Deck(
         id=deck_id,
         title=title,
@@ -185,6 +186,7 @@ def build_file_deck(
         view_defaults=view_defaults,
         counts_defaults=counts_defaults,
         allow_undo=allow_undo,
+        show_filename=show_filename,
         _load=lambda: (
             __import__("choice.folder_index", fromlist=["load_items_for"]).load_items_for(
                 folder.resolve(), state_dir, scan

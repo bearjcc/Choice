@@ -63,6 +63,8 @@ def open_config(path: Path) -> Opened:
             deck.counts_defaults = counts_raw
         if spec.options.get("allow_undo") is False or spec.options.get("undo") is False:
             deck.allow_undo = False
+        if spec.options.get("show_filename") is True:
+            deck.show_filename = True
         decks.append(deck)
     return Opened(decks=decks, direct=False)
 

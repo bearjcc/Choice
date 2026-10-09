@@ -6,6 +6,7 @@
 
 - Swipe deck UI: fixed bottom action bar (deck choices plus undo when allowed). Card tap no longer opens a menu; sub-threshold taps and drags spring back only.
 - Notes removed from the swipe UI (decide requests no longer send a note field from the browser).
+- Filenames hidden on swipe cards by default; opt in per deck with `show_filename = true` in `deck.json` or `choice.toml`.
 
 ## 0.4.0 (2026-10-09)
 

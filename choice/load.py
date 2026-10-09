@@ -39,6 +39,7 @@ _DECK_KEYS = {
     "story",
     "view",
     "allow_undo",
+    "show_filename",
 }
 _FIELD = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _SOURCE_KEYS = {
@@ -165,6 +166,32 @@ class Item:
         return out
 
 
+def swipe_item_public(deck: Deck, item: Item, choice: str | None) -> dict:
+    """Item JSON for the swipe UI; filenames hidden unless the deck opts in."""
+    row = item.public(choice)
+    if getattr(deck, "show_filename", False):
+        return row
+    fname = row.get("file")
+    if not fname and item.path is not None:
+        fname = item.path.name
+    if not fname and item.kind in {"image", "file"} and item.id:
+        tail = Path(str(item.id)).name
+        if tail and ("/" in str(item.id) or "\\" in str(item.id) or "." in tail):
+            fname = tail
+    if not fname:
+        return row
+    row.pop("file", None)
+    title = str(row.get("title") or "")
+    item_id = str(item.id)
+    if title == fname or title == item_id or title == Path(item_id).name:
+        row["title"] = ""
+    for img in row.get("images") or []:
+        cap = str(img.get("caption") or "")
+        if cap == fname or cap == title:
+            img["caption"] = ""
+    return row
+
+
 @dataclass
 class Deck:
     id: str
@@ -192,6 +219,7 @@ class Deck:
     counts_defaults: str | dict | None = None
     source_type: str | None = None
     allow_undo: bool = True
+    show_filename: bool = False
     # Set per request. None is the shared log.
     actor: str | None = None
     private_feed: bool = False
@@ -243,6 +271,7 @@ class Deck:
 
         out["counts"] = public_counts(self)
         out["allow_undo"] = self.allow_undo
+        out["show_filename"] = self.show_filename
         return out
 
 
@@ -507,6 +536,8 @@ def _from_config(folder: Path, data: dict, warnings: list[str] | None = None) ->
         deck.counts_defaults = view_raw.get("counts")
     if data.get("allow_undo") is False or data.get("undo") is False:
         deck.allow_undo = False
+    if data.get("show_filename") is True:
+        deck.show_filename = True
     src_kind = str(source.get("type") or "files")
     if src_kind in {"images", "files"} and (
         source.get("output")

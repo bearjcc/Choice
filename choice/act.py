@@ -30,7 +30,7 @@ from choice.deck_index import (
     snapshot,
 )
 from choice.flow import Flow, arrange, report_lines
-from choice.load import Deck, DeckProblem, Item, inside
+from choice.load import Deck, DeckProblem, Item, inside, swipe_item_public
 from choice.work_queue import cancel_for_decision, enqueue_file_op, enqueue_planned_transfer
 
 _GUARD = threading.Lock()
@@ -345,7 +345,7 @@ def progress(
             decided += 1
             if pending:
                 continue
-        shown = item.public(current)
+        shown = swipe_item_public(deck, item, current)
         if choice and choice.get("label"):
             shown["choice_label"] = choice.get("label")
         mark = flow.marks.get(item.id)
@@ -416,7 +416,7 @@ def _plugin_progress_page(deck: Deck, pending: bool, offset: int, limit: int) ->
             continue
         choice = choices.get(rid)
         current = choice.get("value") if choice else None
-        shown = item.public(current)
+        shown = swipe_item_public(deck, item, current)
         if choice and choice.get("label"):
             shown["choice_label"] = choice.get("label")
         visible.append(shown)
@@ -453,7 +453,7 @@ def _folder_progress(deck: Deck, pending: bool, offset: int, limit: int) -> dict
             continue
         choice = choices.get(rid)
         current = choice.get("value") if choice else None
-        shown = item.public(current)
+        shown = swipe_item_public(deck, item, current)
         if choice and choice.get("label"):
             shown["choice_label"] = choice.get("label")
         visible.append(shown)
@@ -603,7 +603,7 @@ def _undo_hint(deck: Deck) -> dict | None:
 
         row = item_for_id(deck, item_id)
         if row is not None:
-            hint["card"] = row.public(latest.get("value"))
+            hint["card"] = swipe_item_public(deck, row, latest.get("value"))
     return hint
 
 

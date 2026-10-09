@@ -1162,6 +1162,16 @@ function prefetchDeckItems(deckId) {
   api("/api/decks/" + encodeURIComponent(deckId) + "/items?pending=1&limit=3&w=" + w).catch(() => {});
 }
 
+function cardLabel(item, fallback) {
+  if (state.blind) return fallback || "Card";
+  const text = (item.title || "").trim();
+  return text || fallback || "Card";
+}
+
+function hasCardTitle(item) {
+  return !!(item.title && String(item.title).trim());
+}
+
 function paintCard(card, item) {
   if (item.kind === "pair" && item.sides && item.sides.length) {
     paintPair(card, item);
@@ -1171,10 +1181,13 @@ function paintCard(card, item) {
     paintGallery(card, item);
     return;
   }
-  const showTitle = item.kind === "file" || (item.kind !== "image" && (!state.blind || !item.body)) || (item.kind === "image" && !state.blind);
+  const showTitle =
+    hasCardTitle(item) &&
+    (item.kind !== "image" || !state.blind) &&
+    (item.kind !== "file" || hasCardTitle(item));
   if (item.kind === "image" && item.media) {
     const frame = el("div", "frame");
-    appendPhoto(frame, mediaSrc(item, null), state.blind ? "Card" : item.title);
+    appendPhoto(frame, mediaSrc(item, null), cardLabel(item, "Photo"));
     const cap = el("div", "cap");
     if (showTitle) cap.append(el("h2", null, item.title));
     if (item.body) cap.append(el("p", "body", item.body));
@@ -1186,7 +1199,7 @@ function paintCard(card, item) {
     card.append(frame);
     return;
   }
-  if (showTitle || item.body || item.kind === "file" || callText(item) || item.mark) {
+  if (showTitle || item.body || callText(item) || item.mark) {
     const pad = el("div", "pad");
     if (showTitle) pad.append(el("h2", null, item.title));
     if (item.body) pad.append(el("p", "body", item.body));
@@ -1219,7 +1232,7 @@ function paintGallery(card, item) {
   const imgWrap = el("div", "gallery-view");
   imgWrap.addEventListener("pointerdown", (event) => event.stopPropagation());
   const slide = item.images[idx];
-  appendPhoto(imgWrap, mediaSrc(item, null, slide.index), slide.caption || item.title);
+  appendPhoto(imgWrap, mediaSrc(item, null, slide.index), slide.caption || cardLabel(item, "Photo"));
   if (item.images.length > 1) {
     const dots = el("div", "gallery-dots");
     dots.setAttribute("role", "tablist");
@@ -1237,7 +1250,7 @@ function paintGallery(card, item) {
   }
   frame.append(imgWrap);
   const cap = el("div", "cap");
-  const showTitle = !state.blind || !item.body;
+  const showTitle = hasCardTitle(item) && (!state.blind || !item.body);
   if (showTitle) cap.append(el("h2", null, item.title));
   if (item.body) cap.append(el("p", "body", item.body));
   if (slide.caption) cap.append(el("p", "fine", slide.caption));
