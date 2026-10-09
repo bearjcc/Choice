@@ -167,6 +167,7 @@ def build_file_deck(
     directions = default_results_directions()
     if scan.output == "sort":
         directions = wire_sort_directions(directions, scan.sort_targets)
+    view_defaults = _view_defaults_from_options(options)
     deck = Deck(
         id=deck_id,
         title=title,
@@ -177,6 +178,7 @@ def build_file_deck(
         blind=False,
         warnings=[],
         folder_scan=scan,
+        view_defaults=view_defaults,
         _load=lambda: (
             __import__("choice.folder_index", fromlist=["load_items_for"]).load_items_for(
                 folder.resolve(), state_dir, scan
@@ -184,6 +186,23 @@ def build_file_deck(
         ),
     )
     return deck
+
+
+def _view_defaults_from_options(options: dict) -> dict | None:
+    view: dict = {}
+    raw = options.get("view")
+    if isinstance(raw, dict):
+        view.update(raw)
+    for key in (
+        "sort_mode",
+        "random_seed",
+        "file_types",
+        "include_folders",
+        "exclude_folders",
+    ):
+        if key in options:
+            view[key] = options[key]
+    return view or None
 
 
 def items_from_folder_scan(root: Path, folder: Path, scan: FolderScanOptions) -> list[Item]:
@@ -218,7 +237,9 @@ def items_from_folder_scan(root: Path, folder: Path, scan: FolderScanOptions) ->
                 fields={"file": rel_posix},
             )
         )
-    items.sort(key=lambda item: item.id.lower())
+    from choice.natsort import natural_key
+
+    items.sort(key=lambda item: natural_key(item.id))
     return items
 
 

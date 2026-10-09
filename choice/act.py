@@ -31,7 +31,7 @@ from choice.deck_index import (
 )
 from choice.flow import Flow, arrange, report_lines
 from choice.load import Deck, DeckProblem, Item, inside
-from choice.work_queue import cancel_for_decision, enqueue_file_op
+from choice.work_queue import cancel_for_decision, enqueue_file_op, enqueue_planned_transfer
 
 _GUARD = threading.Lock()
 _LOCKS: dict[str, threading.Lock] = {}
@@ -95,10 +95,12 @@ def decide(deck: Deck, item_id: str, direction: str, note: str | None) -> dict:
                         _plugin_message(result.get("message")) or "Plugin failed."
                     )
             elif action.does in {"move", "copy"}:
-                planned = _plan_transfer(deck, item, action.does, action.into or "")
+                _validate_transfer(deck, item, action.does, action.into or "")
+                planned = enqueue_planned_transfer(
+                    deck, token, item, action.does, action.into or ""
+                )
                 record["file_op"] = planned
                 record["file_op_pending"] = True
-                enqueue_file_op(deck, token, planned)
                 from choice.folder_index import apply_move
 
                 apply_move(deck.state_dir, planned["from"], planned["to"])
@@ -429,7 +431,27 @@ def _folder_progress(deck: Deck, pending: bool, offset: int, limit: int) -> dict
         "warnings": warnings,
         "pending": pending,
         "meter": True,
+        "view": _public_view(deck),
     }
+
+
+def save_deck_view(deck: Deck, body: dict) -> dict:
+    from choice.view_prefs import ViewPrefs, pile_view_locked, save_view_prefs
+
+    if pile_view_locked(deck):
+        return _fail("This deck keeps a fixed order.")
+    if deck.folder_scan is None:
+        return _fail("Order and filters apply to folder piles only.")
+    prefs = ViewPrefs.from_dict(body if isinstance(body, dict) else {})
+    save_view_prefs(deck, prefs)
+    bust_item_cache(deck, invalidate_folder=False)
+    return {"ok": True, "view": _public_view(deck)}
+
+
+def _public_view(deck: Deck) -> dict:
+    from choice.view_prefs import public_view
+
+    return public_view(deck)
 
 
 def tally_lines(deck: Deck) -> list[str]:
@@ -509,7 +531,7 @@ def _latest_undoable(deck: Deck) -> dict | None:
     return last
 
 
-def _plan_transfer(deck: Deck, item: Item, does: str, into: str) -> dict:
+def _validate_transfer(deck: Deck, item: Item, does: str, into: str) -> None:
     if item.path is None:
         raise _OpError(f"This card has no file to {does}.")
     if not item.path.is_file():
@@ -520,9 +542,14 @@ def _plan_transfer(deck: Deck, item: Item, does: str, into: str) -> dict:
     if not inside(deck.root, dest_root):
         raise _OpError("into leaves the deck folder.")
     try:
-        rel = item.path.resolve().relative_to(deck.root.resolve())
+        item.path.resolve().relative_to(deck.root.resolve())
     except ValueError as exc:
         raise _OpError(f"Choice will not {does} a file outside the deck folder.") from exc
+
+
+def _plan_transfer(deck: Deck, item: Item, does: str, into: str) -> dict:
+    _validate_transfer(deck, item, does, into)
+    rel = item.path.resolve().relative_to(deck.root.resolve())
     from choice.work_queue import allocate_transfer_dest
 
     return allocate_transfer_dest(deck, does, rel.as_posix(), into, item)

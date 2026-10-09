@@ -17,6 +17,7 @@ from choice.folder_deck import FolderScanOptions, match_globs
 from choice.load import Deck, Item, _hidden, _is_image, _mtime, _size_text, inside
 
 _INDEX_FILE = "folder_index.json"
+_META_FILE = "folder_meta.json"
 _DEBOUNCE = 1.5
 _mem: LruDict[str, FolderIndex] = LruDict(32)
 _timers: dict[str, threading.Timer] = {}
@@ -28,6 +29,7 @@ _scan_locks: LruDict[str, threading.Lock] = LruDict(32)
 class FolderIndex:
     ordered: list[str] = field(default_factory=list)
     dir_mtimes: dict[str, int] = field(default_factory=dict)
+    meta: dict[str, dict] = field(default_factory=dict)
     generation: int = 0
     updated_at: float = 0.0
     scanning: bool = False
@@ -50,9 +52,17 @@ class FolderIndex:
         mtimes = data.get("dir_mtimes")
         if not isinstance(mtimes, dict):
             mtimes = {}
+        meta = data.get("meta")
+        if not isinstance(meta, dict):
+            meta = {}
+        clean_meta: dict[str, dict] = {}
+        for k, v in meta.items():
+            if isinstance(v, dict):
+                clean_meta[str(k)] = dict(v)
         return FolderIndex(
             ordered=[str(x) for x in ordered if x],
             dir_mtimes={str(k): int(v) for k, v in mtimes.items()},
+            meta=clean_meta,
             generation=int(data.get("generation") or 0),
             updated_at=float(data.get("updated_at") or 0),
             stale=bool(data.get("stale", True)),
@@ -61,6 +71,10 @@ class FolderIndex:
 
 def index_path(state_dir: Path) -> Path:
     return state_dir / _INDEX_FILE
+
+
+def meta_path(state_dir: Path) -> Path:
+    return state_dir / _META_FILE
 
 
 def generation(state_dir: Path) -> int:
@@ -78,6 +92,7 @@ def load_index(state_dir: Path) -> FolderIndex:
             data = json.loads(path.read_text(encoding="utf-8"))
             if isinstance(data, dict):
                 idx = FolderIndex.from_dict(data)
+                _load_meta_file(state_dir, idx)
                 _mem.set(key, idx)
                 return idx
         except (OSError, json.JSONDecodeError):
@@ -87,7 +102,7 @@ def load_index(state_dir: Path) -> FolderIndex:
     return idx
 
 
-def save_index(state_dir: Path, idx: FolderIndex) -> None:
+def save_index(state_dir: Path, idx: FolderIndex, *, save_meta: bool = False) -> None:
     key = str(state_dir.resolve())
     idx.updated_at = time.time()
     _mem.set(key, idx)
@@ -95,6 +110,31 @@ def save_index(state_dir: Path, idx: FolderIndex) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(idx.to_dict()), encoding="utf-8")
+    atomic_replace(tmp, path)
+    if save_meta:
+        _save_meta_file(state_dir, idx)
+
+
+def _load_meta_file(state_dir: Path, idx: FolderIndex) -> None:
+    path = meta_path(state_dir)
+    if path.is_file():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                idx.meta = {str(k): dict(v) for k, v in data.items() if isinstance(v, dict)}
+                return
+        except (OSError, json.JSONDecodeError):
+            pass
+    embedded = idx.meta
+    if embedded:
+        _save_meta_file(state_dir, idx)
+
+
+def _save_meta_file(state_dir: Path, idx: FolderIndex) -> None:
+    path = meta_path(state_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(idx.meta), encoding="utf-8")
     atomic_replace(tmp, path)
 
 
@@ -181,12 +221,17 @@ def _scan_locked(deck: Deck) -> None:
                     if rel not in known:
                         idx.ordered.append(rel)
                         known.add(rel)
+                        from choice.pile_view import meta_for
+
+                        idx.meta[rel] = meta_for(root, rel)
                         changed = True
         except OSError:
             continue
         gone = [rid for rid in idx.ordered if _dir_of(rid) == dir_rel and rid not in seen_here]
         if gone:
             idx.ordered = [rid for rid in idx.ordered if rid not in gone]
+            for rid in gone:
+                idx.meta.pop(rid, None)
             known -= set(gone)
             changed = True
     purged = _purge_sorted_from_index(idx, root, skip_dirs)
@@ -196,7 +241,7 @@ def _scan_locked(deck: Deck) -> None:
         idx.generation += 1
     idx.stale = False
     idx.scanning = False
-    save_index(state_dir, idx)
+    save_index(state_dir, idx, save_meta=changed)
 
 
 def apply_move(state_dir: Path, from_rel: str, to_rel: str, *, reverse: bool = False) -> None:
@@ -329,9 +374,14 @@ def progress_page(
     warnings: list[str] = []
     if not idx.ordered:
         return [], 0, 0, 0, warnings
+    from choice.pile_view import view_order_ids
+    from choice.view_prefs import load_view_prefs
+
+    prefs = load_view_prefs(deck)
+    ordered = view_order_ids(deck, idx, prefs)
     pile: list[str] = []
     decided = 0
-    for rid in idx.ordered:
+    for rid in ordered:
         choice = choices.get(rid)
         log_done = choice is not None and not choice.get("later")
         if log_done:
@@ -339,7 +389,7 @@ def progress_page(
             if pending:
                 continue
         pile.append(rid)
-    total = len(idx.ordered)
+    total = len(ordered)
     left = len(pile)
     if limit <= 0:
         limit = min(200, len(pile))
@@ -364,10 +414,13 @@ def admit_if_on_disk(deck: Deck, item_id: str) -> bool:
     rel = _relative(root, path)
     if _under_sort(path, skip_dirs) or not _passes(scan, root, path, rel, skip_dirs):
         return False
+    from choice.pile_view import meta_for
+
     idx.ordered.append(rel)
+    idx.meta[rel] = meta_for(root, rel)
     idx.generation += 1
     idx.stale = False
-    save_index(deck.state_dir, idx)
+    save_index(deck.state_dir, idx, save_meta=True)
     return True
 
 

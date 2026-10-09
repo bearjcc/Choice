@@ -37,6 +37,7 @@ _DECK_KEYS = {
     "score",
     "contest",
     "story",
+    "view",
 }
 _FIELD = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _SOURCE_KEYS = {
@@ -186,6 +187,7 @@ class Deck:
     # Swipe deck.py adapter or remote media hook (see choice.swipe_plugin).
     plugin: object | None = None
     folder_scan: object | None = None
+    view_defaults: dict | None = None
     # Set per request. None is the shared log.
     actor: str | None = None
     private_feed: bool = False
@@ -229,6 +231,10 @@ class Deck:
                     )
             if rows:
                 out["actions"] = rows
+        if self.folder_scan is not None:
+            from choice.view_prefs import public_view
+
+            out["view"] = public_view(self)
         return out
 
 
@@ -483,6 +489,9 @@ def _from_config(folder: Path, data: dict, warnings: list[str] | None = None) ->
         contest_name=contest_name,
         story=story,
     )
+    view_raw = data.get("view")
+    if isinstance(view_raw, dict):
+        deck.view_defaults = dict(view_raw)
     src_kind = str(source.get("type") or "files")
     if src_kind in {"images", "files"} and (
         source.get("output")

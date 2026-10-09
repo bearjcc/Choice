@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.0 (2026-10-09)
+
+### Added
+
+- Per-deck pile order and filters for folder swipe and sort decks: sort modes (scan, natural filename, folder groups, mtime, stable random), file-type and folder include/exclude filters.
+- Defaults in `deck.json` / `choice.toml` (`view` table or keys); UI changes save to `view_prefs.json` in the deck state dir.
+- Sort metadata cached in `folder_index.json`; view order cached in memory without rescanning.
+- Deck menu: Order and filter (hidden when contest, score, story, or plugin order is fixed).
+
+### Fixed
+
+- Legacy folder listing uses natural sort so `12` orders before `117`.
+
 ## 0.3.7 (2026-10-09)
 
 ### Fixed

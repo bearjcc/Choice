@@ -17,7 +17,15 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from choice.act import decide, index_summary, item_by_id, progress, run_plugin_action, undo
+from choice.act import (
+    decide,
+    index_summary,
+    item_by_id,
+    progress,
+    run_plugin_action,
+    save_deck_view,
+    undo,
+)
 from choice.config import ConfigProblem, load_config, mask_secrets, save_config, write_secret
 from choice.load import DeckProblem
 from choice.media import ServedMedia, prepare_bytes, prepare_file, snap_edge
@@ -130,6 +138,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._stats(parts[2], parse_qs(parsed.query))
         if len(parts) == 4 and parts[0] == "api" and parts[1] == "decks" and parts[3] == "export":
             return self._export(parts[2], parse_qs(parsed.query))
+        if len(parts) == 4 and parts[0] == "api" and parts[1] == "decks" and parts[3] == "view":
+            return self._deck_view(parts[2])
         if len(parts) == 4 and parts[0] == "api" and parts[1] == "decks" and parts[3] == "items":
             return self._items(parts[2], parse_qs(parsed.query))
         if len(parts) == 4 and parts[0] == "api" and parts[1] == "decks" and parts[3] == "media":
@@ -159,6 +169,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._reply(deck)
             action_id = str(body.get("action") or body.get("id") or "")
             result = run_plugin_action(deck, action_id)
+            return self._json(200 if result.get("ok") else 400, result)
+        if kind == "view":
+            deck = self._opened(parts[2], self._requested_user(parse_qs(parsed.query), body))
+            if isinstance(deck, dict):
+                return self._reply(deck)
+            result = save_deck_view(deck, body)
             return self._json(200 if result.get("ok") else 400, result)
         if kind not in {"decide", "undo"}:
             return self._json(404, {"ok": False, "message": "No such page."})
@@ -246,6 +262,14 @@ class Handler(BaseHTTPRequestHandler):
             for deck in decks:
                 deck.actor = person.id
         return self._json(200, {"ok": True, "decks": _rows(decks, deck_meta)})
+
+    def _deck_view(self, deck_id: str):
+        deck = self._opened(deck_id, None)
+        if isinstance(deck, dict):
+            return self._reply(deck)
+        from choice.view_prefs import public_view
+
+        self._json(200, {"ok": True, "view": public_view(deck)})
 
     def _items(self, deck_id, query):
         deck = self._opened(deck_id, self._requested_user(query, None))

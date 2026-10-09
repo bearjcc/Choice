@@ -89,6 +89,11 @@ class FolderSource(Source):
                 {**src, **deck_options, "type": src.get("type") or "files"}, deck_options
             )
             deck.folder_scan = scan
+            merged_view = __import__(
+                "choice.folder_deck", fromlist=["_view_defaults_from_options"]
+            )._view_defaults_from_options({**deck_options, "view": data.get("view")})
+            if merged_view:
+                deck.view_defaults = {**(deck.view_defaults or {}), **merged_view}
             if scan.output == "sort":
                 deck.directions = wire_sort_directions(deck.directions, scan.sort_targets)
                 deck.buttons = wire_sort_buttons(deck.buttons, scan.sort_targets)

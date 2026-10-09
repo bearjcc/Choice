@@ -136,20 +136,59 @@ def wait_idle(state_dir: Path, timeout: float = 180.0) -> bool:
 def allocate_transfer_dest(
     deck: Deck, does: str, from_rel: str, into: str, item
 ) -> dict:
+    planned: dict = {}
+
+    def _reserve(jobs: list[WorkJob]) -> None:
+        planned.clear()
+        planned.update(_plan_transfer_op(deck, does, from_rel, into, item, jobs))
+
+    _mutate_jobs(deck.state_dir, _reserve)
+    return dict(planned)
+
+
+def enqueue_planned_transfer(
+    deck: Deck,
+    decision_id: str,
+    item,
+    does: str,
+    into: str,
+) -> dict:
+    from choice.act import _validate_transfer
+
+    _validate_transfer(deck, item, does, into)
+    from_rel = item.path.resolve().relative_to(deck.root.resolve()).as_posix()
+    planned: dict = {}
+    job = WorkJob(
+        id=uuid.uuid4().hex,
+        decision_id=decision_id,
+        kind="file",
+        deck_id=deck.id,
+        actor=deck.actor or "",
+        deck_root=str(deck.root.resolve()),
+        state_dir=str(deck.state_dir.resolve()),
+    )
+
+    def _add(jobs: list[WorkJob]) -> None:
+        planned.clear()
+        planned.update(_plan_transfer_op(deck, does, from_rel, into, item, jobs))
+        job.file_op = dict(planned)
+        jobs.append(job)
+
+    _mutate_jobs(deck.state_dir, _add)
+    _ensure_worker(deck.state_dir)
+    return dict(planned)
+
+
+def _plan_transfer_op(
+    deck: Deck, does: str, from_rel: str, into: str, item, jobs: list[WorkJob]
+) -> dict:
     from choice.dest_plan import preferred_dest_rel
 
     preferred = preferred_dest_rel(deck, item, into)
     root = deck.root.resolve()
-    planned: dict = {}
-
-    def _reserve(jobs: list[WorkJob]) -> None:
-        taken = taken_destinations(jobs, root)
-        to_rel = allocate_dest_rel(root, preferred, taken)
-        planned.clear()
-        planned.update({"op": does, "from": from_rel, "to": to_rel})
-
-    _mutate_jobs(deck.state_dir, _reserve)
-    return dict(planned)
+    taken = taken_destinations(jobs, root)
+    to_rel = allocate_dest_rel(root, preferred, taken)
+    return {"op": does, "from": from_rel, "to": to_rel}
 
 
 def enqueue_file_op(deck: Deck, decision_id: str, file_op: dict, *, reverse: bool = False) -> str:

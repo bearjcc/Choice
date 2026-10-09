@@ -1753,6 +1753,7 @@ async function openMenu() {
   if (state.deckId && state.payload) {
     add(state.pending ? "Show all" : "Still to do", togglePending);
     add(state.blind ? "Blind off" : "Blind on", toggleBlind);
+    if (state.payload.view && !state.payload.view.locked) add("Order and filter", openOrderSettings);
     add("Counts", openCounts);
   }
   if (peopleOn()) add("People", showPeople);
@@ -1771,6 +1772,94 @@ async function openMenu() {
   const close = el("button", null, "Close");
   close.addEventListener("click", () => $("dialog").close());
   body.append(close);
+  $("dialog").showModal();
+}
+
+function splitCsv(text) {
+  return String(text || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+async function openOrderSettings() {
+  const view = (state.payload && state.payload.view) || {};
+  if (view.locked) {
+    setStatus("This deck keeps a fixed order.");
+    return;
+  }
+  const prefs = view.prefs || {};
+  const body = $("dialog-body");
+  body.replaceChildren();
+  body.append(el("h2", null, "Order and filter"));
+  const sort = el("select", "setup-input");
+  [
+    ["scan", "Folder scan order"],
+    ["filename", "Filename (natural)"],
+    ["folder", "Folder, then filename"],
+    ["mtime_desc", "Newest first"],
+    ["mtime_asc", "Oldest first"],
+    ["random", "Random (stable)"],
+  ].forEach(([value, label]) => {
+    const opt = document.createElement("option");
+    opt.value = value;
+    opt.textContent = label;
+    if ((prefs.sort_mode || "scan") === value) opt.selected = true;
+    sort.append(opt);
+  });
+  body.append(el("label", "setup-label", "Sort"));
+  body.append(sort);
+  const seed = el("input", "setup-input");
+  seed.type = "text";
+  seed.placeholder = "Random seed (optional)";
+  seed.value = prefs.random_seed || "";
+  body.append(el("label", "setup-label", "Random seed"));
+  body.append(seed);
+  const types = el("input", "setup-input");
+  types.placeholder = "Types: image, video, gif, or extensions";
+  types.value = (prefs.file_types || []).join(", ");
+  body.append(el("label", "setup-label", "File types"));
+  body.append(types);
+  const inc = el("input", "setup-input");
+  inc.placeholder = "Include folders (comma-separated)";
+  inc.value = (prefs.include_folders || []).join(", ");
+  body.append(el("label", "setup-label", "Include folders"));
+  body.append(inc);
+  const exc = el("input", "setup-input");
+  exc.placeholder = "Exclude folders (comma-separated)";
+  exc.value = (prefs.exclude_folders || []).join(", ");
+  body.append(el("label", "setup-label", "Exclude folders"));
+  body.append(exc);
+  const row = el("div", "sheet-actions");
+  const save = el("button", null, "Save");
+  save.addEventListener("click", async () => {
+    state.anchorAfterLoad = current() ? current().id : null;
+    const payload = {
+      sort_mode: sort.value,
+      random_seed: seed.value,
+      file_types: splitCsv(types.value),
+      include_folders: splitCsv(inc.value),
+      exclude_folders: splitCsv(exc.value),
+    };
+    let data;
+    try {
+      data = await api("/api/decks/" + encodeURIComponent(state.deckId) + "/view", payload);
+    } catch (_err) {
+      data = { ok: false };
+    }
+    $("dialog").close();
+    if (!data.ok) {
+      setStatus(data.message || "Could not save.");
+      return;
+    }
+    if (data.view) state.payload.view = data.view;
+    if (await loadItems()) renderDeck();
+  });
+  row.append(save);
+  const close = el("button", null, "Cancel");
+  close.addEventListener("click", () => $("dialog").close());
+  row.append(close);
+  body.append(row);
   $("dialog").showModal();
 }
 

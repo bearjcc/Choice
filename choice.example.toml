@@ -34,3 +34,7 @@ exclude = ["keep/**", "reject/**"]
 sort_right = "keep"
 sort_left = "reject"
 # sort_up = "unsure"
+# sort_mode = "filename"
+# file_types = ["image"]
+# include_folders = ["inbox"]
+# exclude_folders = ["archive"]
