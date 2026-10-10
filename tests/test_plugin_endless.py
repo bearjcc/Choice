@@ -83,6 +83,31 @@ mount = "{mount}"
         self.assertNotIn("endless", items)
         self.assertEqual(items["left"], 1)
 
+    def test_label_without_endless_keeps_meter_and_total(self):
+        deck = self._deck("labeled_not_endless")
+        deck.load_items()
+        home = index_summary(deck)
+        items = progress(deck, pending=True, limit=10)
+        self.assertNotIn("endless", home)
+        self.assertNotIn("endless", items)
+        self.assertEqual(home["left"], 3)
+        self.assertEqual(home["total"], 3)
+        self.assertEqual(home.get("count_label"), "2 borderline left")
+        self.assertTrue(home.get("meter"))
+        self.assertEqual(items.get("count_label"), "2 borderline left")
+        self.assertEqual(items["left"], 3)
+
+    def test_swipe_deck_stats_endless_passthrough(self):
+        deck = self._deck("stats_swipe")
+        deck.load_items()
+        from choice.plugin_stats import plugin_stats_raw
+
+        self.assertTrue(plugin_stats_raw(deck).get("endless"))
+        self.assertEqual(plugin_stats_raw(deck).get("count_label"), "from stats()")
+        home = index_summary(deck)
+        self.assertTrue(home.get("endless"))
+        self.assertEqual(home.get("count_label"), "from stats()")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -15,6 +15,7 @@ _TYPES: dict[str, type[Source]] = {
     "folder": FolderSource,
     "swipe": SwipeSource,
     "swipe_plugin": SwipeSource,
+    "ursala_swipe": SwipeSource,
     "immich": ImmichSource,
     "rss": RssSource,
     "atom": RssSource,

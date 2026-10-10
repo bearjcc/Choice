@@ -13,16 +13,19 @@ _cache: LruDict[str, tuple[float, dict]] = LruDict(128)
 
 
 def _read_stats(plugin) -> dict:
-    stats_fn = getattr(plugin, "stats", None)
-    if not callable(stats_fn):
-        return {}
-    try:
-        raw = stats_fn()
-    except Exception:
-        return {}
-    if not isinstance(raw, dict):
-        return {}
-    return raw
+    for target in (plugin, getattr(plugin, "obj", None)):
+        if target is None:
+            continue
+        stats_fn = getattr(target, "stats", None)
+        if not callable(stats_fn):
+            continue
+        try:
+            raw = stats_fn()
+        except Exception:
+            continue
+        if isinstance(raw, dict):
+            return raw
+    return {}
 
 
 def plugin_stats_raw(deck: Deck) -> dict:
@@ -43,28 +46,38 @@ def clear_plugin_stats_cache(deck: Deck) -> None:
     _cache.pop(str(deck.state_dir))
 
 
-def endless_display(deck: Deck) -> tuple[bool, str | None]:
-    """True when stats requests endless-style counts; second value is header label."""
-    raw = plugin_stats_raw(deck)
-    endless = bool(raw.get("endless"))
+def _stats_label(raw: dict) -> str | None:
     label = raw.get("count_label")
     if isinstance(label, str) and label.strip():
-        label = label.strip()
-        return True, label
-    if endless:
-        return True, "∞"
-    return False, None
+        return label.strip()
+    return None
+
+
+def endless_display(deck: Deck, *, has_total: bool | None = None) -> tuple[bool, str | None]:
+    """True when stats requests endless-style counts; second value is optional label."""
+    raw = plugin_stats_raw(deck)
+    label = _stats_label(raw)
+    if raw.get("endless") is True:
+        return True, label or "∞"
+    if raw.get("endless") is False:
+        return False, label
+    if has_total is False:
+        return True, label or "∞"
+    return False, label
 
 
 def apply_endless_counts(deck: Deck, payload: dict) -> dict:
-    active, label = endless_display(deck)
-    if not active:
-        return payload
+    has_total = payload.get("total") is not None
+    active, label = endless_display(deck, has_total=has_total)
     payload = dict(payload)
-    payload["endless"] = True
+    if active:
+        payload["endless"] = True
+        if label:
+            payload["count_label"] = label
+        payload["meter"] = False
+        payload["left"] = None
+        payload["total"] = None
+        return payload
     if label:
         payload["count_label"] = label
-    payload["meter"] = False
-    payload["left"] = None
-    payload["total"] = None
     return payload

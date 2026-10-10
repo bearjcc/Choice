@@ -42,6 +42,19 @@ function setBrowserTitle(text) {
   document.title = text;
 }
 
+function formatCountMeta(data) {
+  if (!data) return "";
+  if (data.endless) return data.count_label || "∞";
+  if (data.stale && data.left == null) return "Scanning…";
+  const left = data.left != null ? data.left + " left" : "";
+  if (data.stale && data.left != null && !data.count_label) {
+    return left + " · scanning";
+  }
+  if (data.count_label && left) return left + " · " + data.count_label;
+  if (data.count_label) return data.count_label;
+  return left;
+}
+
 function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) return;
   const base = choiceBase();
@@ -350,12 +363,7 @@ async function showLibrary() {
     card.type = "button";
     const copy = el("span", "deck-copy");
     copy.append(el("span", "deck-name", deck.title));
-    let meta = deck.count_label;
-    if (!meta && deck.endless) meta = "∞";
-    if (!meta && deck.meter === false) meta = deck.count_label || "";
-    else if (!meta && deck.stale && deck.left == null) meta = "Scanning…";
-    else if (!meta && deck.stale && deck.left != null) meta = deck.left + " left · scanning";
-    else if (!meta && deck.left != null) meta = deck.left + " left";
+    let meta = formatCountMeta(deck);
     copy.append(el("span", "deck-meta deck-meta" + (deck.stale ? " stale" : ""), meta || ""));
     const row = el("span", "deck-row");
     appendSourceIcon(row, deck.source_type || "deck");
@@ -1149,8 +1157,7 @@ function renderDeck() {
   setBrowserTitle(data.title);
   $("tools").hidden = true;
   $("menu").hidden = false;
-  $("count").textContent =
-    data.count_label || (data.endless ? "∞" : data.left != null ? data.left + " left" : "");
+  $("count").textContent = formatCountMeta(data);
   $("pending").textContent = state.pending ? "Show all" : "Still to do";
   $("blind").setAttribute("aria-pressed", state.blind ? "true" : "false");
   $("track").hidden = data.meter === false;

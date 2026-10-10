@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.1 (2026-10-10)
+
+### Fixed
+
+- `[images]` extra: `Pillow>=10` with no upper pin (compatible with Pillow 12.x in production).
+- Plugin `count_label` no longer forces endless mode; `endless: false` keeps normal totals and shows the label beside the remaining count.
+- Swipe `deck.py` modules with `stats()` pass `endless` and `count_label` through like native plugins (`ursala_swipe` source alias included).
+
+### Tests
+
+- Labeled-not-endless plugin fixture; swipe stats passthrough fixture.
+
 ## 0.5.0 (2026-10-10)
 
 ### Packaging (phase 1)

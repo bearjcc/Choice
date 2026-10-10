@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "choice-swipe"
-version = "0.5.0"
+version = "0.5.1"
 description = "Swipe through a pile and decide."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -23,7 +23,7 @@ classifiers = [
 keywords = ["swipe", "review", "photos", "decision"]
 
 [project.optional-dependencies]
-images = ["Pillow>=10.0.0,<12"]
+images = ["Pillow>=10.0.0"]
 
 [project.scripts]
 choice = "choice.cli:main"

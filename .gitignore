@@ -3,6 +3,8 @@ __pycache__/
 .choice/
 examples/**/.choice/
 *.egg-info/
+build/
+dist/
 .venv/
 labels.jsonl
 uploads/
