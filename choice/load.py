@@ -58,7 +58,22 @@ _SOURCE_KEYS = {
 }
 _SHOW_KEYS = {"title", "body", "chips", "reveal", "image", "pair"}
 _PAIR_SIDE_KEYS = {"body", "image", "label"}
-_DIR_KEYS = {"label", "value", "later", "does", "into", "color"}
+_DIR_KEYS = {"label", "value", "later", "does", "into", "color", "icon"}
+_ACTION_ICONS = frozenset(
+    {
+        "check",
+        "down",
+        "heart",
+        "left",
+        "right",
+        "skip",
+        "star",
+        "trash",
+        "undo",
+        "up",
+        "x",
+    }
+)
 _HOOK_KEYS = {"command", "required", "timeout_seconds"}
 _FOUR = ("left", "right", "up", "down")
 
@@ -76,6 +91,7 @@ class Direction:
     does: str = "label"
     into: str | None = None
     color: str | None = None
+    icon: str | None = None
 
     def public(self) -> dict:
         out = {
@@ -87,6 +103,8 @@ class Direction:
         }
         if self.color:
             out["color"] = self.color
+        if self.icon:
+            out["icon"] = self.icon
         return out
 
 
@@ -734,6 +752,14 @@ def _one_direction(name: str, spec) -> Direction:
     color = spec.get("color")
     if color is not None and not (isinstance(color, str) and _HEX.match(color)):
         color = None
+    icon_raw = spec.get("icon")
+    icon = None
+    if icon_raw is not None:
+        icon = str(icon_raw).strip().lower()
+        if icon and icon not in _ACTION_ICONS:
+            raise DeckProblem(f"{name}: icon must be one of: {', '.join(sorted(_ACTION_ICONS))}.")
+        if not icon:
+            icon = None
     return Direction(
         id=name,
         label=label,
@@ -742,6 +768,7 @@ def _one_direction(name: str, spec) -> Direction:
         does=does,
         into=into,
         color=color if isinstance(color, str) else None,
+        icon=icon,
     )
 
 

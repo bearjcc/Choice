@@ -236,6 +236,7 @@ function appendSourceIcon(parent, type) {
 
 async function boot() {
   registerServiceWorker();
+  watchActionBarFit();
   $("home").addEventListener("click", () => {
     if (state.picking) return backFromPeople();
     showLibrary();
@@ -1545,6 +1546,10 @@ function undoEnabled() {
   return !!(state.payload && state.payload.allow_undo !== false);
 }
 
+const ACTION_CENTER_ORDER = ["up", "down"];
+
+let actionBarFitObserver = null;
+
 function renderActions() {
   const row = $("actions");
   const item = current();
@@ -1552,36 +1557,99 @@ function renderActions() {
   row.hidden = !onDeck;
   row.replaceChildren();
   if (!onDeck) return;
+  const leftSlot = el("div", "action-slot action-slot-left");
+  const centerSlot = el("div", "action-slot action-slot-center");
+  const rightSlot = el("div", "action-slot action-slot-right");
+  row.append(leftSlot, centerSlot, rightSlot);
   if (item) {
-    ["left", "down", "up", "right"].forEach((id) => {
+    const leftSpec = specFor("left");
+    if (leftSpec) {
+      const label = buttonLabel(leftSpec, item);
+      if (label) leftSlot.append(actionButton(leftSpec, label));
+    }
+    const rightSpec = specFor("right");
+    if (rightSpec) {
+      const label = buttonLabel(rightSpec, item);
+      if (label) rightSlot.append(actionButton(rightSpec, label));
+    }
+    ACTION_CENTER_ORDER.forEach((id) => {
       const spec = specFor(id);
       if (!spec) return;
       const label = buttonLabel(spec, item);
       if (!label) return;
-      row.append(actionButton(spec, label));
+      centerSlot.append(actionButton(spec, label));
     });
-    (state.payload.buttons || []).forEach((spec) => row.append(actionButton(spec, spec.label)));
+    (state.payload.buttons || []).forEach((spec) => {
+      if (spec.id === "left" || spec.id === "right") return;
+      centerSlot.append(actionButton(spec, spec.label));
+    });
   }
   if (undoEnabled()) {
-    const undo = el("button", "action-undo", "Undo");
-    undo.type = "button";
+    const undoSpec = { id: "undo", label: "Undo" };
+    const undo = actionButton(undoSpec, "Undo");
+    undo.classList.add("action-undo");
     undo.disabled = !state.payload.can_undo || state.busy;
-    undo.addEventListener("click", () => undoLast());
-    row.append(undo);
+    centerSlot.append(undo);
   }
+  requestAnimationFrame(() => syncActionBarDisplay());
 }
 
 function actionButton(spec, label) {
-  const button = el("button", null, label || spec.label);
+  const fullLabel = label || spec.label || spec.id;
+  const button = el("button", "action-btn");
+  button.type = "button";
   button.dataset.dir = spec.id;
+  button.setAttribute("aria-label", fullLabel);
+  const icons = typeof ChoiceActionIcons !== "undefined" ? ChoiceActionIcons : null;
+  const iconName = icons ? icons.resolve(spec, fullLabel) : "check";
+  button.dataset.icon = iconName;
+  const iconWrap = el("span", "action-icon");
+  if (icons) iconWrap.innerHTML = icons.svg(iconName);
+  const text = el("span", "action-text", fullLabel);
+  button.append(iconWrap, text);
   if (spec.color) {
     button.style.background = spec.color;
     button.style.borderColor = spec.color;
     button.style.color = inkOn(spec.color);
   }
   button.disabled = state.busy;
-  button.addEventListener("click", () => act(spec.id));
+  if (spec.id !== "undo") button.addEventListener("click", () => act(spec.id));
+  else button.addEventListener("click", () => undoLast());
   return button;
+}
+
+function actionBarNarrow() {
+  return window.matchMedia("(max-width: 699px)").matches;
+}
+
+function syncActionBarDisplay() {
+  const row = $("actions");
+  if (!row || row.hidden) return;
+  const narrow = actionBarNarrow();
+  row.querySelectorAll(".action-btn").forEach((btn) => {
+    btn.classList.toggle("action-narrow", narrow);
+    const text = btn.querySelector(".action-text");
+    if (!text) return;
+    btn.classList.remove("action-icon-only");
+    if (narrow) {
+      btn.classList.add("action-icon-only");
+      return;
+    }
+    const icon = btn.querySelector(".action-icon");
+    const iconW = icon ? icon.getBoundingClientRect().width : 0;
+    const pad = 28;
+    const budget = btn.clientWidth - iconW - pad;
+    if (budget > 0 && text.scrollWidth > budget) btn.classList.add("action-icon-only");
+  });
+}
+
+function watchActionBarFit() {
+  const row = $("actions");
+  if (!row || typeof ResizeObserver === "undefined") return;
+  if (actionBarFitObserver) actionBarFitObserver.disconnect();
+  actionBarFitObserver = new ResizeObserver(() => syncActionBarDisplay());
+  actionBarFitObserver.observe(row);
+  window.addEventListener("resize", syncActionBarDisplay);
 }
 
 function bindDrag(card, item) {
@@ -2444,6 +2512,43 @@ function installTestHooks() {
         "deck-edit",
         "assign",
       ];
+    },
+    actionBarMetrics() {
+      const bar = document.getElementById("actions");
+      if (!bar || bar.hidden) return { ok: false, reason: "no-bar" };
+      const vp = window.innerWidth;
+      const left = bar.querySelector('[data-dir="left"]');
+      const right = bar.querySelector('[data-dir="right"]');
+      if (!left || !right) return { ok: false, reason: "missing-left-right" };
+      const lr = left.getBoundingClientRect();
+      const rr = right.getBoundingClientRect();
+      const edgeSlack = 56;
+      const labels = [...bar.querySelectorAll(".action-text")].map((node) => {
+        const btn = node.closest("button");
+        const hidden = btn && btn.classList.contains("action-icon-only");
+        const wraps =
+          !hidden && node.clientWidth > 0 && node.scrollWidth > node.clientWidth + 1;
+        return { text: node.textContent, wraps, hidden };
+      });
+      const icons = [...bar.querySelectorAll(".action-btn")].map((btn) => ({
+        dir: btn.dataset.dir,
+        icon: btn.dataset.icon,
+      }));
+      const narrow = actionBarNarrow();
+      const hasIcons = bar.querySelectorAll(".action-icon-svg").length >= 2;
+      return {
+        ok:
+          lr.left <= edgeSlack &&
+          rr.right >= vp - edgeSlack &&
+          labels.every((row) => !row.wraps) &&
+          (!narrow || hasIcons),
+        viewportWidth: vp,
+        leftX: lr.left,
+        rightX: rr.right,
+        narrow,
+        labels,
+        icons,
+      };
     },
     cardLayoutMetrics() {
       const card = document.querySelector("article.card.image");

@@ -1,0 +1,31 @@
+[state]
+dir = "state"
+
+[[sources]]
+id = "examples"
+type = "folder"
+path = "../../../examples"
+
+[[sources]]
+id = "local"
+type = "folder"
+path = "."
+
+[[decks]]
+id = "yes-no"
+title = "Yes or no"
+source = "examples"
+mount = "yes-no"
+
+[[decks]]
+id = "sort-icons"
+title = "Sort icons"
+source = "local"
+mount = "sort_icons"
+type = "images"
+output = "sort"
+recursive = false
+sort_right = "keep"
+sort_left = "reject"
+sort_right_icon = "star"
+sort_left_icon = "trash"

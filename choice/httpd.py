@@ -52,6 +52,7 @@ _STATIC = {
     "dialog_ui.js": "text/javascript; charset=utf-8",
     "pile_nav.js": "text/javascript; charset=utf-8",
     "swipe_ui.js": "text/javascript; charset=utf-8",
+    "action_icons.js": "text/javascript; charset=utf-8",
     "app.css": "text/css; charset=utf-8",
     "sw.js": "text/javascript; charset=utf-8",
 }

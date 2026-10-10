@@ -86,31 +86,44 @@ def merge_folder_options(source: dict, deck_options: dict) -> FolderScanOptions:
 def apply_sort_direction_labels(
     directions: dict[str, Direction], raw: dict | None
 ) -> dict[str, Direction]:
-    """Apply sort_<dir>_label keys and object sort entries with a label field."""
+    """Apply sort_<dir>_label/_icon keys and nested sort/directions objects."""
     if not raw:
         return directions
     labels = _parse_sort_label_overrides(raw)
-    if not labels:
+    icons = _parse_sort_icon_overrides(raw)
+    if not labels and not icons:
         return directions
     out: dict[str, Direction] = {}
     for key, direction in directions.items():
         label = labels.get(key)
-        if not label:
+        icon = icons.get(key) or direction.icon
+        if not label and icon == direction.icon:
             out[key] = direction
             continue
         out[key] = Direction(
             id=direction.id,
-            label=label,
+            label=label or direction.label,
             value=direction.value,
             later=direction.later,
             does=direction.does,
             into=direction.into,
             color=direction.color,
+            icon=icon,
         )
     for key, label in labels.items():
         if key in out:
             continue
-        out[key] = Direction(id=key, label=label, value=label.lower(), does="label")
+        out[key] = Direction(
+            id=key,
+            label=label,
+            value=label.lower(),
+            does="label",
+            icon=icons.get(key),
+        )
+    for key, icon in icons.items():
+        if key in out:
+            continue
+        out[key] = Direction(id=key, label=key, value=key, does="label", icon=icon)
     return out
 
 
@@ -129,6 +142,7 @@ def wire_sort_directions(
                 does="move",
                 into=folder,
                 color=direction.color,
+                icon=direction.icon,
             )
         elif direction.does in {"move", "copy"} and direction.into:
             out[key] = direction
@@ -141,6 +155,7 @@ def wire_sort_directions(
                 does="label",
                 into=None,
                 color=direction.color,
+                icon=direction.icon,
             )
     return out
 
@@ -159,6 +174,7 @@ def wire_sort_buttons(buttons: list[Direction], targets: dict[str, str]) -> list
                     does="move",
                     into=folder,
                     color=direction.color,
+                    icon=direction.icon,
                 )
             )
         else:
@@ -390,6 +406,37 @@ def _parse_sort_label_overrides(raw: dict) -> dict[str, str]:
     return labels
 
 
+def _parse_sort_icon_overrides(raw: dict) -> dict[str, str]:
+    from choice.load import _ACTION_ICONS
+
+    icons: dict[str, str] = {}
+    sort = raw.get("sort") or raw.get("sort_targets")
+    if isinstance(sort, dict):
+        for key, value in sort.items():
+            if isinstance(value, dict) and value.get("icon"):
+                name = str(value["icon"]).strip().lower()
+                if name in _ACTION_ICONS:
+                    icons[str(key)] = name
+    directions_block = raw.get("directions")
+    if isinstance(directions_block, dict):
+        for key, value in directions_block.items():
+            if isinstance(value, dict) and value.get("icon"):
+                name = str(value["icon"]).strip().lower()
+                if name in _ACTION_ICONS:
+                    icons[str(key)] = name
+    for key, value in raw.items():
+        if not key.startswith("sort_") or key == "sort_targets":
+            continue
+        tail = key[5:]
+        if tail.endswith("_icon") and value:
+            direction = tail[: -len("_icon")]
+            if direction:
+                name = str(value).strip().lower()
+                if name in _ACTION_ICONS:
+                    icons[direction] = name
+    return icons
+
+
 def _parse_sort_targets(raw: dict) -> dict[str, str]:
     targets: dict[str, str] = {}
     sort = raw.get("sort") or raw.get("sort_targets")
@@ -406,7 +453,7 @@ def _parse_sort_targets(raw: dict) -> dict[str, str]:
     for key, value in raw.items():
         if key.startswith("sort_") and key != "sort_targets":
             direction = key[5:]
-            if direction.endswith("_label"):
+            if direction.endswith("_label") or direction.endswith("_icon"):
                 continue
             if direction and value and not isinstance(value, dict):
                 targets[direction] = str(value).strip("/\\")

@@ -1,0 +1,10 @@
+{
+  "title": "Sort icons",
+  "source": {
+    "type": "images",
+    "path": "photos",
+    "recursive": false,
+    "output": "sort",
+    "sort": { "right": "keep", "left": "reject" }
+  }
+}
