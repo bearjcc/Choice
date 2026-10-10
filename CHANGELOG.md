@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.11 (2026-10-10)
+
+### Fixed
+
+- Modal shell uses an explicit width (`min(100vw - 24px, 480px)`) so Android Chrome no longer leaves order/filter and other dialogs tiny in the top-left corner.
+- Add/edit deck setup runs inside the shared `ChoiceDialog` instead of inline in `main`.
+
+### Tests
+
+- Playwright modal layout on phone viewports (360×640, 390×844, 412×915) with mobile UA and `deviceScaleFactor` 2.6; asserts width, placement, and control clicks for every registered modal trigger.
+
 ## 0.4.10 (2026-10-09)
 
 ### Fixed

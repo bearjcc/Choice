@@ -3,6 +3,8 @@
 const ChoiceDialog = (function () {
   const NARROW_MQ = "(max-width: 699px)";
   const PAD = 12;
+  const SHELL_MAX_W = 480;
+  const SHELL_H_MARGIN = 24;
 
   let scrollY = 0;
   let vvDetach = null;
@@ -89,17 +91,18 @@ const ChoiceDialog = (function () {
     const vWidth = vv ? vv.width : window.innerWidth;
     const vHeight = vv ? vv.height : window.innerHeight;
 
-    const maxW = Math.min(
-      narrow ? vWidth : Math.min(32 * 16, vWidth),
-      vWidth - pad * 2 - inset.left - inset.right,
-    );
+    const availW = vWidth - SHELL_H_MARGIN - inset.left - inset.right;
+    const shellW = Math.max(0, Math.min(SHELL_MAX_W, availW));
     const maxH = vHeight - pad * 2 - inset.top - inset.bottom;
 
-    shell.style.maxWidth = Math.max(0, maxW) + "px";
+    shell.style.width = shellW + "px";
+    shell.style.minWidth = shellW + "px";
+    shell.style.maxWidth = shellW + "px";
     shell.style.maxHeight = Math.max(120, maxH) + "px";
 
-    d.style.width = "max-content";
-    d.style.maxWidth = "none";
+    d.style.width = shellW + "px";
+    d.style.maxWidth = shellW + "px";
+    d.style.height = "auto";
     const placeShell = () => {
       const shellRect = shell.getBoundingClientRect();
       const boxW = shellRect.width;
@@ -183,7 +186,10 @@ const ChoiceDialog = (function () {
       attachViewport();
       watchBody();
     }
-    requestAnimationFrame(() => syncViewport());
+    requestAnimationFrame(() => {
+      syncViewport();
+      requestAnimationFrame(() => syncViewport());
+    });
   }
 
   function close() {
@@ -276,10 +282,13 @@ const ChoiceDialog = (function () {
       height: r.height,
       vvTop: vv.offsetTop,
       vvLeft: vv.offsetLeft,
+      vvWidth: vv.width,
+      vvHeight: vv.height,
       vvRight: vv.offsetLeft + vv.width,
       vvBottom: vv.offsetTop + vv.height,
       scrollHeight: scrollEl.scrollHeight,
       clientHeight: scrollEl.clientHeight,
+      narrow: window.matchMedia(NARROW_MQ).matches,
     };
   }
 

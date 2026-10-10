@@ -1,0 +1,16 @@
+{
+  "title": "Sort pile",
+  "source": {
+    "type": "images",
+    "path": "photos",
+    "output": "sort",
+    "sort": {
+      "right": "keep",
+      "left": "trash"
+    }
+  },
+  "directions": {
+    "right": { "label": "Keep", "value": "keep" },
+    "left": { "label": "Trash", "value": "trash" }
+  }
+}

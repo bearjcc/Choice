@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { dialogFitsViewport } from "./dialog_layout.mjs";
+import { dialogFitsViewport, dialogPhoneLayout } from "./dialog_layout.mjs";
 
 test("dialogFitsViewport accepts fully visible shell", () => {
   assert.equal(
@@ -37,6 +37,56 @@ test("dialogFitsViewport accepts internal scroll when clipped", () => {
       clientHeight: 500,
     }),
     true,
+  );
+});
+
+test("dialogPhoneLayout accepts wide bottom sheet", () => {
+  assert.equal(
+    dialogPhoneLayout(
+      {
+        top: 400,
+        left: 20,
+        right: 340,
+        bottom: 630,
+        width: 320,
+        vvTop: 0,
+        vvLeft: 0,
+        vvWidth: 360,
+        vvHeight: 640,
+        vvRight: 360,
+        vvBottom: 640,
+        scrollHeight: 400,
+        clientHeight: 400,
+        narrow: true,
+      },
+      360,
+    ),
+    true,
+  );
+});
+
+test("dialogPhoneLayout rejects tiny top-left shell", () => {
+  assert.equal(
+    dialogPhoneLayout(
+      {
+        top: 0,
+        left: 0,
+        right: 40,
+        bottom: 30,
+        width: 40,
+        vvTop: 0,
+        vvLeft: 0,
+        vvWidth: 360,
+        vvHeight: 640,
+        vvRight: 360,
+        vvBottom: 640,
+        scrollHeight: 200,
+        clientHeight: 200,
+        narrow: true,
+      },
+      360,
+    ),
+    false,
   );
 });
 

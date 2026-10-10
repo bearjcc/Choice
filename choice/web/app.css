@@ -948,7 +948,7 @@ dialog.app-dialog:modal {
   overflow: visible;
   max-width: none;
   max-height: none;
-  width: max-content;
+  inset: auto;
 }
 
 dialog.app-dialog .dialog-shell {
@@ -961,7 +961,8 @@ dialog.app-dialog .dialog-shell {
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
-  width: 100%;
+  width: min(calc(100vw - 24px), 480px);
+  max-width: min(calc(100vw - 24px), 480px);
   margin-inline: auto;
 }
 

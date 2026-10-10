@@ -6,8 +6,19 @@ id = "examples"
 type = "folder"
 path = "../../../examples"
 
+[[sources]]
+id = "local"
+type = "folder"
+path = "."
+
 [[decks]]
 id = "yes-no"
 title = "Yes or no"
 source = "examples"
 mount = "yes-no"
+
+[[decks]]
+id = "sort-pile"
+title = "Sort pile"
+source = "local"
+mount = "sort_pile"

@@ -311,7 +311,11 @@ async function showLibrary() {
   $("status").textContent = "";
   $("status").hidden = true;
   const list = el("ul", "library");
-  (state.index.decks || []).forEach((deck) => {
+  const deckRows =
+    state.index.decks && state.index.decks.length
+      ? state.index.decks
+      : state.index.library || [];
+  deckRows.forEach((deck) => {
     const item = el("li");
     if (deck.error) {
       item.append(el("strong", null, deck.title));
@@ -363,6 +367,7 @@ async function showLibrary() {
     const more = el("button", "deck-more", "...");
     more.type = "button";
     more.setAttribute("aria-label", "Edit deck");
+    more.dataset.choiceModal = "deck-edit";
     more.addEventListener("click", (event) => {
       event.stopPropagation();
       openDeckEdit(deck.id);
@@ -400,6 +405,7 @@ async function setupLink(parts) {
   const btn = el("button", null, "Sources and decks");
   btn.type = "button";
   btn.addEventListener("click", () => showSetup(cfg));
+  btn.dataset.choiceModal = "add-deck";
   wrap.append(btn);
   parts.push(wrap);
 }
@@ -418,8 +424,18 @@ function showSetup(cfg, editDeckId) {
     wizard.type = src ? src.type : "folder";
     wizard.step = 2;
   }
-  paintSetupStep(wizard);
+  if (!ChoiceDialog.isOpen() && state.index && state.index.ok) {
+    const onDeck = $("main").querySelector("article.card");
+    if (!onDeck) showLibrary();
+  }
+  openSetupDialog(wizard);
   setStatus("");
+}
+
+function openSetupDialog(wizard) {
+  wizard._dialog = true;
+  paintSetupStep(wizard);
+  ChoiceDialog.open();
 }
 
 function openDeckEdit(deckId) {
@@ -442,6 +458,12 @@ function paintSetupStep(wizard) {
   if (wizard.step === 1) root.append(setupStepType(wizard));
   else if (wizard.step === 2) root.append(setupStepFields(wizard));
   else root.append(setupStepSave(wizard));
+  if (wizard._dialog) {
+    const body = $("dialog-body");
+    body.replaceChildren(root);
+    ChoiceDialog.syncViewport();
+    return;
+  }
   $("main").replaceChildren(root);
 }
 
@@ -611,7 +633,10 @@ function setupStepFields(wizard) {
   const back = el("button", null, "Back");
   back.type = "button";
   back.addEventListener("click", () => {
-    if (wizard.editDeckId) return showLibrary();
+    if (wizard.editDeckId) {
+      ChoiceDialog.close();
+      return showLibrary();
+    }
     wizard.step = 1;
     paintSetupStep(wizard);
   });
@@ -823,6 +848,7 @@ async function removeSetupDeck(wizard) {
   if (!res.ok) return setStatus(res.message || "Could not save.");
   setStatus("Deck removed.");
   await refreshIndex();
+  if (ChoiceDialog.isOpen()) ChoiceDialog.close();
   showLibrary();
 }
 
@@ -864,6 +890,7 @@ async function saveSetupDeck(wizard) {
   if (!res.ok) return setStatus(res.message || "Could not save.");
   setStatus("Saved.");
   await refreshIndex();
+  if (ChoiceDialog.isOpen()) ChoiceDialog.close();
   showLibrary();
 }
 
@@ -1019,6 +1046,9 @@ function openQueueFailures() {
     const label = row.from || row.item || row.id;
     body.append(el("p", "warn", label + ": " + (row.error || "Failed")));
   });
+  const close = el("button", null, "Close");
+  close.addEventListener("click", () => ChoiceDialog.close());
+  body.append(close);
   ChoiceDialog.open();
 }
 
@@ -1807,28 +1837,31 @@ async function openMenu() {
   body.replaceChildren();
   body.append(el("h2", null, "Menu"));
   const list = el("div", "menu-list");
-  const add = (label, fn) => {
+  const add = (label, fn, modalId, opts = {}) => {
     const btn = el("button", "menu-item", label);
     btn.type = "button";
-    btn.addEventListener("click", () => {
-      ChoiceDialog.close();
-      fn();
+    if (modalId) btn.dataset.choiceModal = modalId;
+    btn.addEventListener("click", async () => {
+      if (!opts.keepDialog) ChoiceDialog.close();
+      await fn();
     });
     list.append(btn);
   };
   if (state.deckId && state.payload) {
-    add(state.pending ? "Show all" : "Still to do", togglePending);
-    add(state.blind ? "Blind off" : "Blind on", toggleBlind);
-    if (state.payload.view && !state.payload.view.locked) add("Order and filter", openOrderSettings);
-    add("Count display", openCountSettings);
-    add("Counts", openCounts);
+    add(state.pending ? "Show all" : "Still to do", togglePending, null);
+    add(state.blind ? "Blind off" : "Blind on", toggleBlind, null);
+    if (state.payload.view && !state.payload.view.locked) {
+      add("Order and filter", openOrderSettings, "order-settings", { keepDialog: true });
+    }
+    add("Count display", openCountSettings, "count-settings", { keepDialog: true });
+    add("Counts", openCounts, "counts", { keepDialog: true });
   }
-  if (peopleOn()) add("People", showPeople);
+  if (peopleOn()) add("People", showPeople, "people");
   const decks = (state.index && state.index.decks) || [];
-  if (!state.deckId || decks.length > 1) add("Decks", () => showLibrary());
+  if (!state.deckId || decks.length > 1) add("Decks", () => showLibrary(), null);
   try {
     const cfg = await api("/api/config");
-    if (cfg.ok && cfg.editable) add("Add deck", () => showSetup(cfg));
+    if (cfg.ok && cfg.editable) add("Add deck", () => showSetup(cfg), "add-deck", { keepDialog: true });
   } catch (_err) {
     /* no config mode */
   }
@@ -2163,6 +2196,7 @@ function renderPeople() {
       button.addEventListener("click", () => chooseUser(user.id));
       const assign = el("button", "assign", "Assign");
       assign.type = "button";
+      assign.dataset.choiceModal = "assign";
       assign.addEventListener("click", () => openAssign(user));
       item.append(button, assign);
       list.append(item);
@@ -2341,6 +2375,21 @@ function installTestHooks() {
         confirmLabel: "OK",
         cancelLabel: "Cancel",
       });
+    },
+    async openAddDeck() {
+      const cfg = await api("/api/config");
+      if (cfg.ok && cfg.editable) showSetup(cfg);
+    },
+    expectedModalTriggerIds() {
+      return [
+        "menu",
+        "order-settings",
+        "count-settings",
+        "queue-failures",
+        "add-deck",
+        "deck-edit",
+        "assign",
+      ];
     },
     cardLayoutMetrics() {
       const card = document.querySelector("article.card.image");
