@@ -88,15 +88,23 @@ const ChoiceActionIcons = (function () {
     return false;
   }
 
-  function neutralIcon() {
+  function neutralIcon(words) {
+    if (hasWord(words, "equal")) return "equals";
     return "question";
   }
 
   function abLetter(words, raw) {
-    const text = String(raw || "").toLowerCase();
+    const text = String(raw || "").toLowerCase().trim();
+    if (text === "a") return "letter-a";
+    if (text === "b") return "letter-b";
     const m = text.match(/\b([ab])\b/);
     if (!m) return null;
-    if (text.includes("sound") || text.includes("like me") || text.includes("pick")) {
+    if (
+      text.includes("sound") ||
+      text.includes("like me") ||
+      text.includes("pick") ||
+      words.length <= 2
+    ) {
       return m[1] === "a" ? "letter-a" : "letter-b";
     }
     return null;
@@ -131,7 +139,7 @@ const ChoiceActionIcons = (function () {
     const ab = abLetter(words, raw);
     if (ab) return ab;
 
-    if (isNeutral(words)) return neutralIcon();
+    if (isNeutral(words)) return neutralIcon(words);
 
     const trashIcon = trashOrReject(spec, words, raw);
     if (trashIcon) return trashIcon;

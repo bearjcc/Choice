@@ -114,16 +114,17 @@ def _warm_worker(deck: Deck) -> None:
 
 
 def _persist_counts(deck: Deck, snap: _Snapshot) -> None:
+    from choice.atomic_io import write_json_atomic
+
     path = deck.state_dir / _COUNTS_NAME
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "total": len(snap.ids),
             "plugin_decided": sorted(snap.plugin_decided),
             "ids": sorted(snap.ids),
             "order": snap.order,
         }
-        path.write_text(json.dumps(payload), encoding="utf-8")
+        write_json_atomic(path, payload)
     except OSError:
         return
 

@@ -34,7 +34,8 @@ def load_items(deck: Deck) -> tuple[list, list]:
         else:
             raise
     else:
-        record_items(deck, items)
+        if deck.plugin is None:
+            record_items(deck, items)
     _cache.set(key, (now + _TTL, stamp, items, warnings))
     return items, warnings
 

@@ -26,7 +26,7 @@ const cases = [
   { label: "⚠ Unsafe", id: "right", want: "x" },
   { label: "Unsure", id: "up", want: "question" },
   { label: "Can't tell", id: "up", want: "question" },
-  { label: "Equal", id: "up", want: "question" },
+  { label: "Equal", id: "up", want: "equals" },
   { label: "Partial", id: "up", want: "question" },
   { label: "Needs edit", id: "up", want: "question" },
   { label: "Trash", id: "left", want: "x" },
@@ -45,6 +45,15 @@ test("label icon table", () => {
 
 test("dislike is not treated as like", () => {
   assert.equal(icons.infer({ id: "right" }, "Dislike"), "x");
+});
+
+test("plain A and B labels on left and right", () => {
+  const map = icons.resolveAll([
+    { spec: { id: "left" }, label: "A" },
+    { spec: { id: "right" }, label: "B" },
+  ]);
+  assert.equal(map.left, "letter-a");
+  assert.equal(map.right, "letter-b");
 });
 
 test("like vs super-like on same deck", () => {

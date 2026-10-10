@@ -940,9 +940,9 @@ def _persist_jobs(state_dir: Path, jobs: list[WorkJob]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     kept = [j for j in jobs if j.status in {"pending", "running", "failed"}]
     payload = {"jobs": [job.to_dict() for job in kept]}
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(payload), encoding="utf-8")
-    atomic_replace(tmp, path)
+    from choice.atomic_io import write_json_atomic
+
+    write_json_atomic(path, payload)
 
 
 def _mutate_jobs(state_dir: Path, fn: Callable[[list[WorkJob]], None]) -> None:

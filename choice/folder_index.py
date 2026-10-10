@@ -10,7 +10,6 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from choice.atomic_io import atomic_replace
 from choice.bounded_cache import LruDict
 from choice.deck_index import plugin_pile_counts
 from choice.folder_deck import FolderScanOptions, match_globs
@@ -119,9 +118,9 @@ def save_index(state_dir: Path, idx: FolderIndex, *, save_meta: bool = False) ->
     _mem.set(key, idx)
     path = index_path(state_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(idx.to_dict()), encoding="utf-8")
-    atomic_replace(tmp, path)
+    from choice.atomic_io import write_json_atomic
+
+    write_json_atomic(path, idx.to_dict())
     if save_meta:
         _save_meta_file(state_dir, idx)
     from choice.count_prefs import write_folder_stats
@@ -147,9 +146,9 @@ def _load_meta_file(state_dir: Path, idx: FolderIndex) -> None:
 def _save_meta_file(state_dir: Path, idx: FolderIndex) -> None:
     path = meta_path(state_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(idx.meta), encoding="utf-8")
-    atomic_replace(tmp, path)
+    from choice.atomic_io import write_json_atomic
+
+    write_json_atomic(path, idx.meta)
 
 
 def schedule_scan(deck: Deck) -> None:

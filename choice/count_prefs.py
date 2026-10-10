@@ -61,7 +61,9 @@ def save_counts_mode(deck: Deck, mode: str) -> None:
         mode = "auto"
     path = prefs_path(deck.state_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"mode": mode}, indent=2), encoding="utf-8")
+    from choice.atomic_io import write_json_atomic
+
+    write_json_atomic(path, {"mode": mode}, indent=2, trailing_newline=True)
 
 
 def counts_hidden(deck: Deck) -> bool:
@@ -125,7 +127,9 @@ def write_folder_stats(state_dir: Path, pile_size: int) -> None:
     path = state_dir / _STATS_FILE
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({"pile_size": pile_size}), encoding="utf-8")
+        from choice.atomic_io import write_json_atomic
+
+        write_json_atomic(path, {"pile_size": pile_size})
     except OSError:
         return
 

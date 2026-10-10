@@ -50,8 +50,6 @@ def convert_plugin_rows(
             item, row_notes = converter(row, folder, plugin)
             warnings.extend(row_notes)
             items.append(item)
-            if len(items) % 5 == 0:
-                record_items(deck, items)
         except Exception as exc:
             log.warning(
                 "plugin row %s failed for deck %s: %s",
@@ -62,8 +60,6 @@ def convert_plugin_rows(
             )
             warnings.append(f"skipped item at index {index}: {exc}")
             continue
-    if items:
-        record_items(deck, items)
     return items, warnings
 
 
@@ -91,6 +87,7 @@ def load_swipe_plugin_items(
 
     items, warnings = convert_plugin_rows(deck, rows, folder, plugin, converter)
     if items:
+        record_items(deck, items)
         return items, warnings
 
     fb = fallback_items(deck, "using last good item list after empty or failed conversion")

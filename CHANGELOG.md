@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.17 (2026-10-10)
+
+### Fixed
+
+- Plugin item conversion no longer checkpoints `list_counts.json` every five rows; counts persist once per successful plugin load via temp file, fsync, and atomic replace.
+- All state JSON writes (`list_counts.json`, folder index, work queue, count/view prefs, users roster, folder stats) use the same atomic helper.
+- `Equal` uses the equals icon; single-letter **A** / **B** left/right labels use letter icons (spicy_elo, spicy_faces).
+
+### Tests
+
+- Regression: at most one `list_counts.json` write per load and concurrent readers never see invalid JSON.
+- Performance: 8k-item plugin first load stays under 300 ms Choice overhead.
+
 ## 0.4.16 (2026-10-10)
 
 ### Fixed

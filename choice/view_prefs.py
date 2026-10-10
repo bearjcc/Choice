@@ -93,7 +93,9 @@ def save_view_prefs(deck: Deck, prefs: ViewPrefs) -> None:
         return
     path = prefs_path(deck.state_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(prefs.to_dict(), indent=2), encoding="utf-8")
+    from choice.atomic_io import write_json_atomic
+
+    write_json_atomic(path, prefs.to_dict(), indent=2, trailing_newline=True)
 
 
 def public_view(deck: Deck) -> dict:

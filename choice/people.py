@@ -222,11 +222,10 @@ def _decks(raw, name: str, known: set[str] | None, warnings: list[str] | None) -
 
 
 def _write(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name("users.json.tmp")
+    from choice.atomic_io import write_text_atomic
+
     with _WRITE:
         try:
-            tmp.write_text(text, encoding="utf-8")
-            tmp.replace(path)
+            write_text_atomic(path, text)
         except OSError as exc:
             raise DeckProblem(f"Cannot update users.json ({exc.strerror or exc})") from exc
