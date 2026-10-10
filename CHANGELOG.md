@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.15 (2026-10-10)
+
+### Changed
+
+- Deck action bar: left and right swipes pin to the edges; up, down, extra buttons, and undo sit in the centre.
+- Narrow screens show inline SVG icons (with full labels as `aria-label`); wider screens show icon plus text when it fits, otherwise icon only. Labels never hyphenate or break mid-word.
+- Per-deck icon overrides via `sort_right_icon`, `directions.up.icon`, or `icon` on a direction in `deck.json`.
+
+### Tests
+
+- Playwright action bar layout at 360, 390, and 768px; config icon overrides.
+
 ## 0.4.14 (2026-10-10)
 
 ### Added
