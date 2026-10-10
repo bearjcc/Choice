@@ -12,6 +12,7 @@ from pathlib import Path
 
 from choice import __version__
 from choice.act import tally_lines
+from choice.config import resolve_app_title
 from choice.httpd import normalize_base_path, serve
 from choice.load import DeckProblem
 from choice.open import config_root, open_path
@@ -57,8 +58,9 @@ def main(argv=None) -> int:
     host = "0.0.0.0" if args.lan else args.host
     exposed = host not in {"127.0.0.1", "::1", "localhost"}
     base_path = normalize_base_path(args.base_path)
+    app_title = resolve_app_title(config_path, args.title)
     url = f"http://127.0.0.1:{args.port}{_base_href(base_path)}"
-    print(f"Choice {__version__}", flush=True)
+    print(f"{app_title} {__version__}", flush=True)
     if opened.direct and len(opened.decks) == 1:
         print(f"  {opened.decks[0].title}")
     else:
@@ -88,6 +90,7 @@ def main(argv=None) -> int:
         args.port,
         config_path=config_path.resolve() if config_path else None,
         base_path=base_path,
+        app_title=app_title,
     )
     return 0
 
@@ -141,6 +144,11 @@ def _parser() -> argparse.ArgumentParser:
         "--base-path",
         default=os.environ.get("CHOICE_BASE_PATH", ""),
         help="URL prefix when behind a reverse proxy (e.g. /choice)",
+    )
+    parser.add_argument(
+        "--title",
+        default=os.environ.get("CHOICE_TITLE"),
+        help="App name in the tab, header, and PWA manifest (overrides choice.toml title)",
     )
     parser.add_argument(
         "--open", action="store_true", help="open the page in this computer's browser"

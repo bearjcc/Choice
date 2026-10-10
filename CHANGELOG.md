@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.13 (2026-10-10)
+
+### Added
+
+- Optional top-level `title` in `choice.toml` and `--title` / `CHOICE_TITLE` set the browser tab, header, and PWA manifest name (default remains Choice).
+- Web app manifest and a scoped service worker under each instance `--base-path` so Sky and Spicy can share one host without clashing.
+
+### Tests
+
+- Config title loading, CLI override, and HTTP checks for manifest, service worker, and scoped routes.
+
 ## 0.4.12 (2026-10-10)
 
 ### Fixed

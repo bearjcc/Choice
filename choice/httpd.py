@@ -27,7 +27,7 @@ from choice.act import (
     save_deck_view,
     undo,
 )
-from choice.config import ConfigProblem, load_config, mask_secrets, save_config, write_secret
+from choice.config import DEFAULT_APP_TITLE, ConfigProblem, load_config, mask_secrets, save_config, write_secret
 from choice.load import DeckProblem
 from choice.media import ServedMedia, prepare_bytes, prepare_file, snap_edge
 from choice.media_warm import warm_file_paths
@@ -53,6 +53,7 @@ _STATIC = {
     "pile_nav.js": "text/javascript; charset=utf-8",
     "swipe_ui.js": "text/javascript; charset=utf-8",
     "app.css": "text/css; charset=utf-8",
+    "sw.js": "text/javascript; charset=utf-8",
 }
 
 
@@ -63,10 +64,12 @@ class ChoiceSite(ThreadingHTTPServer):
         root: Path,
         config_path: Path | None = None,
         base_path: str = "",
+        app_title: str = DEFAULT_APP_TITLE,
     ):
         self.choice_root = root
         self.config_path = config_path
         self.base_path = normalize_base_path(base_path)
+        self.app_title = (app_title or DEFAULT_APP_TITLE).strip() or DEFAULT_APP_TITLE
         super().__init__(address, Handler)
         _boot_work_queue(self)
 
@@ -115,6 +118,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(404, {"ok": False, "message": "No such page."})
         if not parts:
             return self._index_page()
+        if parts == ["manifest.webmanifest"]:
+            return self._web_manifest()
         if len(parts) == 1 and parts[0] in _STATIC:
             return self._static(parts[0], _STATIC[parts[0]])
         if parts == ["license"]:
@@ -123,7 +128,12 @@ class Handler(BaseHTTPRequestHandler):
             base = self.server.base_path
             return self._json(
                 200,
-                {"ok": True, "service": "choice", "base_path": base or "/"},
+                {
+                    "ok": True,
+                    "service": "choice",
+                    "base_path": base or "/",
+                    "app_title": self.server.app_title,
+                },
             )
         if parts == ["api", "index"]:
             return self._index(parse_qs(parsed.query))
@@ -239,8 +249,18 @@ class Handler(BaseHTTPRequestHandler):
             opened = open_library(self._library_path())
             roster = load_roster(self.server.choice_root)
         except DeckProblem as exc:
-            return self._json(200, {"ok": False, "message": str(exc), "direct": True, "decks": []})
+            return self._json(
+                200,
+                {
+                    "ok": False,
+                    "message": str(exc),
+                    "direct": True,
+                    "decks": [],
+                    "app_title": self.server.app_title,
+                },
+            )
         deck_meta = _config_deck_meta(self.server.config_path)
+        app_title = self.server.app_title
         if not roster.enabled:
             return self._json(
                 200,
@@ -249,6 +269,7 @@ class Handler(BaseHTTPRequestHandler):
                     "direct": opened.direct,
                     "decks": _rows(opened.decks, deck_meta),
                     "users": None,
+                    "app_title": app_title,
                 },
             )
         library = [
@@ -263,6 +284,7 @@ class Handler(BaseHTTPRequestHandler):
             "users": [person.public() for person in roster.people],
             "library": library,
             "warnings": warnings,
+            "app_title": app_title,
         }
         person = None if not user_id else roster.get(user_id)
         if person is None:
@@ -570,15 +592,45 @@ class Handler(BaseHTTPRequestHandler):
         base = self.server.base_path
         content = base if base else "/"
         href = _base_href(base)
+        title = self.server.app_title
+        esc_title = html.escape(title, quote=False)
         inject = (
             f'<meta name="choice-base" content="{html.escape(content, quote=True)}">\n'
+            f'<meta name="choice-app-title" content="{html.escape(title, quote=True)}">\n'
+            f'<link rel="manifest" href="manifest.webmanifest">\n'
             f'<base href="{html.escape(href, quote=True)}">'
+        )
+        text = text.replace("<title>Choice</title>", f"<title>{esc_title}</title>", 1)
+        text = text.replace(
+            '<h1 id="title">Choice</h1>',
+            f'<h1 id="title">{esc_title}</h1>',
+            1,
         )
         if "<head>" in text:
             text = text.replace("<head>", "<head>\n" + inject, 1)
         data = text.encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _web_manifest(self):
+        title = self.server.app_title
+        short = title if len(title) <= 12 else title[:11] + "…"
+        body = {
+            "name": title,
+            "short_name": short,
+            "start_url": "./",
+            "scope": "./",
+            "display": "standalone",
+            "background_color": "#f3efe8",
+            "theme_color": "#f3efe8",
+        }
+        data = json.dumps(body, separators=(",", ":")).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/manifest+json; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-cache")
         self.end_headers()
@@ -1015,6 +1067,7 @@ def serve(
     port: int,
     config_path: Path | None = None,
     base_path: str = "",
+    app_title: str = DEFAULT_APP_TITLE,
 ) -> None:
     ChoiceSite.allow_reuse_address = True
     try:
@@ -1023,6 +1076,7 @@ def serve(
             root,
             config_path=config_path,
             base_path=base_path,
+            app_title=app_title,
         )
     except OSError as exc:
         raise SystemExit(f"Cannot listen on {host}:{port} ({exc.strerror or exc}).") from exc

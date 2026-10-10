@@ -32,6 +32,24 @@ function choiceBase() {
   return raw.replace(/\/$/, "");
 }
 
+function appTitle() {
+  const meta = document.querySelector('meta[name="choice-app-title"]');
+  const text = meta && meta.getAttribute("content");
+  return (text && text.trim()) || "Choice";
+}
+
+function setBrowserTitle(text) {
+  document.title = text;
+}
+
+function registerServiceWorker() {
+  if (!("serviceWorker" in navigator)) return;
+  const base = choiceBase();
+  const scope = base ? base + "/" : "/";
+  const swUrl = scope + (scope.endsWith("/") ? "" : "") + "sw.js";
+  navigator.serviceWorker.register(swUrl, { scope }).catch(() => {});
+}
+
 function apiPath(path) {
   const lead = path.startsWith("/") ? path : "/" + path;
   const base = choiceBase();
@@ -217,6 +235,7 @@ function appendSourceIcon(parent, type) {
 }
 
 async function boot() {
+  registerServiceWorker();
   $("home").addEventListener("click", () => {
     if (state.picking) return backFromPeople();
     showLibrary();
@@ -272,7 +291,8 @@ function route() {
 function showProblem(message) {
   state.picking = false;
   stopQueuePoll();
-  $("title").textContent = "Choice";
+  $("title").textContent = appTitle();
+  setBrowserTitle(appTitle());
   $("tools").hidden = true;
   $("track").hidden = true;
   $("actions").hidden = true;
@@ -301,7 +321,9 @@ async function showLibrary() {
   } catch (_err) {
     return showProblem("Could not reach Choice.");
   }
-  $("title").textContent = "Choice";
+  const name = (state.index && state.index.app_title) || appTitle();
+  $("title").textContent = name;
+  setBrowserTitle(name);
   $("count").textContent = "";
   $("tools").hidden = true;
   $("track").hidden = true;
@@ -1122,6 +1144,7 @@ function renderDeck() {
   const data = state.payload;
   paintWho();
   $("title").textContent = data.title;
+  setBrowserTitle(data.title);
   $("tools").hidden = true;
   $("menu").hidden = false;
   $("count").textContent = data.count_label || (data.left != null ? data.left + " left" : "");

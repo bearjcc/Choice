@@ -42,6 +42,9 @@ class DeckSpec:
     options: dict[str, Any] = field(default_factory=dict)
 
 
+DEFAULT_APP_TITLE = "Choice"
+
+
 @dataclass
 class AppConfig:
     path: Path
@@ -50,6 +53,7 @@ class AppConfig:
     decks: list[DeckSpec]
     secrets_file: Path | None = None
     roster_path: Path | None = None
+    app_title: str = DEFAULT_APP_TITLE
 
     def source(self, source_id: str) -> SourceSpec | None:
         for spec in self.sources:
@@ -68,6 +72,13 @@ def load_config(path: Path) -> AppConfig:
         raise ConfigProblem(f"Invalid TOML in {path}: {exc}") from exc
     if not isinstance(raw, dict):
         raise ConfigProblem("Config root must be a table.")
+
+    app_title = DEFAULT_APP_TITLE
+    raw_title = raw.get("title")
+    if raw_title is not None:
+        if not isinstance(raw_title, str) or not raw_title.strip():
+            raise ConfigProblem("title must be a non-empty string.")
+        app_title = raw_title.strip()
 
     state_block = raw.get("state") or {}
     if not isinstance(state_block, dict):
@@ -113,7 +124,20 @@ def load_config(path: Path) -> AppConfig:
         decks=decks,
         secrets_file=secrets_file,
         roster_path=roster_path,
+        app_title=app_title,
     )
+
+
+def resolve_app_title(config_path: Path | None, cli_title: str | None = None) -> str:
+    """Instance display name: CLI --title wins, then choice.toml title, else Choice."""
+    if cli_title is not None and str(cli_title).strip():
+        return str(cli_title).strip()
+    if config_path is not None and config_path.is_file():
+        try:
+            return load_config(config_path).app_title
+        except ConfigProblem:
+            pass
+    return DEFAULT_APP_TITLE
 
 
 def save_config(config: AppConfig, sources: list[dict], decks: list[dict]) -> None:
@@ -121,9 +145,16 @@ def save_config(config: AppConfig, sources: list[dict], decks: list[dict]) -> No
     lines = [
         "# Choice configuration. See choice.example.toml.",
         "",
+    ]
+    if config.app_title and config.app_title != DEFAULT_APP_TITLE:
+        lines.append(f'title = "{_toml_str(config.app_title)}"')
+        lines.append("")
+    lines.extend(
+        [
         "[state]",
         f'dir = "{_toml_str(str(config.state_dir))}"',
-    ]
+        ]
+    )
     if config.secrets_file:
         lines.append(f'secrets_file = "{_toml_str(str(config.secrets_file))}"')
     if config.roster_path:

@@ -1,6 +1,9 @@
 # Example Choice config. Copy to choice.toml (gitignored) and edit paths.
 # Secrets are env var names, never literal keys.
 
+# Optional tab/header name when several instances share one host (overridable with --title).
+# title = "Spicy"
+
 [state]
 dir = ".choice-state"
 # secrets_file = ".choice-secrets"
