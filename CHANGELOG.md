@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.4.16 (2026-10-10)
+
+### Fixed
+
+- Action bar icons: whole-word label matching with negatives before positives (`Dislike` no longer shows ✓).
+- Ambiguous pairs (A/B, Keep/Merge, Like/Super-like), neutral labels, trash vs delete-to-_trash, and direction defaults when icons would collide.
+- Arrow and undo SVG paths.
+- Unknown `icon` in deck config logs a warning and falls back instead of breaking the deck; `sort_*_icon` alone no longer adds a direction button.
+- Plugin `list_items` during home/items load: exceptions and bad rows are caught, partial lists are recorded, and the last good snapshot is served when a refresh fails.
+
+### Tests
+
+- Node table tests for label→icon mapping and arrow direction vectors.
+- Config side-effect tests and a chaotic plugin fixture for partial/failed loads.
+
 ## 0.4.15 (2026-10-10)
 
 ### Changed

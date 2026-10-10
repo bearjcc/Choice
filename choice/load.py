@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import csv
 import json
+import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -63,8 +64,12 @@ _ACTION_ICONS = frozenset(
     {
         "check",
         "down",
+        "equals",
         "heart",
         "left",
+        "letter-a",
+        "letter-b",
+        "question",
         "right",
         "skip",
         "star",
@@ -74,6 +79,7 @@ _ACTION_ICONS = frozenset(
         "x",
     }
 )
+_log = logging.getLogger(__name__)
 _HOOK_KEYS = {"command", "required", "timeout_seconds"}
 _FOUR = ("left", "right", "up", "down")
 
@@ -757,7 +763,12 @@ def _one_direction(name: str, spec) -> Direction:
     if icon_raw is not None:
         icon = str(icon_raw).strip().lower()
         if icon and icon not in _ACTION_ICONS:
-            raise DeckProblem(f"{name}: icon must be one of: {', '.join(sorted(_ACTION_ICONS))}.")
+            _log.warning(
+                "%s: unknown icon %r; using default icon instead",
+                name,
+                icon,
+            )
+            icon = None
         if not icon:
             icon = None
     return Direction(

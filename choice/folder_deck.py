@@ -120,10 +120,6 @@ def apply_sort_direction_labels(
             does="label",
             icon=icons.get(key),
         )
-    for key, icon in icons.items():
-        if key in out:
-            continue
-        out[key] = Direction(id=key, label=key, value=key, does="label", icon=icon)
     return out
 
 
@@ -407,8 +403,11 @@ def _parse_sort_label_overrides(raw: dict) -> dict[str, str]:
 
 
 def _parse_sort_icon_overrides(raw: dict) -> dict[str, str]:
+    import logging
+
     from choice.load import _ACTION_ICONS
 
+    log = logging.getLogger(__name__)
     icons: dict[str, str] = {}
     sort = raw.get("sort") or raw.get("sort_targets")
     if isinstance(sort, dict):
@@ -417,6 +416,8 @@ def _parse_sort_icon_overrides(raw: dict) -> dict[str, str]:
                 name = str(value["icon"]).strip().lower()
                 if name in _ACTION_ICONS:
                     icons[str(key)] = name
+                elif name:
+                    log.warning("sort.%s: unknown icon %r ignored", key, name)
     directions_block = raw.get("directions")
     if isinstance(directions_block, dict):
         for key, value in directions_block.items():
@@ -424,6 +425,8 @@ def _parse_sort_icon_overrides(raw: dict) -> dict[str, str]:
                 name = str(value["icon"]).strip().lower()
                 if name in _ACTION_ICONS:
                     icons[str(key)] = name
+                elif name:
+                    log.warning("directions.%s: unknown icon %r ignored", key, name)
     for key, value in raw.items():
         if not key.startswith("sort_") or key == "sort_targets":
             continue
@@ -434,6 +437,8 @@ def _parse_sort_icon_overrides(raw: dict) -> dict[str, str]:
                 name = str(value).strip().lower()
                 if name in _ACTION_ICONS:
                     icons[direction] = name
+                elif name:
+                    log.warning("%s: unknown icon %r ignored", key, name)
     return icons
 
 

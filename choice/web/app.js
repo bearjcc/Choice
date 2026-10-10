@@ -1550,6 +1550,23 @@ const ACTION_CENTER_ORDER = ["up", "down"];
 
 let actionBarFitObserver = null;
 
+function collectActionEntries(item) {
+  const entries = [];
+  if (!item) return entries;
+  ["left", "right", ...ACTION_CENTER_ORDER].forEach((id) => {
+    const spec = specFor(id);
+    if (!spec) return;
+    const label = buttonLabel(spec, item);
+    if (!label) return;
+    entries.push({ spec, label });
+  });
+  (state.payload.buttons || []).forEach((spec) => {
+    if (spec.id === "left" || spec.id === "right") return;
+    entries.push({ spec, label: spec.label || spec.id });
+  });
+  return entries;
+}
+
 function renderActions() {
   const row = $("actions");
   const item = current();
@@ -1561,32 +1578,35 @@ function renderActions() {
   const centerSlot = el("div", "action-slot action-slot-center");
   const rightSlot = el("div", "action-slot action-slot-right");
   row.append(leftSlot, centerSlot, rightSlot);
+  const icons = typeof ChoiceActionIcons !== "undefined" ? ChoiceActionIcons : null;
+  const actionEntries = collectActionEntries(item);
+  const iconMap = icons && actionEntries.length ? icons.resolveAll(actionEntries) : {};
   if (item) {
     const leftSpec = specFor("left");
     if (leftSpec) {
       const label = buttonLabel(leftSpec, item);
-      if (label) leftSlot.append(actionButton(leftSpec, label));
+      if (label) leftSlot.append(actionButton(leftSpec, label, iconMap[leftSpec.id]));
     }
     const rightSpec = specFor("right");
     if (rightSpec) {
       const label = buttonLabel(rightSpec, item);
-      if (label) rightSlot.append(actionButton(rightSpec, label));
+      if (label) rightSlot.append(actionButton(rightSpec, label, iconMap[rightSpec.id]));
     }
     ACTION_CENTER_ORDER.forEach((id) => {
       const spec = specFor(id);
       if (!spec) return;
       const label = buttonLabel(spec, item);
       if (!label) return;
-      centerSlot.append(actionButton(spec, label));
+      centerSlot.append(actionButton(spec, label, iconMap[id]));
     });
     (state.payload.buttons || []).forEach((spec) => {
       if (spec.id === "left" || spec.id === "right") return;
-      centerSlot.append(actionButton(spec, spec.label));
+      centerSlot.append(actionButton(spec, spec.label, iconMap[spec.id]));
     });
   }
   if (undoEnabled()) {
     const undoSpec = { id: "undo", label: "Undo" };
-    const undo = actionButton(undoSpec, "Undo");
+    const undo = actionButton(undoSpec, "Undo", "undo");
     undo.classList.add("action-undo");
     undo.disabled = !state.payload.can_undo || state.busy;
     centerSlot.append(undo);
@@ -1594,14 +1614,15 @@ function renderActions() {
   requestAnimationFrame(() => syncActionBarDisplay());
 }
 
-function actionButton(spec, label) {
+function actionButton(spec, label, iconOverride) {
   const fullLabel = label || spec.label || spec.id;
   const button = el("button", "action-btn");
   button.type = "button";
   button.dataset.dir = spec.id;
   button.setAttribute("aria-label", fullLabel);
   const icons = typeof ChoiceActionIcons !== "undefined" ? ChoiceActionIcons : null;
-  const iconName = icons ? icons.resolve(spec, fullLabel) : "check";
+  const iconName =
+    iconOverride || (icons ? icons.resolve(spec, fullLabel) : "check");
   button.dataset.icon = iconName;
   const iconWrap = el("span", "action-icon");
   if (icons) iconWrap.innerHTML = icons.svg(iconName);

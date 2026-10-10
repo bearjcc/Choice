@@ -7,9 +7,10 @@ from pathlib import Path
 from typing import Any
 
 from choice.config import ConfigProblem
-from choice.deck_index import list_lock, record_items
+from choice.deck_index import list_lock
 from choice.folder_deck import apply_sort_direction_labels
-from choice.load import Deck, DeckProblem, Direction, _directions as _config_directions
+from choice.load import Deck, Direction, _directions as _config_directions
+from choice.plugin_items import load_swipe_plugin_items
 from choice.plugin_pool import get_plugin
 from choice.sources.base import PreviewItem, Source
 from choice.swipe_plugin import SwipePlugin, load_swipe_class, swipe_item_to_choice
@@ -83,25 +84,13 @@ class SwipeSource(Source):
         private_feed = bool(deck_options.get("private") or deck_options.get("notify") is False)
 
         def _load():
-            warnings: list[str] = []
             with list_lock(deck_ref):
-                try:
-                    raw_items = plugin.list_items()
-                except Exception as exc:
-                    raise DeckProblem(str(exc)) from exc
-            items = []
-            for row in raw_items:
-                if not isinstance(row, dict):
-                    continue
-                item_id = str(row.get("id") or "")
-                if not item_id:
-                    warnings.append("skipped item with no id")
-                    continue
-                item, row_notes = swipe_item_to_choice(row, folder, plugin)
-                warnings.extend(row_notes)
-                items.append(item)
-            record_items(deck_ref, items)
-            return items, warnings
+                return load_swipe_plugin_items(
+                    deck_ref,
+                    plugin,
+                    folder,
+                    swipe_item_to_choice,
+                )
 
         deck_ref = Deck(
             id=deck_id,
