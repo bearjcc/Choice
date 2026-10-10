@@ -97,6 +97,10 @@ const ChoiceActionIcons = (function () {
     const text = String(raw || "").toLowerCase().trim();
     if (text === "a") return "letter-a";
     if (text === "b") return "letter-b";
+    const lead = text.match(/^([ab])\b/);
+    if (lead) {
+      return lead[1] === "a" ? "letter-a" : "letter-b";
+    }
     const m = text.match(/\b([ab])\b/);
     if (!m) return null;
     if (

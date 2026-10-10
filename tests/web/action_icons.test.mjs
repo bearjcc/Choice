@@ -47,6 +47,11 @@ test("dislike is not treated as like", () => {
   assert.equal(icons.infer({ id: "right" }, "Dislike"), "x");
 });
 
+test("A is me / B is me use letter icons", () => {
+  assert.equal(icons.infer({ id: "left" }, "A is me"), "letter-a");
+  assert.equal(icons.infer({ id: "right" }, "B is me"), "letter-b");
+});
+
 test("plain A and B labels on left and right", () => {
   const map = icons.resolveAll([
     { spec: { id: "left" }, label: "A" },

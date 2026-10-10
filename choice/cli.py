@@ -13,6 +13,7 @@ from pathlib import Path
 from choice import __version__
 from choice.act import tally_lines
 from choice.config import resolve_app_title
+from choice.env_config import env_flag, env_int
 from choice.httpd import normalize_base_path, serve
 from choice.load import DeckProblem
 from choice.open import config_root, open_path
@@ -84,6 +85,20 @@ def main(argv=None) -> int:
     if args.open:
         webbrowser.open(url)
     root = config_root(path) if config_path else path.expanduser().resolve()
+    from choice.state_cleanup import cleanup_state_dirs
+
+    cleanup_dirs = []
+    if config_path is not None:
+        try:
+            from choice.config import load_config
+
+            cfg = load_config(config_path)
+            cleanup_dirs.append(cfg.state_dir)
+        except Exception:
+            pass
+    for deck in opened.decks:
+        cleanup_dirs.append(deck.state_dir)
+    cleanup_state_dirs(cleanup_dirs)
     serve(
         root,
         host,
@@ -127,19 +142,29 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "path",
         nargs="?",
-        default=".",
-        help="deck folder, library folder, photo folder, or data file",
+        default=os.environ.get("CHOICE_PATH", "."),
+        help="deck folder, library folder, photo folder, or data file (CHOICE_PATH)",
     )
     parser.add_argument(
         "--config", help="choice.toml with sources and decks (or set CHOICE_CONFIG)"
     )
     parser.add_argument(
-        "--host", default="127.0.0.1", help="address to listen on (default: this computer only)"
+        "--host",
+        default=os.environ.get("CHOICE_HOST", "127.0.0.1"),
+        help="address to listen on (default: this computer only; CHOICE_HOST)",
     )
     parser.add_argument(
-        "--lan", action="store_true", help="listen on the network, so a phone can open the page"
+        "--lan",
+        action="store_true",
+        default=env_flag("CHOICE_LAN"),
+        help="listen on the network, so a phone can open the page (CHOICE_LAN)",
     )
-    parser.add_argument("--port", type=int, default=8741, help="port (default: 8741)")
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=env_int("CHOICE_PORT", 8741),
+        help="port (default: 8741; CHOICE_PORT)",
+    )
     parser.add_argument(
         "--base-path",
         default=os.environ.get("CHOICE_BASE_PATH", ""),
@@ -151,7 +176,10 @@ def _parser() -> argparse.ArgumentParser:
         help="App name in the tab, header, and PWA manifest (overrides choice.toml title)",
     )
     parser.add_argument(
-        "--open", action="store_true", help="open the page in this computer's browser"
+        "--open",
+        action="store_true",
+        default=env_flag("CHOICE_OPEN"),
+        help="open the page in this computer's browser (CHOICE_OPEN)",
     )
     parser.add_argument("--tally", action="store_true", help="print decision counts and exit")
     parser.add_argument("--version", action="version", version=f"choice {__version__}")

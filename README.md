@@ -4,9 +4,18 @@ Swipe through a pile and decide. Photos, files, a true or false quiz, a round ro
 
 Choice is the generic shape of a private swipe tool: four directions, extra buttons, undo, and a log. The common piles are a `deck.json`. The strange ones (call an API, rebuild a dataset) are a small hook.
 
+## Install (PyPI)
+
+```
+pip install choice-swipe
+# photo folders / WebP thumbnails:
+pip install "choice-swipe[images]"
+choice examples
+```
+
 ## Two minutes
 
-From this folder:
+From a git checkout:
 
 ```
 python -m choice examples

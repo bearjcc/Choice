@@ -1,12 +1,18 @@
 # Example Choice config. Copy to choice.toml (gitignored) and edit paths.
 # Secrets are env var names, never literal keys.
+#
+# Environment overrides (see also CLI flags):
+#   CHOICE_CONFIG, CHOICE_PATH, CHOICE_HOST, CHOICE_PORT, CHOICE_LAN, CHOICE_OPEN,
+#   CHOICE_BASE_PATH, CHOICE_TITLE, CHOICE_STATE_DIR, CHOICE_SECRETS_FILE,
+#   CHOICE_USERS_FILE, CHOICE_DISABLE_WARM, CHOICE_SYNC_WORK
 
-# Optional tab/header name when several instances share one host (overridable with --title).
+# Optional tab/header name when several instances share one host (overridable with --title / CHOICE_TITLE).
 # title = "Spicy"
 
 [state]
 dir = ".choice-state"
 # secrets_file = ".choice-secrets"
+# users_file = ".choice/users.json"
 
 [[sources]]
 id = "examples"

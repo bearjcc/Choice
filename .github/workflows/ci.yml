@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Python ${{ matrix.python }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install test deps
+        run: python -m pip install --upgrade pip pytest
+      - name: Pytest
+        run: python -m pytest -q
+        env:
+          CHOICE_SYNC_WORK: "1"
+          CHOICE_DISABLE_WARM: "1"
+      - name: Node icon/layout unit tests
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.12'
+        run: |
+          node tests/web/action_icons.test.mjs
+          node tests/web/dialog_layout.test.mjs

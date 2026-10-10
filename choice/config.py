@@ -117,7 +117,7 @@ def load_config(path: Path) -> AppConfig:
         if spec.source not in seen_src:
             raise ConfigProblem(f"Deck {spec.id!r} points at unknown source {spec.source!r}.")
 
-    return AppConfig(
+    config = AppConfig(
         path=path,
         state_dir=state_dir,
         sources=sources,
@@ -126,6 +126,10 @@ def load_config(path: Path) -> AppConfig:
         roster_path=roster_path,
         app_title=app_title,
     )
+    from choice.env_config import apply_config_env
+
+    apply_config_env(config)
+    return config
 
 
 def resolve_app_title(config_path: Path | None, cli_title: str | None = None) -> str:

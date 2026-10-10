@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.5.0 (2026-10-10)
+
+### Packaging (phase 1)
+
+- PyPI distribution name **`choice-swipe`**; import package and console command remain **`choice`**.
+- Wheel ships `choice/web/*` only (no tests, docs, or examples in the wheel).
+- Optional extra **`images`**: `Pillow>=10,<12`.
+- Config fields overridable via **`CHOICE_*`** env vars (documented in `choice.example.toml`).
+- GitHub Actions: **CI** on push/PR; **release** on `v*` tags (matrix 3.11–3.13, Linux + Windows), sdist/wheel + SHA256SUMS, PyPI publish gated on repo variable `PYPI_PUBLISH`.
+
+### Fixed
+
+- Startup removes stale `*.<pid>.tmp` atomic-write temps from state dirs (dead pid or older than ~10 minutes).
+- Action icons: **Equal** uses equals; labels like **A is me** / **B is me** use letter icons.
+
+### Tests
+
+- State tmp cleanup, config env override, wheel contents audit.
+
 ## 0.4.17 (2026-10-10)
 
 ### Fixed

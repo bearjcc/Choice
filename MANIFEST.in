@@ -1,0 +1,10 @@
+include LICENSE
+include README.md
+include pyproject.toml
+recursive-include choice/web *
+global-exclude __pycache__
+global-exclude *.py[cod]
+prune tests
+prune docs
+prune examples
+prune scripts
