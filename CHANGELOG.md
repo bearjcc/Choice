@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.12 (2026-10-10)
+
+### Fixed
+
+- Order and filter dialog stacks each label above its field at full width on phones, with thumb-sized inputs and a reshuffle control for the random seed (empty means auto, not the deck id).
+
+### Tests
+
+- Layout checks for stacked order/filter fields; Playwright accepts `CHOICE_TEST_BASE_URL` instead of assuming a fixed dev port.
+
 ## 0.4.11 (2026-10-10)
 
 ### Fixed

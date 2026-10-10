@@ -40,3 +40,16 @@ export function dialogPhoneLayout(metrics, viewportWidth, slack = 2) {
   if (metrics.narrow) return centered || bottomAnchored;
   return centered;
 }
+
+/** Order/filter fields: label stacked above control, full width. */
+export function orderFilterFieldsStacked(fieldRects, slack = 3) {
+  if (!fieldRects || !fieldRects.length) return false;
+  for (const row of fieldRects) {
+    const { label, control } = row;
+    if (!label || !control) return false;
+    if (label.bottom > control.top + slack) return false;
+    if (control.width < label.width * 0.85 - slack) return false;
+    if (label.width < control.width * 0.85 - slack) return false;
+  }
+  return true;
+}

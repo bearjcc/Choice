@@ -899,6 +899,27 @@ function fieldLabel(text) {
   return label;
 }
 
+function appendSetupField(parent, labelText, controlEl) {
+  const wrap = el("div", "setup-field");
+  wrap.append(el("label", "setup-label", labelText), controlEl);
+  parent.append(wrap);
+  return wrap;
+}
+
+function displayRandomSeed(prefs, view, deckId) {
+  const defaults = (view && view.defaults) || {};
+  const autoSeed = defaults.random_seed || deckId || "";
+  const stored = (prefs && prefs.random_seed) || "";
+  if (!stored || stored === autoSeed) return "";
+  return stored;
+}
+
+function newRandomSeed() {
+  const bytes = new Uint8Array(8);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 function splitGlobs(text) {
   return String(text || "")
     .split(",")
@@ -1938,6 +1959,8 @@ async function openOrderSettings() {
   const body = $("dialog-body");
   body.replaceChildren();
   body.append(el("h2", null, "Order and filter"));
+  const form = el("form", "order-filter-form setup-form");
+  form.addEventListener("submit", (event) => event.preventDefault());
   const sort = el("select", "setup-input");
   [
     ["scan", "Folder scan order"],
@@ -1953,29 +1976,35 @@ async function openOrderSettings() {
     if ((prefs.sort_mode || "scan") === value) opt.selected = true;
     sort.append(opt);
   });
-  body.append(el("label", "setup-label", "Sort"));
-  body.append(sort);
+  appendSetupField(form, "Sort", sort);
   const seed = el("input", "setup-input");
   seed.type = "text";
-  seed.placeholder = "Random seed (optional)";
-  seed.value = prefs.random_seed || "";
-  body.append(el("label", "setup-label", "Random seed"));
-  body.append(seed);
+  seed.placeholder = "auto";
+  seed.autocomplete = "off";
+  seed.value = displayRandomSeed(prefs, view, state.deckId);
+  const seedRow = el("div", "setup-seed-row");
+  seedRow.append(seed);
+  const reshuffle = el("button", "seed-reshuffle", "Reshuffle");
+  reshuffle.type = "button";
+  reshuffle.addEventListener("click", () => {
+    seed.value = newRandomSeed();
+    seed.focus();
+  });
+  seedRow.append(reshuffle);
+  appendSetupField(form, "Random seed", seedRow);
   const types = el("input", "setup-input");
-  types.placeholder = "Types: image, video, gif, or extensions";
+  types.placeholder = "image, video, gif, or extensions";
   types.value = (prefs.file_types || []).join(", ");
-  body.append(el("label", "setup-label", "File types"));
-  body.append(types);
+  appendSetupField(form, "File types", types);
   const inc = el("input", "setup-input");
-  inc.placeholder = "Include folders (comma-separated)";
+  inc.placeholder = "Comma-separated folder names";
   inc.value = (prefs.include_folders || []).join(", ");
-  body.append(el("label", "setup-label", "Include folders"));
-  body.append(inc);
+  appendSetupField(form, "Include folders", inc);
   const exc = el("input", "setup-input");
-  exc.placeholder = "Exclude folders (comma-separated)";
+  exc.placeholder = "Comma-separated folder names";
   exc.value = (prefs.exclude_folders || []).join(", ");
-  body.append(el("label", "setup-label", "Exclude folders"));
-  body.append(exc);
+  appendSetupField(form, "Exclude folders", exc);
+  body.append(form);
   const row = el("div", "sheet-actions");
   const save = el("button", null, "Save");
   save.addEventListener("click", async () => {

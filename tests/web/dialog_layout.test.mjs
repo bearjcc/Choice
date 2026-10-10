@@ -2,7 +2,11 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { dialogFitsViewport, dialogPhoneLayout } from "./dialog_layout.mjs";
+import {
+  dialogFitsViewport,
+  dialogPhoneLayout,
+  orderFilterFieldsStacked,
+} from "./dialog_layout.mjs";
 
 test("dialogFitsViewport accepts fully visible shell", () => {
   assert.equal(
@@ -86,6 +90,34 @@ test("dialogPhoneLayout rejects tiny top-left shell", () => {
       },
       360,
     ),
+    false,
+  );
+});
+
+test("orderFilterFieldsStacked accepts label above control", () => {
+  assert.equal(
+    orderFilterFieldsStacked([
+      {
+        label: { top: 10, bottom: 28, left: 12, right: 300, width: 288 },
+        control: { top: 32, bottom: 76, left: 12, right: 300, width: 288 },
+      },
+      {
+        label: { top: 88, bottom: 106, left: 12, right: 300, width: 288 },
+        control: { top: 110, bottom: 154, left: 12, right: 300, width: 288 },
+      },
+    ]),
+    true,
+  );
+});
+
+test("orderFilterFieldsStacked rejects inline label beside control", () => {
+  assert.equal(
+    orderFilterFieldsStacked([
+      {
+        label: { top: 10, bottom: 28, left: 12, right: 100, width: 88 },
+        control: { top: 12, bottom: 56, left: 110, right: 300, width: 190 },
+      },
+    ]),
     false,
   );
 });

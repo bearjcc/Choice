@@ -2,11 +2,16 @@
 /* Usage: node modal_layout_playwright.mjs <baseUrl> */
 
 import { chromium } from "playwright";
-import { dialogFitsViewport, dialogPhoneLayout } from "./dialog_layout.mjs";
+import {
+  dialogFitsViewport,
+  dialogPhoneLayout,
+  orderFilterFieldsStacked,
+} from "./dialog_layout.mjs";
 
-const baseUrl = process.argv[2];
+const baseUrl = process.argv[2] || process.env.CHOICE_TEST_BASE_URL;
 if (!baseUrl) {
   console.error("Usage: node modal_layout_playwright.mjs <baseUrl>");
+  console.error("Or set CHOICE_TEST_BASE_URL (no fixed port is assumed).");
   process.exit(2);
 }
 
@@ -140,6 +145,43 @@ async function openDeck(page, deckId) {
   await page.waitForSelector("#menu:not([hidden])", { timeout: 15_000 });
 }
 
+async function assertOrderFilterStacked(page, vpName, scenarioName) {
+  if (scenarioName !== "order-settings") return;
+  await page.waitForSelector(".order-filter-form .setup-field");
+  const rects = await page.evaluate(() => {
+    const fields = [...document.querySelectorAll(".order-filter-form .setup-field")];
+    return fields.map((field) => {
+      const label = field.querySelector(".setup-label");
+      const control = field.querySelector(".setup-input, select, .setup-seed-row");
+      if (!label || !control) return null;
+      const lr = label.getBoundingClientRect();
+      const cr = control.getBoundingClientRect();
+      return {
+        label: {
+          top: lr.top,
+          bottom: lr.bottom,
+          left: lr.left,
+          right: lr.right,
+          width: lr.width,
+        },
+        control: {
+          top: cr.top,
+          bottom: cr.bottom,
+          left: cr.left,
+          right: cr.right,
+          width: cr.width,
+        },
+      };
+    });
+  });
+  if (!rects.length || rects.some((row) => !row)) {
+    throw new Error(`${vpName} ${scenarioName}: missing order-filter fields`);
+  }
+  if (!orderFilterFieldsStacked(rects)) {
+    throw new Error(`${vpName} ${scenarioName}: labels not stacked: ${JSON.stringify(rects)}`);
+  }
+}
+
 async function assertDialog(page, vp, scenarioName, phone, clickSelector) {
   await page.waitForFunction(() => window.ChoiceDialog && window.ChoiceDialog.isOpen());
   await page.waitForSelector("#dialog-body button, #dialog-body select, #dialog-body h2", {
@@ -152,6 +194,7 @@ async function assertDialog(page, vp, scenarioName, phone, clickSelector) {
   if (!ok) {
     throw new Error(`${vp.name} ${scenarioName}: ${JSON.stringify(metrics)}`);
   }
+  await assertOrderFilterStacked(page, vp.name, scenarioName);
   if (clickSelector) {
     const loc = page.locator(clickSelector).first();
     if ((await loc.count()) < 1) {
