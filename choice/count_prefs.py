@@ -82,7 +82,10 @@ def auto_hide_counts(deck: Deck) -> bool:
         return True
     if deck.plugin is not None and deck.folder_scan is None:
         from choice.deck_index import persisted_summary, snapshot
+        from choice.plugin_stats import endless_display
 
+        if endless_display(deck)[0]:
+            return True
         if snapshot(deck) is not None:
             return False
         saved = persisted_summary(deck)

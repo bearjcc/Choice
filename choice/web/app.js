@@ -350,6 +350,7 @@ async function showLibrary() {
     const copy = el("span", "deck-copy");
     copy.append(el("span", "deck-name", deck.title));
     let meta = deck.count_label;
+    if (!meta && deck.endless) meta = "∞";
     if (!meta && deck.meter === false) meta = deck.count_label || "";
     else if (!meta && deck.stale && deck.left == null) meta = "Scanning…";
     else if (!meta && deck.stale && deck.left != null) meta = deck.left + " left · scanning";
@@ -1147,7 +1148,8 @@ function renderDeck() {
   setBrowserTitle(data.title);
   $("tools").hidden = true;
   $("menu").hidden = false;
-  $("count").textContent = data.count_label || (data.left != null ? data.left + " left" : "");
+  $("count").textContent =
+    data.count_label || (data.endless ? "∞" : data.left != null ? data.left + " left" : "");
   $("pending").textContent = state.pending ? "Show all" : "Still to do";
   $("blind").setAttribute("aria-pressed", state.blind ? "true" : "false");
   $("track").hidden = data.meter === false;

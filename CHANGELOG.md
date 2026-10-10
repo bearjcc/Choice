@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.14 (2026-10-10)
+
+### Added
+
+- Plugin `stats()` may set `endless: true` and/or `count_label` so buffer-sized piles show ∞ or a custom label on home and in the deck header; `auto` count mode hides the meter. `/api/index` and `/items` expose `endless` and `count_label`.
+
+### Fixed
+
+- Cold plugin `/items` no longer forces a full `list_items()` during home `index_summary`; the first page waits on the plugin list only (measured overhead is small vs plugin work such as spicy_elo’s own load).
+
+### Tests
+
+- Endless stats (label only, endless only, and neither). Cold `/items` timing vs a slow `list_items` fixture.
+
 ## 0.4.13 (2026-10-10)
 
 ### Added

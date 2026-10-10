@@ -248,6 +248,23 @@ def _counts_hidden(deck: Deck) -> bool:
     return counts_hidden(deck)
 
 
+def _plugin_index_row(deck: Deck, counts: dict, list_size: int | None) -> dict:
+    from choice.plugin_stats import apply_endless_counts
+
+    row = {
+        "ok": True,
+        "total": counts["total"],
+        "decided": counts["decided"],
+        "left": counts.get("left"),
+        "meter": counts.get("meter", True),
+    }
+    if list_size is not None:
+        row["list_size"] = list_size
+    if counts.get("count_label"):
+        row["count_label"] = counts["count_label"]
+    return apply_endless_counts(deck, row)
+
+
 def _hidden_summary(deck: Deck, log_decided: set[str]) -> dict:
     from choice.count_prefs import today_count_label
 
@@ -275,6 +292,13 @@ def index_summary(deck: Deck) -> dict:
     choices = _choices(deck)
     snap = snapshot(deck)
     log_decided = {item_id for item_id, row in choices.items() if not row.get("later")}
+    from choice.plugin_stats import apply_endless_counts, endless_display
+
+    if deck.plugin is not None and endless_display(deck)[0]:
+        return apply_endless_counts(
+            deck,
+            {"ok": True, "decided": len(log_decided), "meter": False},
+        )
     hidden = _counts_hidden(deck)
     if snap is None:
         if deck.plugin is None and deck.folder_scan is not None:
@@ -309,59 +333,33 @@ def index_summary(deck: Deck) -> dict:
         snap_cold = snapshot(deck)
         if snap_cold is not None:
             counts = _plugin_index_counts(deck, choices, snap_cold)
-            return {
-                "ok": True,
-                "total": counts["total"],
-                "decided": counts["decided"],
-                "left": counts["left"],
-                "list_size": len(snap_cold.ids),
-                "meter": True,
-            }
+            return _plugin_index_row(deck, counts, len(snap_cold.ids))
         saved = refresh_persisted_summary(deck)
         if saved is not None and saved.ids:
             total, decided, left, list_size = plugin_pile_counts(
                 log_decided, saved.ids, saved.plugin_decided
             )
-            return {
-                "ok": True,
-                "total": total,
-                "decided": decided,
-                "left": left,
-                "list_size": list_size,
-                "meter": True,
-            }
-        ensure_plugin_snapshot(deck)
-        snap_cold = snapshot(deck)
-        if snap_cold is not None:
-            counts = _plugin_index_counts(deck, choices, snap_cold)
-            return {
-                "ok": True,
-                "total": counts["total"],
-                "decided": counts["decided"],
-                "left": counts["left"],
-                "list_size": len(snap_cold.ids),
-                "meter": True,
-            }
+            return _plugin_index_row(
+                deck,
+                {"total": total, "decided": decided, "left": left},
+                list_size,
+            )
         decided = len(log_decided)
-        return {
-            "ok": True,
-            "total": decided if decided else 0,
-            "decided": decided,
-            "left": 0,
-            "meter": decided > 0,
-            "count_label": f"{decided} decided" if decided else None,
-        }
+        return _plugin_index_row(
+            deck,
+            {
+                "total": decided if decided else 0,
+                "decided": decided,
+                "left": 0,
+                "meter": decided > 0,
+                "count_label": f"{decided} decided" if decided else None,
+            },
+            None,
+        )
     if hidden:
         return _hidden_summary(deck, log_decided)
     counts = _plugin_index_counts(deck, choices, snap)
-    return {
-        "ok": True,
-        "total": counts["total"],
-        "decided": counts["decided"],
-        "left": counts["left"],
-        "list_size": len(snap.ids),
-        "meter": True,
-    }
+    return _plugin_index_row(deck, counts, len(snap.ids))
 
 
 def run_plugin_action(deck: Deck, action_id: str) -> dict:
@@ -614,6 +612,17 @@ def _plugin_progress_page(
         "next_after": next_after,
     }
     _attach_offset_paging(out, len(pile), len(page_ids), offset, limit, after)
+    if _counts_hidden(deck):
+        out["meter"] = False
+        out["counts_hidden"] = True
+        from choice.count_prefs import today_count_label
+
+        label = today_count_label(deck)
+        if label:
+            out["count_label"] = label
+    from choice.plugin_stats import apply_endless_counts
+
+    out = apply_endless_counts(deck, out)
     _attach_undo_meta(deck, out)
     return out
 

@@ -970,6 +970,8 @@ def _rows(decks, deck_meta: dict[str, dict] | None = None) -> list[dict]:
             row["meter"] = True
         if snap.get("counts_hidden"):
             row["counts_hidden"] = True
+        if snap.get("endless"):
+            row["endless"] = True
         rows.append(row)
     return rows
 
