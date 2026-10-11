@@ -321,40 +321,20 @@ function showProblem(message) {
   $("main").replaceChildren(box);
 }
 
-async function showLibrary() {
-  stopQueuePoll();
-  state.deckId = null;
-  state.payload = null;
-  state.paged = null;
-  if (location.search) clearAppSearch();
-  state.picking = false;
-  try {
-    const index = await api("/api/index");
-    if (!index.ok) return showProblem(index.message || "Nothing to swipe.");
-    state.index = index;
-  } catch (_err) {
-    return showProblem("Could not reach Choice.");
-  }
-  const name = (state.index && state.index.app_title) || appTitle();
-  $("title").textContent = name;
-  setBrowserTitle(name);
-  $("count").textContent = "";
-  $("tools").hidden = true;
-  $("track").hidden = true;
-  $("actions").hidden = true;
-  $("menu").hidden = false;
-  paintWho();
-  $("status").textContent = "";
-  $("status").hidden = true;
+function libraryDeckRows() {
+  if (!state.index) return [];
+  return state.index.decks && state.index.decks.length
+    ? state.index.decks
+    : state.index.library || [];
+}
+
+function paintHomeLibrary() {
+  const deckRows = libraryDeckRows();
   const list = el("ul", "library");
-  const deckRows =
-    state.index.decks && state.index.decks.length
-      ? state.index.decks
-      : state.index.library || [];
   deckRows.forEach((deck) => {
     const item = el("li");
     if (deck.error) {
-      item.append(el("strong", null, deck.title));
+      item.append(el("strong", "deck-name", deck.title));
       item.append(el("p", "problem", deck.error));
       list.append(item);
       return;
@@ -364,7 +344,9 @@ async function showLibrary() {
     const copy = el("span", "deck-copy");
     copy.append(el("span", "deck-name", deck.title));
     let meta = formatCountMeta(deck);
-    copy.append(el("span", "deck-meta deck-meta" + (deck.stale ? " stale" : ""), meta || ""));
+    const metaEl = el("span", "deck-meta deck-meta" + (deck.stale ? " stale" : ""), meta || "");
+    if (meta) metaEl.title = meta;
+    copy.append(metaEl);
     const row = el("span", "deck-row");
     appendSourceIcon(row, deck.source_type || "deck");
     row.append(copy);
@@ -423,6 +405,34 @@ async function showLibrary() {
   parts.push(licenceLine());
   setupLink(parts);
   $("main").replaceChildren(...parts);
+}
+
+async function showLibrary() {
+  stopQueuePoll();
+  state.deckId = null;
+  state.payload = null;
+  state.paged = null;
+  if (location.search) clearAppSearch();
+  state.picking = false;
+  try {
+    const index = await api("/api/index");
+    if (!index.ok) return showProblem(index.message || "Nothing to swipe.");
+    state.index = index;
+  } catch (_err) {
+    return showProblem("Could not reach Choice.");
+  }
+  const name = (state.index && state.index.app_title) || appTitle();
+  $("title").textContent = name;
+  setBrowserTitle(name);
+  $("count").textContent = "";
+  $("tools").hidden = true;
+  $("track").hidden = true;
+  $("actions").hidden = true;
+  $("menu").hidden = false;
+  paintWho();
+  $("status").textContent = "";
+  $("status").hidden = true;
+  paintHomeLibrary();
 }
 
 async function setupLink(parts) {
@@ -1157,7 +1167,9 @@ function renderDeck() {
   setBrowserTitle(data.title);
   $("tools").hidden = true;
   $("menu").hidden = false;
-  $("count").textContent = formatCountMeta(data);
+  const countText = formatCountMeta(data);
+  $("count").textContent = countText;
+  $("count").title = countText || "";
   $("pending").textContent = state.pending ? "Show all" : "Still to do";
   $("blind").setAttribute("aria-pressed", state.blind ? "true" : "false");
   $("track").hidden = data.meter === false;
@@ -2576,6 +2588,85 @@ function installTestHooks() {
         narrow,
         labels,
         icons,
+      };
+    },
+    mockDeckCounts(patch) {
+      if (!state.payload) return;
+      Object.assign(state.payload, patch);
+      renderDeck();
+    },
+    showScanningEmpty() {
+      if (!state.payload) return;
+      state.payload.scanning = true;
+      state.payload.items = [];
+      renderEmpty();
+    },
+    seedHomeLibrary(decks) {
+      state.index = {
+        ok: true,
+        library: decks,
+        decks,
+        app_title: "Choice UI",
+        warnings: [],
+      };
+      state.deckId = null;
+      state.payload = null;
+      $("title").textContent = "Choice UI";
+      setBrowserTitle("Choice UI");
+      $("count").textContent = "";
+      $("tools").hidden = true;
+      $("track").hidden = true;
+      $("actions").hidden = true;
+      $("menu").hidden = false;
+      $("status").hidden = true;
+      paintHomeLibrary();
+    },
+    layoutMetrics() {
+      const doc = document.documentElement;
+      const overflowX = doc.scrollWidth > doc.clientWidth + 2;
+      const deckNames = [...document.querySelectorAll(".deck-name")].map((el) => {
+        const text = (el.textContent || "").trim();
+        const rect = el.getBoundingClientRect();
+        const style = window.getComputedStyle(el);
+        const lh = parseFloat(style.lineHeight) || 18;
+        const lines = Math.max(1, Math.round(rect.height / lh));
+        const charsPerLine = text.replace(/\s+/g, "").length / Math.max(lines, 1);
+        const singleCharWrap = lines > 2 && text.length > 3 && charsPerLine < 2.2;
+        return { text, lines, width: rect.width, singleCharWrap };
+      });
+      const smallTaps = [];
+      document.querySelectorAll("button, a[href]").forEach((el) => {
+        if (el.hidden || el.offsetParent === null) return;
+        if (el.closest(".fine, .setup-link")) return;
+        const r = el.getBoundingClientRect();
+        if (r.width < 1 || r.height < 1) return;
+        if (r.width < 44 || r.height < 44) {
+          smallTaps.push({
+            id: el.id || "",
+            cls: String(el.className || "").slice(0, 40),
+            w: Math.round(r.width),
+            h: Math.round(r.height),
+          });
+        }
+      });
+      const controls = ["#menu", "#actions", "#home", "#pending", "#queue-badge"].map((sel) => {
+        const node = document.querySelector(sel);
+        if (!node || node.hidden) return { sel, ok: true, skipped: true };
+        const r = node.getBoundingClientRect();
+        const ok =
+          r.left >= -2 &&
+          r.top >= -2 &&
+          r.right <= window.innerWidth + 2 &&
+          r.bottom <= window.innerHeight + 2;
+        return { sel, ok, rect: { l: r.left, t: r.top, r: r.right, b: r.bottom } };
+      });
+      return {
+        overflowX,
+        deckNames,
+        badDecks: deckNames.filter((row) => row.singleCharWrap),
+        smallTaps: smallTaps.slice(0, 12),
+        controls,
+        viewport: { w: window.innerWidth, h: window.innerHeight },
       };
     },
     cardLayoutMetrics() {

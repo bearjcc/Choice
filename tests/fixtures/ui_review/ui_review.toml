@@ -1,0 +1,35 @@
+[state]
+dir = "state"
+
+[[sources]]
+id = "examples"
+type = "folder"
+path = "../../../examples"
+
+[[sources]]
+id = "local"
+type = "folder"
+path = "../modal_layout"
+
+[[sources]]
+id = "swipe"
+type = "swipe"
+path = "../swipe"
+
+[[decks]]
+id = "yes-no"
+title = "Yes or no"
+source = "examples"
+mount = "yes-no"
+
+[[decks]]
+id = "sort-pile"
+title = "Sort pile"
+source = "local"
+mount = "sort_pile"
+
+[[decks]]
+id = "images"
+title = "Images"
+source = "swipe"
+mount = "example_images"

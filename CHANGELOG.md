@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.2 (2026-10-10)
+
+### Fixed
+
+- Home deck list: titles no longer break mid-word; long count labels sit on a muted second line on phones (ellipsis + `title` tooltip), with side-by-side layout on wider screens.
+- Deck header count truncates on narrow viewports; menu icon meets 44px tap target.
+- Wider library column on large laptops (920px).
+
+### Tests
+
+- Playwright UI review at six viewport sizes with stress fixtures, overflow/title/tap-target assertions, and 390px + 1366px screenshots.
+
 ## 0.5.1 (2026-10-10)
 
 ### Fixed

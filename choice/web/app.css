@@ -108,7 +108,7 @@ button:disabled:active { transform: none; }
 .icon-btn {
   flex-shrink: 0;
   min-width: 44px;
-  min-height: 36px;
+  min-height: 44px;
   padding: 4px 12px;
   border-radius: 999px;
   background: transparent;
@@ -151,7 +151,30 @@ button:disabled:active { transform: none; }
   color: var(--muted);
   font-size: 0.82rem;
   font-variant-numeric: tabular-nums;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+@media (max-width: 699px) {
+  .top-row {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+
+  .top-row h1 {
+    flex: 1 1 12rem;
+    min-width: 0;
+  }
+
+  .top-row .count {
+    flex: 1 1 100%;
+    order: 3;
+    padding-left: 2px;
+  }
 }
 
 .queue-badge {
@@ -367,9 +390,10 @@ dialog.app-dialog .order-filter-form {
 
 .deck-copy {
   display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 12px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  flex: 1 1 auto;
   min-width: 0;
 }
 
@@ -377,15 +401,44 @@ dialog.app-dialog .order-filter-form {
   font-weight: 700;
   font-size: 1.15rem;
   letter-spacing: -0.01em;
-  overflow-wrap: anywhere;
+  line-height: 1.25;
+  flex: 0 1 auto;
+  min-width: min(100%, 6.5rem);
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: none;
 }
 
 .deck-meta {
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
+  line-height: 1.35;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+@media (min-width: 720px) {
+  .deck-copy {
+    flex-direction: row;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  .deck-name {
+    flex: 1 1 auto;
+    min-width: 8rem;
+  }
+
+  .deck-meta {
+    flex: 0 1 min(48%, 22rem);
+    text-align: right;
+  }
 }
 
 .bar {
@@ -1223,13 +1276,29 @@ main > .fine {
   margin: 16px auto 8px;
 }
 
-.fine a { color: var(--focus); }
+.fine a {
+  color: var(--focus);
+  display: inline-block;
+  padding: 10px 2px;
+  margin: -6px 0;
+  min-height: 44px;
+  line-height: 1.4;
+}
 
 @media (min-width: 700px) {
   main { padding: 16px 20px 10px; }
   dialog.app-dialog .dialog-shell {
     border-radius: 18px;
     box-shadow: 0 12px 40px var(--shadow);
+  }
+}
+
+@media (min-width: 1200px) {
+  .library,
+  .empty,
+  .card,
+  .stack {
+    width: min(920px, 100%);
   }
 }
 
