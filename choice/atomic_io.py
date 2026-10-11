@@ -5,28 +5,46 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
+import threading
 import time
 from pathlib import Path
 from typing import Any
 
 _WIN_SHARING = {5, 13, 32}
+_path_locks: dict[str, threading.Lock] = {}
+_lock_guard = threading.Lock()
+
+
+def _path_lock(path: Path) -> threading.Lock:
+    key = str(path.resolve())
+    with _lock_guard:
+        lock = _path_locks.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _path_locks[key] = lock
+        return lock
 
 
 def write_text_atomic(path: Path, text: str, *, encoding: str = "utf-8") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
-    try:
-        with open(tmp, "w", encoding=encoding) as handle:
-            handle.write(text)
-            handle.flush()
-            os.fsync(handle.fileno())
-        atomic_replace(tmp, path)
-    finally:
-        if tmp.is_file():
-            try:
-                tmp.unlink()
-            except OSError:
-                pass
+    lock = _path_lock(path)
+    with lock:
+        prefix = f"{path.name}.{os.getpid()}.{threading.get_ident()}."
+        fd, tmp_name = tempfile.mkstemp(prefix=prefix, suffix=".tmp", dir=path.parent)
+        tmp = Path(tmp_name)
+        try:
+            with os.fdopen(fd, "w", encoding=encoding) as handle:
+                handle.write(text)
+                handle.flush()
+                os.fsync(handle.fileno())
+            atomic_replace(tmp, path)
+        finally:
+            if tmp.is_file():
+                try:
+                    tmp.unlink()
+                except OSError:
+                    pass
 
 
 def write_json_atomic(

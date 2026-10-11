@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.3 (2026-10-11)
+
+### Fixed
+
+- Atomic writes: unique temp files per write, per-path lock, and state cleanup for mkstemp-style temps (Windows concurrent folder_index saves).
+- Windows stale-temp cleanup: `pid_alive` uses `OpenProcess` / `GetExitCodeProcess` instead of `os.kill(pid, 0)`; young temps skip the probe.
+- Plugin home counts: serve persisted `list_counts.json` immediately, refresh in the background when older than ~60s (startup + index), one refresh per deck at a time.
+- Home UI: very long unbroken deck titles wrap without pushing the ⋯ menu off-screen; count meta no longer duplicates “N left” when the label already includes it.
+- Playwright home-stress pins `/api/index` so desktop runs are not overwritten by live index data.
+
+### Tests
+
+- Concurrent atomic JSON writes; Windows `pid_alive` mock on Linux; background stale count refresh; UI review route stub and count-meta checks.
+
 ## 0.5.2 (2026-10-10)
 
 ### Fixed

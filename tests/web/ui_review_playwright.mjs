@@ -44,6 +44,12 @@ const STRESS_DECKS = [
     meter: true,
   },
   {
+    id: "longrun",
+    title: "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijkl",
+    left: 2,
+    total: 10,
+  },
+  {
     id: "long",
     title: "Very Long Deck Title That Should Stay Readable",
     left: 12,
@@ -95,8 +101,26 @@ async function openDeck(page, title) {
   await page.waitForSelector("#menu:not([hidden])", { timeout: 15_000 });
 }
 
+async function installStressIndexStub(page) {
+  const body = JSON.stringify({
+    ok: true,
+    library: STRESS_DECKS,
+    decks: STRESS_DECKS,
+    app_title: "Choice UI",
+    warnings: [],
+  });
+  await page.route("**/api/index**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body });
+  });
+}
+
 async function runScenario(page, vp, scenario) {
   await page.setViewportSize({ width: vp.width, height: vp.height });
+  if (scenario.indexStub) {
+    await installStressIndexStub(page);
+  } else {
+    await page.unroute("**/api/index**").catch(() => {});
+  }
   await page.goto(baseUrl, { waitUntil: "domcontentloaded", timeout: 25_000 });
   await page.waitForFunction(() => window.ChoiceTestHooks);
   await scenario.setup(page);
@@ -109,8 +133,23 @@ async function runScenario(page, vp, scenario) {
 const SCENARIOS = [
   {
     name: "home-stress",
+    indexStub: true,
     setup: async (page) => {
       await page.evaluate((decks) => window.ChoiceTestHooks.seedHomeLibrary(decks), STRESS_DECKS);
+      const dup = await page.evaluate(() =>
+        window.ChoiceTestHooks.formatCountMeta({
+          left: 3810,
+          count_label: "3,810 borderline left",
+        }),
+      );
+      if (dup.includes("3810 left")) {
+        throw new Error(`duplicate left in count meta: ${dup}`);
+      }
+      const vw = page.viewportSize().width;
+      const more = await page.locator(".library .deck-more").first().boundingBox();
+      if (!more || more.x + more.width > vw + 2) {
+        throw new Error("deck-more menu pushed off screen");
+      }
     },
   },
   {
@@ -132,9 +171,9 @@ const SCENARIOS = [
       await openDeck(page, "Yes or no");
       await page.evaluate(() =>
         window.ChoiceTestHooks.mockDeckCounts({
-          count_label: "12 left · 3,810 borderline left",
-          left: 12,
-          total: 50,
+          count_label: "3,810 borderline left",
+          left: 3810,
+          total: 5000,
           meter: true,
         }),
       );

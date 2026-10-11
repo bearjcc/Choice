@@ -42,6 +42,15 @@ function setBrowserTitle(text) {
   document.title = text;
 }
 
+function countLabelIncludesLeft(label, left) {
+  if (left == null || !label) return false;
+  const n = Number(left);
+  if (!Number.isFinite(n)) return false;
+  if (!/\bleft\b/i.test(label)) return false;
+  const digits = String(n);
+  return label.replace(/,/g, "").includes(digits);
+}
+
 function formatCountMeta(data) {
   if (!data) return "";
   if (data.endless) return data.count_label || "∞";
@@ -50,7 +59,10 @@ function formatCountMeta(data) {
   if (data.stale && data.left != null && !data.count_label) {
     return left + " · scanning";
   }
-  if (data.count_label && left) return left + " · " + data.count_label;
+  if (data.count_label && left) {
+    if (countLabelIncludesLeft(data.count_label, data.left)) return data.count_label;
+    return left + " · " + data.count_label;
+  }
   if (data.count_label) return data.count_label;
   return left;
 }
@@ -2669,6 +2681,7 @@ function installTestHooks() {
         viewport: { w: window.innerWidth, h: window.innerHeight },
       };
     },
+    formatCountMeta,
     cardLayoutMetrics() {
       const card = document.querySelector("article.card.image");
       if (!card) return { ok: false, reason: "no-image-card" };

@@ -1,10 +1,12 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 import os
+import sys
 import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from choice.state_cleanup import cleanup_atomic_tmp_in, pid_alive
 
@@ -40,6 +42,25 @@ class StateCleanupTests(unittest.TestCase):
             os.utime(old, (ancient, ancient))
             removed = cleanup_atomic_tmp_in(root, now=time.time())
             self.assertIn(old, removed)
+
+    def test_removes_mkstemp_style_tmp_when_old(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            stale = root / "folder_index.json.42.99.a1b2c3.tmp"
+            stale.write_text("partial", encoding="utf-8")
+            ancient = time.time() - 700
+            os.utime(stale, (ancient, ancient))
+            removed = cleanup_atomic_tmp_in(root, now=time.time())
+            self.assertIn(stale, removed)
+
+    def test_windows_pid_alive_uses_exit_code(self):
+        if sys.platform == "win32":
+            self.assertTrue(pid_alive(os.getpid()))
+            return
+        with mock.patch("choice.state_cleanup.sys.platform", "win32"):
+            with mock.patch("choice.state_cleanup._pid_alive_windows", return_value=False) as probe:
+                self.assertFalse(pid_alive(4242))
+                probe.assert_called_once_with(4242)
 
 
 if __name__ == "__main__":

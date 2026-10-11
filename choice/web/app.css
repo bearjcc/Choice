@@ -338,6 +338,7 @@ dialog.app-dialog .order-filter-form {
   display: flex;
   align-items: stretch;
   gap: 4px;
+  min-width: 0;
 }
 
 .deck-more {
@@ -355,6 +356,7 @@ dialog.app-dialog .order-filter-form {
   align-items: center;
   gap: 12px;
   width: 100%;
+  min-width: 0;
 }
 
 .deck-icon {
@@ -375,7 +377,9 @@ dialog.app-dialog .order-filter-form {
 }
 
 .deck-link {
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 0;
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -404,9 +408,9 @@ dialog.app-dialog .order-filter-form {
   line-height: 1.25;
   flex: 0 1 auto;
   min-width: min(100%, 6.5rem);
-  overflow-wrap: normal;
   word-break: normal;
   hyphens: none;
+  overflow-wrap: anywhere;
 }
 
 .deck-meta {

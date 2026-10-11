@@ -1059,9 +1059,12 @@ def _boot_work_queue(server: ChoiceSite) -> None:
                     continue
                 seen.add(key)
                 resume_workers(deck.state_dir)
+        from choice.deck_index import schedule_stale_plugin_counts_for_decks
+
         for deck in opened.decks:
             boot_deck(deck)
             kick_background_scan(deck)
+        schedule_stale_plugin_counts_for_decks(opened.decks)
 
 
 def serve(

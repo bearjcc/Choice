@@ -13,11 +13,13 @@ from choice.bounded_cache import LruDict
 from choice.load import Deck, Item
 
 _INDEX_TTL = 45.0
+_COUNTS_STALE_SEC = 60.0
 _COUNTS_NAME = "list_counts.json"
 _list_locks: LruDict[str, threading.RLock] = LruDict(128)
 _guard = threading.Lock()
 _index: LruDict[str, tuple[float, _Snapshot]] = LruDict(128)
 _warm_scheduled: set[str] = set()
+_counts_refresh_scheduled: set[str] = set()
 
 
 @dataclass
@@ -111,6 +113,63 @@ def _warm_worker(deck: Deck) -> None:
             deck.load_items()
         except Exception:
             return
+
+
+def list_counts_age(deck: Deck, *, now: float | None = None) -> float | None:
+    path = deck.state_dir / _COUNTS_NAME
+    if not path.is_file():
+        return None
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        return None
+    clock = now if now is not None else time.time()
+    return clock - mtime
+
+
+def schedule_plugin_counts_refresh(deck: Deck) -> None:
+    """Reload plugin list_items in the background when persisted counts are old."""
+    if os.environ.get("CHOICE_DISABLE_WARM"):
+        return
+    if deck.plugin is None or deck.problem:
+        return
+    key = str(deck.state_dir)
+    with _guard:
+        if key in _counts_refresh_scheduled:
+            return
+        _counts_refresh_scheduled.add(key)
+    threading.Thread(
+        target=_counts_refresh_worker,
+        args=(deck, key),
+        name=f"counts-{deck.id}",
+        daemon=True,
+    ).start()
+
+
+def _counts_refresh_worker(deck: Deck, key: str) -> None:
+    try:
+        with list_lock(deck):
+            try:
+                deck.load_items()
+            except Exception:
+                return
+    finally:
+        with _guard:
+            _counts_refresh_scheduled.discard(key)
+
+
+def schedule_stale_plugin_counts_refresh(deck: Deck) -> bool:
+    """Schedule a background refresh when list_counts.json is older than the TTL."""
+    age = list_counts_age(deck)
+    if age is None or age <= _COUNTS_STALE_SEC:
+        return False
+    schedule_plugin_counts_refresh(deck)
+    return True
+
+
+def schedule_stale_plugin_counts_for_decks(decks: list[Deck]) -> None:
+    for deck in decks:
+        schedule_stale_plugin_counts_refresh(deck)
 
 
 def _persist_counts(deck: Deck, snap: _Snapshot) -> None:

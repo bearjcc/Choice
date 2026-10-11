@@ -325,13 +325,22 @@ def index_summary(deck: Deck) -> dict:
                 "meter": snap_full.get("meter", True),
                 "count_label": snap_full.get("count_label"),
             }
-        schedule_plugin_warm(deck)
-        from choice.deck_index import ensure_plugin_snapshot
+        from choice.deck_index import (
+            ensure_plugin_snapshot,
+            persisted_summary,
+            schedule_stale_plugin_counts_refresh,
+        )
 
-        if os.environ.get("CHOICE_DISABLE_WARM"):
-            ensure_plugin_snapshot(deck)
+        saved_quick = persisted_summary(deck)
+        counts_stale = False
+        if saved_quick is not None and saved_quick.ids:
+            counts_stale = schedule_stale_plugin_counts_refresh(deck)
+        else:
+            schedule_plugin_warm(deck)
+            if os.environ.get("CHOICE_DISABLE_WARM"):
+                ensure_plugin_snapshot(deck)
         snap_cold = snapshot(deck)
-        if snap_cold is not None:
+        if snap_cold is not None and not (saved_quick is not None and saved_quick.ids):
             counts = _plugin_index_counts(deck, choices, snap_cold)
             return _plugin_index_row(deck, counts, len(snap_cold.ids))
         saved = refresh_persisted_summary(deck)
@@ -339,11 +348,14 @@ def index_summary(deck: Deck) -> dict:
             total, decided, left, list_size = plugin_pile_counts(
                 log_decided, saved.ids, saved.plugin_decided
             )
-            return _plugin_index_row(
+            row = _plugin_index_row(
                 deck,
                 {"total": total, "decided": decided, "left": left},
                 list_size,
             )
+            if counts_stale:
+                row["stale"] = True
+            return row
         decided = len(log_decided)
         return _plugin_index_row(
             deck,
