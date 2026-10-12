@@ -3,6 +3,7 @@
 import json
 import os
 import subprocess
+import tempfile
 import threading
 import unittest
 from pathlib import Path
@@ -12,7 +13,12 @@ from choice.httpd import ChoiceSite
 ROOT = Path(__file__).resolve().parents[1]
 FIX = ROOT / "tests" / "fixtures" / "ui_review"
 CONFIG = FIX / "ui_review.toml"
-SHOT_DIR = Path("/opt/cursor/artifacts/screenshots/ui-review")
+SHOT_DIR = Path(
+    os.environ.get(
+        "CHOICE_UI_SHOT_DIR",
+        str(Path(tempfile.gettempdir()) / "choice-ui-review-shots"),
+    )
+)
 
 
 class WebUiReviewTests(unittest.TestCase):

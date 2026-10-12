@@ -124,7 +124,7 @@ mount = "{mount}"
         self.assertEqual(snap["left"], 3)
         self.assertEqual(snap["total"], 2136)
 
-    def test_old_list_counts_upgrades_on_first_read(self):
+    def test_old_list_counts_upgrades_on_progress_not_index(self):
         deck = self._deck("decided_flag")
         counts = deck.state_dir / "list_counts.json"
         counts.parent.mkdir(parents=True, exist_ok=True)
@@ -133,10 +133,15 @@ mount = "{mount}"
             encoding="utf-8",
         )
         clear_index(deck)
+        home = index_summary(deck)
+        self._assert_invariant(home)
+        self.assertEqual(home["left"], 503)
+        saved = refresh_persisted_summary(deck)
+        self.assertIsNotNone(saved)
+        self.assertTrue(saved.ids)
         snap = index_summary(deck)
         self._assert_invariant(snap)
         self.assertEqual(snap["left"], 1)
-        self.assertNotEqual(snap["left"], 504)
         upgraded = json.loads(counts.read_text(encoding="utf-8"))
         self.assertIn("ids", upgraded)
         self.assertEqual(len(upgraded["ids"]), 2)

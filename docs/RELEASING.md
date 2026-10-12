@@ -228,7 +228,7 @@ Add or enforce via **`.gitattributes`**, **`.gitignore`**, and **CONTRIBUTING** 
 
 **Never commit**
 
-- Agent / LLM session exports, prompts, transcripts, `.cursor/`, `.aider*`, `uploads/` working notes.
+- Local editor or assistant working trees, scratch notes under `uploads/`, and other machine-specific dot-directories (see `.gitignore`).
 - Virtualenvs, `__pycache__`, `.pytest_cache`, `node_modules`, local `choice.toml` / secrets.
 - Generated state under `examples/**/.choice/` or test fixture `state/` (already partially gitignored).
 

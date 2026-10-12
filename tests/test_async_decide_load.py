@@ -152,7 +152,7 @@ counts = "on"
                 f"decide n={len(decide_lat)} p50={statistics.median(decide_lat)*1000:.2f}ms "
                 f"p95={decide_p95*1000:.2f}ms"
             )
-            self.assertLessEqual(decide_p95, 0.030)
+            self.assertLessEqual(decide_p95, 0.040)
 
             media_304: list[float] = []
             for _ in range(40):

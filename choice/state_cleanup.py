@@ -87,9 +87,8 @@ def cleanup_atomic_tmp_in(
             pid = int(legacy.group(1))
             if age < max_age_seconds:
                 if age < _PROBE_MIN_AGE:
-                    if pid_alive(pid):
-                        continue
-                elif pid_alive(pid):
+                    continue
+                if pid_alive(pid):
                     continue
         try:
             path.unlink()
