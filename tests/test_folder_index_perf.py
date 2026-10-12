@@ -29,7 +29,7 @@ def _build_tree(root: Path, file_count: int, dir_count: int) -> None:
 
 class FolderIndexPerfTests(unittest.TestCase):
     def setUp(self):
-        self._tmp = tempfile.TemporaryDirectory()
+        self._tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.tmp = Path(self._tmp.name)
         self._deck = None
         self._stop: threading.Event | None = None
@@ -40,11 +40,18 @@ class FolderIndexPerfTests(unittest.TestCase):
             self._stop.set()
         if self._growth_thread is not None:
             self._growth_thread.join(timeout=5.0)
-        if self._deck is not None:
-            from choice.work_queue import wait_idle
+        from choice.work_queue import wait_idle
 
+        for queue in self.tmp.rglob("work_queue.json"):
+            wait_idle(queue.parent, timeout=90.0)
+        if self._deck is not None:
             wait_idle(self._deck.state_dir, timeout=90.0)
-        self._tmp.cleanup()
+        time.sleep(0.75 if os.name == "nt" else 0.25)
+        try:
+            self._tmp.cleanup()
+        except OSError:
+            time.sleep(1.0)
+            self._tmp.cleanup()
 
     def test_large_deck_index_and_items_stay_fast_while_growing(self):
         tmp_path = self.tmp
@@ -86,7 +93,7 @@ recursive = true
                 i += 1
                 time.sleep(0.004)
 
-        thread = threading.Thread(target=_add_files, daemon=True)
+        thread = threading.Thread(target=_add_files, daemon=False)
         self._growth_thread = thread
         thread.start()
         index_times: list[float] = []
