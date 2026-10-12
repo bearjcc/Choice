@@ -67,6 +67,20 @@ test("undo: anchor restores undone card index", () => {
   assert.equal(restored[afterUndo].id, "a");
 });
 
+test("missing anchor keeps nearest index not zero", () => {
+  const items = [item("b"), item("c"), item("d")];
+  const pos = nav.syncPosToAnchor(items, 2, "a");
+  assert.equal(pos, 2);
+  assert.equal(items[pos].id, "d");
+});
+
+test("merge reload keeps client order then appends server tail", () => {
+  const prev = [item("a"), item("b"), item("c")];
+  const server = [item("z"), item("a"), item("b")];
+  const merged = nav.mergeReloadItems(prev, server, 1);
+  assert.equal(merged.map((r) => r.id).join(","), "a,b,z");
+});
+
 test("undo pending: restored card is current", () => {
   const items = [item("b"), item("c")];
   const pos = 0;
@@ -83,4 +97,14 @@ test("undo pending: after swipe then optimistic restore shows undone card", () =
   assert.equal(nav.currentItem(afterSwipe.items, afterSwipe.pos).id, "b");
   const afterUndo = nav.restorePendingUndo(afterSwipe.items, afterSwipe.pos, item("a"));
   assert.equal(nav.currentItem(afterUndo.items, afterUndo.pos).id, "a");
+});
+
+test("undo pending: restored card is pinned to pile front", () => {
+  let items = [item("a"), item("b"), item("c")];
+  const pos = 1;
+  const afterSwipe = nav.removePendingSwipe(items, pos, "b");
+  const afterUndo = nav.restorePendingUndo(afterSwipe.items, afterSwipe.pos, item("b"));
+  assert.equal(afterUndo.pos, 0);
+  assert.equal(afterUndo.items[0].id, "b");
+  assert.equal(nav.currentItem(afterUndo.items, afterUndo.pos).id, "b");
 });

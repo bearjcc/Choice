@@ -4,7 +4,10 @@
 # Environment overrides (see also CLI flags):
 #   CHOICE_CONFIG, CHOICE_PATH, CHOICE_HOST, CHOICE_PORT, CHOICE_LAN, CHOICE_OPEN,
 #   CHOICE_BASE_PATH, CHOICE_TITLE, CHOICE_STATE_DIR, CHOICE_SECRETS_FILE,
-#   CHOICE_USERS_FILE, CHOICE_DISABLE_WARM, CHOICE_SYNC_WORK
+#   CHOICE_USERS_FILE, CHOICE_DISABLE_WARM, CHOICE_SYNC_WORK, CHOICE_CLIENT_BUFFER
+
+# [client]
+# buffer = 30
 
 # Optional tab/header name when several instances share one host (overridable with --title / CHOICE_TITLE).
 # title = "Spicy"

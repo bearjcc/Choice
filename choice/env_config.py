@@ -37,3 +37,6 @@ def apply_config_env(config: AppConfig) -> None:
     title = os.environ.get("CHOICE_TITLE")
     if title is not None and str(title).strip():
         config.app_title = str(title).strip()
+    from choice.client_buffer import buffer_size_from_env
+
+    config.client_buffer = buffer_size_from_env(config.client_buffer)
