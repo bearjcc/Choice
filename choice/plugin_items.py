@@ -13,10 +13,20 @@ from choice.load import Deck, Item
 log = logging.getLogger(__name__)
 
 
-def materialize_plugin_list(plugin: Any, deck: Deck) -> list[dict] | None:
+def materialize_plugin_list(
+    plugin: Any, deck: Deck, *, plugin_filter: dict | None = None
+) -> list[dict] | None:
     """Call list_items once; return a snapshot list or None on total failure."""
+    from choice.plugin_filters import should_pass_filter
+
+    filt = plugin_filter
+    if filt is not None and not should_pass_filter(plugin, filt):
+        filt = None
     try:
-        raw = plugin.list_items()
+        if filt is not None and hasattr(plugin, "list_items"):
+            raw = plugin.list_items(filter=filt)
+        else:
+            raw = plugin.list_items()
     except Exception as exc:
         log.warning("plugin list_items failed for deck %s: %s", deck.id, exc, exc_info=True)
         return None
@@ -77,8 +87,16 @@ def load_swipe_plugin_items(
     plugin: Any,
     folder,
     converter: Callable[[dict, Any, Any], tuple[Item, list[str]]],
+    *,
+    plugin_filter: dict | None = None,
 ) -> tuple[list[Item], list[str]]:
-    rows = materialize_plugin_list(plugin, deck)
+    from choice.plugin_filters import get_request_filter, selection_to_plugin_filter
+
+    filt = plugin_filter
+    if filt is None:
+        sel = get_request_filter()
+        filt = selection_to_plugin_filter(sel) if sel else None
+    rows = materialize_plugin_list(plugin, deck, plugin_filter=filt)
     if rows is None:
         fb = fallback_items(deck, "using last good item list after plugin list_items error")
         if fb is not None:

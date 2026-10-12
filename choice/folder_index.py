@@ -730,6 +730,11 @@ def _passes(
 ) -> bool:
     if scan.images_only and not _is_image(path):
         return False
+    if scan.images_only and _is_image(path):
+        from choice.image_probe import image_readable
+
+        if not image_readable(path):
+            return False
     if not match_globs(rel, path.name, scan.include, scan.exclude):
         return False
     resolved = path.resolve()

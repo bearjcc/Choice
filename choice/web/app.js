@@ -22,6 +22,10 @@ const state = {
   lastSwipe: null,
   bufferSize: 30,
   itemsLoadSeq: 0,
+  filterSelection: null,
+  filterStats: null,
+  filterFlushing: false,
+  filterEpoch: 0,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -97,6 +101,68 @@ function setAppSearch(query) {
 function clearAppSearch() {
   if (!location.search) return;
   history.pushState(null, "", appRoot());
+}
+
+function filterSessionKey(deckId) {
+  return "choice.filter." + deckId;
+}
+
+function encodeFilterParam(selection) {
+  if (!selection || typeof selection !== "object") return "";
+  const keys = Object.keys(selection);
+  if (!keys.length) return "";
+  const json = JSON.stringify(selection);
+  const bytes = new TextEncoder().encode(json);
+  let bin = "";
+  bytes.forEach((b) => {
+    bin += String.fromCharCode(b);
+  });
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function decodeFilterParam(raw) {
+  if (!raw || !String(raw).trim()) return null;
+  let text = String(raw).trim().replace(/-/g, "+").replace(/_/g, "/");
+  const pad = "=".repeat((4 - (text.length % 4)) % 4);
+  try {
+    const bin = atob(text + pad);
+    const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+    const parsed = JSON.parse(new TextDecoder().decode(bytes));
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch (_err) {
+    return null;
+  }
+}
+
+function loadFilterSelectionForDeck(deckId) {
+  const fromUrl = decodeFilterParam(new URLSearchParams(location.search).get("f"));
+  if (fromUrl) return fromUrl;
+  try {
+    const stored = sessionStorage.getItem(filterSessionKey(deckId));
+    if (stored) return JSON.parse(stored);
+  } catch (_err) {
+    /* ignore */
+  }
+  return null;
+}
+
+function persistFilterSelection() {
+  if (!state.deckId) return;
+  const key = filterSessionKey(state.deckId);
+  if (!state.filterSelection || !Object.keys(state.filterSelection).length) {
+    sessionStorage.removeItem(key);
+    return;
+  }
+  sessionStorage.setItem(key, JSON.stringify(state.filterSelection));
+}
+
+function syncAppSearch() {
+  const params = new URLSearchParams();
+  if (state.deckId) params.set("deck", state.deckId);
+  const f = encodeFilterParam(state.filterSelection);
+  if (f) params.set("f", f);
+  const qs = params.toString();
+  setAppSearch(qs);
 }
 
 function el(tag, className, text) {
@@ -987,11 +1053,13 @@ async function openDeck(id, push) {
   updateMediaWidth();
   state.deckId = id;
   state.pos = 0;
+  state.filterStats = null;
+  state.filterSelection = loadFilterSelectionForDeck(id);
   $("status").textContent = "";
   const stored = localStorage.getItem(blindKey(id));
   const deck = (state.index.decks || []).find((row) => row.id === id);
   if (deck && deck.error) return showProblem(deck.error);
-  if (push) setAppSearch("deck=" + encodeURIComponent(id));
+  if (push) syncAppSearch();
   const ok = await loadItems(stored);
   if (ok) {
     startQueuePoll();
@@ -1000,6 +1068,7 @@ async function openDeck(id, push) {
 }
 
 function heldItemIds() {
+  if (state.filterFlushing) return "";
   const items = (state.payload && state.payload.items) || [];
   const cap = state.bufferSize || 30;
   if (!items.length) return "";
@@ -1023,7 +1092,150 @@ function itemsApiPath(cursor, limit) {
   if (cursor) path += "&after=" + encodeURIComponent(cursor);
   const held = heldItemIds();
   if (held) path += "&held=" + encodeURIComponent(held);
+  const f = encodeFilterParam(state.filterSelection);
+  if (f) path += "&f=" + encodeURIComponent(f);
   return path;
+}
+
+function statsApiPath() {
+  let path = "/api/decks/" + encodeURIComponent(state.deckId) + "/stats";
+  const f = encodeFilterParam(state.filterSelection);
+  if (f) path += "?f=" + encodeURIComponent(f);
+  return path;
+}
+
+function defaultMatchMode(filterSpec) {
+  const modes = filterSpec && filterSpec.match;
+  if (Array.isArray(modes) && modes.length) return modes[0];
+  return "any";
+}
+
+function filterSelectionEmpty() {
+  const sel = state.filterSelection;
+  if (!sel) return true;
+  return !Object.keys(sel).some((key) => {
+    if (key === "_sort") return !!sel[key];
+    const row = sel[key];
+    return row && row.values && row.values.length;
+  });
+}
+
+async function applyFilterChange(nextSelection) {
+  if (state.busy || state.filterFlushing) return;
+  state.filterSelection = nextSelection;
+  if (filterSelectionEmpty()) state.filterSelection = null;
+  persistFilterSelection();
+  syncAppSearch();
+  state.anchorAfterLoad = current() ? current().id : null;
+  state.filterEpoch = (state.filterEpoch || 0) + 1;
+  state.paged = null;
+  state.filterFlushing = true;
+  ++state.itemsLoadSeq;
+  const ok = await loadItems();
+  state.filterFlushing = false;
+  if (ok) {
+    refreshQueueBadge();
+    renderDeck();
+  }
+}
+
+function toggleFilterValue(filterId, value, filterSpec) {
+  const sel = Object.assign({}, state.filterSelection || {});
+  const row = Object.assign({ values: [] }, sel[filterId] || {});
+  const multi = filterSpec && filterSpec.multi !== false;
+  const idx = row.values.indexOf(value);
+  if (idx === -1) {
+    row.values = multi ? row.values.concat(value) : [value];
+    if (filterSpec && filterSpec.match && !row.match) row.match = defaultMatchMode(filterSpec);
+  } else {
+    row.values = row.values.filter((v) => v !== value);
+  }
+  if (!row.values.length) delete sel[filterId];
+  else sel[filterId] = row;
+  applyFilterChange(Object.keys(sel).length ? sel : null);
+}
+
+function setFilterMatch(filterId, mode) {
+  const sel = Object.assign({}, state.filterSelection || {});
+  const row = Object.assign({ values: [] }, sel[filterId] || {});
+  if (!row.values.length) return;
+  row.match = mode;
+  sel[filterId] = row;
+  applyFilterChange(sel);
+}
+
+function setFilterSort(value) {
+  const sel = Object.assign({}, state.filterSelection || {});
+  if (!value) delete sel._sort;
+  else sel._sort = value;
+  applyFilterChange(Object.keys(sel).length ? sel : null);
+}
+
+function paintFilterBar(schema) {
+  const bar = $("filter-bar");
+  if (!bar) return;
+  if (!schema || !schema.filters || !schema.filters.length) {
+    bar.hidden = true;
+    bar.replaceChildren();
+    return;
+  }
+  bar.hidden = false;
+  bar.replaceChildren();
+  const sel = state.filterSelection || {};
+  schema.filters.forEach((filterSpec) => {
+    if (!filterSpec || filterSpec.type !== "tags" || !filterSpec.id) return;
+    const group = el("div", "filter-group");
+    group.append(el("span", "filter-label", filterSpec.label || filterSpec.id));
+    const chips = el("div", "filter-chips");
+    (filterSpec.options || []).forEach((opt) => {
+      const value = String(opt.value);
+      const active =
+        sel[filterSpec.id] &&
+        sel[filterSpec.id].values &&
+        sel[filterSpec.id].values.indexOf(value) !== -1;
+      const chip = el("button", "filter-chip" + (active ? " on" : ""), opt.label || value);
+      chip.type = "button";
+      if (opt.count != null) chip.title = String(opt.count);
+      chip.addEventListener("click", () => toggleFilterValue(filterSpec.id, value, filterSpec));
+      chips.append(chip);
+    });
+    group.append(chips);
+    const modes = filterSpec.match;
+    if (Array.isArray(modes) && modes.length > 1 && sel[filterSpec.id] && sel[filterSpec.id].values.length) {
+      const toggle = el("div", "filter-match");
+      modes.forEach((mode) => {
+        const btn = el(
+          "button",
+          "filter-match-btn" + (sel[filterSpec.id].match === mode ? " on" : ""),
+          mode
+        );
+        btn.type = "button";
+        btn.addEventListener("click", () => setFilterMatch(filterSpec.id, mode));
+        toggle.append(btn);
+      });
+      group.append(toggle);
+    }
+    bar.append(group);
+  });
+  if (schema.sort && schema.sort.length) {
+    const sortRow = el("div", "filter-group filter-sort");
+    sortRow.append(el("span", "filter-label", "Sort"));
+    const pick = el("select", "filter-sort");
+    const blank = document.createElement("option");
+    blank.value = "";
+    blank.textContent = "Default";
+    pick.append(blank);
+    schema.sort.forEach((row) => {
+      const opt = document.createElement("option");
+      opt.value = row.value;
+      opt.textContent = row.label || row.value;
+      if (sel._sort === row.value) opt.selected = true;
+      pick.append(opt);
+    });
+    pick.addEventListener("change", () => setFilterSort(pick.value));
+    sortRow.append(pick);
+    bar.append(sortRow);
+  }
 }
 
 function applyPagedMeta(data) {
@@ -1089,13 +1301,33 @@ function startQueuePoll() {
 async function refreshQueueBadge() {
   if (!state.deckId) return;
   try {
-    const data = await api("/api/decks/" + encodeURIComponent(state.deckId) + "/stats");
+    const data = await api(statsApiPath());
     if (!data.ok || !data.stats) return;
     state.queue = data.stats.queue || null;
+    if (data.stats.match_count != null || data.stats.hint) {
+      state.filterStats = {
+        match_count: data.stats.match_count,
+        hint: data.stats.hint,
+      };
+    }
     paintQueueBadge();
+    paintFilterStats();
   } catch (_err) {
     /* offline */
   }
+}
+
+function paintFilterStats() {
+  const node = $("count");
+  if (!node || !state.payload || !state.payload.plugin_filters) return;
+  const base = formatCountMeta(state.payload);
+  const fs = state.filterStats;
+  const extra = [];
+  if (fs && fs.match_count != null) extra.push(fs.match_count + " match");
+  if (fs && fs.hint) extra.push(fs.hint);
+  const text = [base, extra.join(" · ")].filter(Boolean).join(" · ");
+  node.textContent = text;
+  node.title = text;
 }
 
 function paintQueueBadge() {
@@ -1213,9 +1445,13 @@ function renderDeck() {
   setBrowserTitle(data.title);
   $("tools").hidden = true;
   $("menu").hidden = false;
+  paintFilterBar(data.plugin_filters);
+  paintFilterStats();
   const countText = formatCountMeta(data);
-  $("count").textContent = countText;
-  $("count").title = countText || "";
+  if (!data.plugin_filters) {
+    $("count").textContent = countText;
+    $("count").title = countText || "";
+  }
   $("pending").textContent = state.pending ? "Show all" : "Still to do";
   $("blind").setAttribute("aria-pressed", state.blind ? "true" : "false");
   $("track").hidden = data.meter === false;
@@ -1919,8 +2155,9 @@ async function act(direction) {
   const spec = specFor(direction);
   const item = current();
   const label = spec && item ? buttonLabel(spec, item) : null;
-  if (!spec || !item || !label || state.busy) return;
+  if (!spec || !item || !label || state.busy || state.filterFlushing) return;
   if (ChoiceDialog.isOpen()) ChoiceDialog.close();
+  const epochAtAct = state.filterEpoch || 0;
   state.busy = true;
   renderActions();
   const card = document.querySelector(".card");
@@ -1957,6 +2194,7 @@ async function act(direction) {
   setStatus(data.message || label);
   const anchorAtResponse = (current() && current().id) || itemId;
   loadItems(undefined, { anchorId: anchorAtResponse }).then((ok) => {
+    if ((state.filterEpoch || 0) !== epochAtAct) return;
     if (ok) {
       refreshQueueBadge();
       renderDeck();
@@ -2054,7 +2292,7 @@ async function openMenu() {
   if (state.deckId && state.payload) {
     add(state.pending ? "Show all" : "Still to do", togglePending, null);
     add(state.blind ? "Blind off" : "Blind on", toggleBlind, null);
-    if (state.payload.view && !state.payload.view.locked) {
+    if (state.payload.view && !state.payload.view.locked && !state.payload.plugin_filters) {
       add("Order and filter", openOrderSettings, "order-settings", { keepDialog: true });
     }
     add("Count display", openCountSettings, "count-settings", { keepDialog: true });

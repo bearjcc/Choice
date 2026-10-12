@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.6 (2026-10-12)
+
+### Added
+
+- Deck-declared plugin filters: optional `filters()` schema, `filter=` on `list_items` / `stats`, URL `?f=` (base64url JSON) and per-deck session persistence, chip UI with multi-select, all/any, and sort.
+- Optional image codecs: `.heic`, `.heif`, `.jxl` via `pillow-heif` / `pillow-jxl` extras; folder scan skips zero-byte and unreadable images (cached by mtime and size).
+
+### Tests
+
+- Plugin filter HTTP and selection encoding; image probe cache; legacy plugins ignore unknown `f`.
+
 ## 0.5.5 (2026-10-12)
 
 ### Fixed
