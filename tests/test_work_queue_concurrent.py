@@ -46,7 +46,13 @@ class WorkQueueConcurrentTests(unittest.TestCase):
             os.environ.pop("CHOICE_SYNC_WORK", None)
         else:
             os.environ["CHOICE_SYNC_WORK"] = self._sync
-        self._tmp.cleanup()
+        for queue_file in self.tmp.rglob("work_queue.json"):
+            wait_idle(queue_file.parent, timeout=60.0)
+        try:
+            self._tmp.cleanup()
+        except OSError:
+            time.sleep(0.25)
+            self._tmp.cleanup()
 
     def _burst_deck(self, n_files: int):
         (self.tmp / "deck.json").write_text(

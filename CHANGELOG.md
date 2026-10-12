@@ -16,6 +16,7 @@
 ### Tests
 
 - State cleanup young-temp and post-probe-age behaviour; cold index HTTP and index_summary without sync list load.
+- Skip optional Playwright UI review when Chromium is not installed; steadier perf and work-queue teardown on CI runners.
 
 ## 0.5.3 (2026-10-11)
 

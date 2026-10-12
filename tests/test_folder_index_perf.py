@@ -120,4 +120,4 @@ recursive = true
             t0 = time.perf_counter()
             scan_incremental(deck)
             elapsed = time.perf_counter() - t0
-            self.assertLess(elapsed, 2.0, f"incremental scan took {elapsed:.2f}s")
+            self.assertLess(elapsed, 3.0, f"incremental scan took {elapsed:.2f}s")

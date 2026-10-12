@@ -2,6 +2,7 @@
 
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import threading
@@ -43,6 +44,13 @@ class WebUiReviewTests(unittest.TestCase):
         os.environ.pop("CHOICE_DISABLE_WARM", None)
 
     def test_ui_review_playwright(self):
+        if not (
+            shutil.which("google-chrome")
+            or shutil.which("chromium")
+            or shutil.which("chromium-browser")
+            or os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
+        ):
+            self.skipTest("Chromium not installed (optional local UI review)")
         web_pkg = ROOT / "tests" / "web" / "node_modules" / "playwright"
         if not web_pkg.is_dir():
             subprocess.run(
