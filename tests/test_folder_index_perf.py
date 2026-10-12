@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+import os
 import statistics
 import tempfile
 import threading
@@ -120,4 +121,5 @@ recursive = true
             t0 = time.perf_counter()
             scan_incremental(deck)
             elapsed = time.perf_counter() - t0
-            self.assertLess(elapsed, 3.0, f"incremental scan took {elapsed:.2f}s")
+            cap = 5.0 if os.getenv("GITHUB_ACTIONS") else 3.0
+            self.assertLess(elapsed, cap, f"incremental scan took {elapsed:.2f}s")

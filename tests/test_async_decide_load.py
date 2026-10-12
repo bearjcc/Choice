@@ -47,7 +47,11 @@ class AsyncDecideLoadTests(unittest.TestCase):
         self.tmp = Path(self._tmp.name)
 
     def tearDown(self):
-        self._tmp.cleanup()
+        try:
+            self._tmp.cleanup()
+        except OSError:
+            time.sleep(1.0)
+            self._tmp.cleanup()
         os.environ.setdefault("CHOICE_SYNC_WORK", "1")
 
     def test_async_decide_load_media_and_undo(self):

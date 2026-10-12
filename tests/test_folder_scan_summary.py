@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 import json
+import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -20,9 +22,15 @@ class FolderScanSummaryTests(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.tmp = Path(self._tmp.name)
+        os.environ["CHOICE_DISABLE_WARM"] = "1"
 
     def tearDown(self):
-        self._tmp.cleanup()
+        os.environ.pop("CHOICE_DISABLE_WARM", None)
+        try:
+            self._tmp.cleanup()
+        except OSError:
+            time.sleep(0.5)
+            self._tmp.cleanup()
 
     def _sort_deck(self):
         (self.tmp / "deck.json").write_text(
