@@ -49,9 +49,6 @@ def _probe_open(path: Path) -> bool:
 
 
 def _register_optional_codecs() -> None:
-    try:
-        import pillow_heif  # type: ignore[import-not-found]
+    from choice.optional_codecs import register_optional_codecs
 
-        pillow_heif.register_heif_opener()
-    except Exception:
-        pass
+    register_optional_codecs()
