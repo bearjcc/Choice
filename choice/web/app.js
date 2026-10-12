@@ -453,7 +453,9 @@ function showProblem(message) {
   const box = el("div", "empty");
   box.append(el("h2", null, "Cannot open this pile"));
   box.append(el("p", null, message));
-  $("main").replaceChildren(box);
+  const main = $("main");
+  main.classList.remove("library-view", "deck-view");
+  main.replaceChildren(box);
 }
 
 function libraryDeckRows() {
@@ -553,6 +555,7 @@ async function paintHomeLibrary() {
   });
   const parts = [];
   (state.index.warnings || []).forEach((warning) => parts.push(el("p", "warn", warning)));
+  const home = el("div", "library-home");
   if (!list.childNodes.length) {
     const box = el("div", "empty");
     const person = currentPerson();
@@ -573,13 +576,17 @@ async function paintHomeLibrary() {
       add.addEventListener("click", () => showSetup(cfg));
       box.append(add);
     }
-    parts.push(box);
+    home.append(box);
   } else {
-    if (cfg && cfg.ok) parts.unshift(buildLibraryToolbar(cfg));
-    parts.push(list);
+    if (cfg && cfg.ok) home.append(buildLibraryToolbar(cfg));
+    home.append(list);
   }
+  parts.push(home);
   parts.push(licenceLine());
-  $("main").replaceChildren(...parts);
+  const main = $("main");
+  main.classList.add("library-view");
+  main.classList.remove("deck-view");
+  main.replaceChildren(...parts);
 }
 
 async function showLibrary() {
@@ -1526,6 +1533,8 @@ function renderDeck() {
   setBrowserTitle(data.title);
   $("tools").hidden = true;
   $("menu").hidden = false;
+  $("main").classList.remove("library-view");
+  $("main").classList.add("deck-view");
   updateHeaderChrome();
   paintFilterBar(data.plugin_filters);
   paintFilterStats();
@@ -2982,6 +2991,7 @@ function renderPeople() {
   updateHeaderChrome();
   $("count").textContent = "";
   $("title").textContent = "People";
+  $("main").classList.remove("library-view", "deck-view");
   const wrap = el("div", "people");
   (state.index.warnings || []).forEach((warning) => wrap.append(el("p", "warn", warning)));
   const users = (state.index && state.index.users) || [];
@@ -3271,7 +3281,33 @@ function installTestHooks() {
       $("menu").hidden = false;
       updateHeaderChrome();
       $("status").hidden = true;
-      paintHomeLibrary();
+      return paintHomeLibrary();
+    },
+    libraryCenterMetrics() {
+      const main = document.getElementById("main");
+      const home = main && main.querySelector(".library-home");
+      if (!home || !main.classList.contains("library-view")) {
+        return { ok: true, skipped: true };
+      }
+      const vp = window.innerWidth;
+      const tol = 4;
+      const measure = (node, label) => {
+        const r = node.getBoundingClientRect();
+        const left = r.left;
+        const right = vp - r.right;
+        return { label, left, right, delta: Math.abs(left - right), ok: Math.abs(left - right) <= tol };
+      };
+      const blocks = [measure(home, "home")];
+      const toolbar = home.querySelector(".library-toolbar");
+      const list = home.querySelector(".library");
+      if (toolbar) blocks.push(measure(toolbar, "toolbar"));
+      if (list) blocks.push(measure(list, "list"));
+      return {
+        ok: blocks.every((row) => row.ok),
+        skipped: false,
+        viewport: vp,
+        blocks,
+      };
     },
     layoutMetrics() {
       const doc = document.documentElement;

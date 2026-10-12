@@ -22,6 +22,7 @@
   --drag-fav: #e2b34040;
   --drag-skip: #4a556840;
   --dialog-pad: 12px;
+  --library-max: 760px;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -317,8 +318,37 @@ main {
   padding: 12px 12px 8px;
 }
 
-.library, .empty, .card, .stack {
-  width: min(760px, 100%);
+main.library-view {
+  align-items: center;
+}
+
+main.library-view > .warn {
+  width: min(var(--library-max), 100%);
+  margin-inline: auto;
+}
+
+.library-home {
+  width: min(var(--library-max), 100%);
+  margin-inline: auto;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+
+.library-home .library-toolbar,
+.library-home .library,
+.library-home .empty {
+  width: 100%;
+  margin-inline: 0;
+  max-width: none;
+}
+
+.card, .stack {
+  width: min(var(--library-max), 100%);
+  margin-inline: auto;
+}
+
+.empty:not(.library-home .empty) {
+  width: min(var(--library-max), 100%);
   margin-inline: auto;
 }
 
@@ -331,8 +361,7 @@ main {
   flex-wrap: wrap;
   align-items: center;
   gap: 10px;
-  width: min(760px, 100%);
-  margin: 0 auto 14px;
+  margin-bottom: 14px;
   padding: 0 2px;
 }
 
@@ -489,6 +518,15 @@ dialog.app-dialog .order-filter-form {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+@media (min-width: 768px) {
+  .library-home .library {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 380px));
+    justify-content: center;
+    gap: 10px;
+  }
 }
 
 .library li {
@@ -1434,8 +1472,13 @@ dialog p { margin: 0 0 8px; }
 }
 
 main > .fine {
-  width: min(760px, 100%);
+  width: min(var(--library-max), 100%);
   margin: 16px auto 8px;
+}
+
+main.library-view > .fine {
+  width: min(var(--library-max), 100%);
+  margin-inline: auto;
 }
 
 .fine a {
@@ -1456,12 +1499,13 @@ main > .fine {
 }
 
 @media (min-width: 1200px) {
-  .library,
-  .empty,
+  :root {
+    --library-max: 920px;
+  }
+
   .card,
-  .stack,
-  .library-toolbar {
-    width: min(920px, 100%);
+  .stack {
+    width: min(var(--library-max), 100%);
   }
 
   .top-inner {
@@ -1478,12 +1522,13 @@ main > .fine {
 }
 
 @media (min-width: 1800px) {
-  .library,
-  .empty,
+  :root {
+    --library-max: 960px;
+  }
+
   .card,
-  .stack,
-  .library-toolbar {
-    width: min(960px, 100%);
+  .stack {
+    width: min(var(--library-max), 100%);
   }
 
   .top-inner {

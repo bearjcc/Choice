@@ -29,6 +29,19 @@ const VIEWPORTS = process.env.CHOICE_UI_VIEWPORTS
 
 const SHOT_WIDTHS = new Set(["390x844", "1366x768", "1440x900", "1920x1080", "2560x1080"]);
 
+const CENTER_VIEWPORTS = new Set([
+  "390x844",
+  "768x1024",
+  "1440x900",
+  "1920x1080",
+  "2560x1080",
+]);
+
+const TWO_DECKS = [
+  { id: "alpha", title: "Album alpha", left: 12, total: 40, source_type: "folder" },
+  { id: "beta", title: "Album beta", left: 3, total: 10, source_type: "folder" },
+];
+
 const STRESS_DECKS = [
   {
     id: "content",
@@ -64,6 +77,14 @@ const STRESS_DECKS = [
 function launchBrowser() {
   const chrome = process.env.CHOICE_TEST_CHROME || "/usr/local/bin/google-chrome";
   return chromium.launch({ headless: true, executablePath: chrome });
+}
+
+async function assertLibraryCentered(page, label) {
+  const c = await page.evaluate(() => window.ChoiceTestHooks.libraryCenterMetrics());
+  if (c.skipped) return;
+  if (!c.ok) {
+    throw new Error(`${label}: library not centered: ${JSON.stringify(c.blocks)}`);
+  }
 }
 
 async function assertLayout(page, label) {
@@ -103,11 +124,26 @@ async function openDeck(page, title) {
   await page.waitForSelector("#back-library:not([hidden])", { timeout: 15_000 });
 }
 
-async function installStressIndexStub(page) {
+async function installConfigStub(page) {
   const body = JSON.stringify({
     ok: true,
-    library: STRESS_DECKS,
-    decks: STRESS_DECKS,
+    editable: true,
+    admin_allowed: true,
+    path: "/tmp/choice.toml",
+    state_dir: "/tmp/state",
+    sources: [],
+    decks: [],
+  });
+  await page.route("**/api/config**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body });
+  });
+}
+
+async function installStressIndexStub(page, decks = STRESS_DECKS) {
+  const body = JSON.stringify({
+    ok: true,
+    library: decks,
+    decks,
     app_title: "Choice UI",
     warnings: [],
   });
@@ -119,25 +155,47 @@ async function installStressIndexStub(page) {
 async function runScenario(page, vp, scenario) {
   await page.setViewportSize({ width: vp.width, height: vp.height });
   if (scenario.indexStub) {
-    await installStressIndexStub(page);
+    await installStressIndexStub(page, scenario.decks || STRESS_DECKS);
+    await installConfigStub(page);
   } else {
     await page.unroute("**/api/index**").catch(() => {});
+    await page.unroute("**/api/config**").catch(() => {});
   }
   await page.goto(baseUrl, { waitUntil: "domcontentloaded", timeout: 25_000 });
   await page.waitForFunction(() => window.ChoiceTestHooks);
   await scenario.setup(page);
+  if (scenario.checkLibraryCenter) {
+    await page.waitForSelector("main.library-view .library-home", { timeout: 15_000 });
+  }
   await page.waitForTimeout(80);
   await assertLayout(page, `${vp.name}/${scenario.name}`);
+  if (scenario.checkLibraryCenter && CENTER_VIEWPORTS.has(vp.name)) {
+    await assertLibraryCentered(page, `${vp.name}/${scenario.name}`);
+  }
   await maybeShot(page, vp, scenario.name);
   if (scenario.after) await scenario.after(page);
 }
 
 const SCENARIOS = [
   {
+    name: "home-two-decks",
+    indexStub: true,
+    decks: TWO_DECKS,
+    checkLibraryCenter: true,
+    setup: async (page) => {
+      await page.evaluate(async (decks) => {
+        await window.ChoiceTestHooks.seedHomeLibrary(decks);
+      }, TWO_DECKS);
+    },
+  },
+  {
     name: "home-stress",
     indexStub: true,
+    checkLibraryCenter: true,
     setup: async (page) => {
-      await page.evaluate((decks) => window.ChoiceTestHooks.seedHomeLibrary(decks), STRESS_DECKS);
+      await page.evaluate(async (decks) => {
+        await window.ChoiceTestHooks.seedHomeLibrary(decks);
+      }, STRESS_DECKS);
       const dup = await page.evaluate(() =>
         window.ChoiceTestHooks.formatCountMeta({
           left: 3810,
@@ -156,14 +214,18 @@ const SCENARIOS = [
   },
   {
     name: "home-empty",
+    checkLibraryCenter: true,
     setup: async (page) => {
-      await page.evaluate(() => window.ChoiceTestHooks.seedHomeLibrary([]));
+      await page.evaluate(async () => {
+        await window.ChoiceTestHooks.seedHomeLibrary([]);
+      });
     },
   },
   {
     name: "home-live",
+    checkLibraryCenter: true,
     setup: async (page) => {
-      await page.waitForSelector("ul.library, .empty", { timeout: 20_000 });
+      await page.waitForSelector("main.library-view .library-home", { timeout: 20_000 });
     },
   },
   {
