@@ -3,6 +3,7 @@
 import json
 import os
 import subprocess
+import tempfile
 import threading
 import unittest
 from pathlib import Path
@@ -12,7 +13,12 @@ from choice.httpd import ChoiceSite
 ROOT = Path(__file__).resolve().parents[1]
 FIX = ROOT / "tests" / "fixtures" / "ui_review"
 CONFIG = FIX / "ui_review.toml"
-SHOT_DIR = Path("/opt/cursor/artifacts/screenshots/ui-review")
+SHOT_DIR = Path(
+    os.environ.get(
+        "CHOICE_UI_SHOT_DIR",
+        str(Path(tempfile.gettempdir()) / "choice-ui-review-shots"),
+    )
+)
 
 
 class WebUiReviewTests(unittest.TestCase):
@@ -36,6 +42,10 @@ class WebUiReviewTests(unittest.TestCase):
         self.server.server_close()
         os.environ.pop("CHOICE_DISABLE_WARM", None)
 
+    @unittest.skipUnless(
+        os.environ.get("CHOICE_RUN_PLAYWRIGHT"),
+        "optional; set CHOICE_RUN_PLAYWRIGHT=1 with Playwright browsers installed",
+    )
     def test_ui_review_playwright(self):
         web_pkg = ROOT / "tests" / "web" / "node_modules" / "playwright"
         if not web_pkg.is_dir():

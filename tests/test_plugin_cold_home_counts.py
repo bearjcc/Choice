@@ -21,8 +21,14 @@ class PluginColdHomeCountsTests(unittest.TestCase):
         os.environ["CHOICE_DISABLE_WARM"] = "1"
 
     def tearDown(self):
+        os.environ["CHOICE_DISABLE_WARM"] = "1"
+        time.sleep(0.75)
         os.environ.pop("CHOICE_DISABLE_WARM", None)
-        self._tmp.cleanup()
+        try:
+            self._tmp.cleanup()
+        except OSError:
+            time.sleep(0.5)
+            self._tmp.cleanup()
 
     def _config(self, mount: str) -> Path:
         cfg = self.tmp / "choice.toml"

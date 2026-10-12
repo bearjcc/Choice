@@ -335,18 +335,19 @@ def index_summary(deck: Deck) -> dict:
         counts_stale = False
         if saved_quick is not None and saved_quick.ids:
             counts_stale = schedule_stale_plugin_counts_refresh(deck)
+        elif saved_quick is not None and saved_quick.total > 0:
+            schedule_plugin_warm(deck)
         else:
             schedule_plugin_warm(deck)
             if os.environ.get("CHOICE_DISABLE_WARM"):
                 ensure_plugin_snapshot(deck)
         snap_cold = snapshot(deck)
-        if snap_cold is not None and not (saved_quick is not None and saved_quick.ids):
+        if snap_cold is not None and saved_quick is None:
             counts = _plugin_index_counts(deck, choices, snap_cold)
             return _plugin_index_row(deck, counts, len(snap_cold.ids))
-        saved = refresh_persisted_summary(deck)
-        if saved is not None and saved.ids:
+        if saved_quick is not None and saved_quick.ids:
             total, decided, left, list_size = plugin_pile_counts(
-                log_decided, saved.ids, saved.plugin_decided
+                log_decided, saved_quick.ids, saved_quick.plugin_decided
             )
             row = _plugin_index_row(
                 deck,
@@ -356,6 +357,16 @@ def index_summary(deck: Deck) -> dict:
             if counts_stale:
                 row["stale"] = True
             return row
+        if saved_quick is not None and saved_quick.total > 0:
+            schedule_plugin_warm(deck)
+            decided_set = log_decided | saved_quick.plugin_decided
+            decided = len(decided_set)
+            left = max(0, saved_quick.total - decided)
+            return _plugin_index_row(
+                deck,
+                {"total": saved_quick.total, "decided": decided, "left": left},
+                None,
+            )
         decided = len(log_decided)
         return _plugin_index_row(
             deck,

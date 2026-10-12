@@ -303,7 +303,7 @@ class Handler(BaseHTTPRequestHandler):
         payload["pick"] = False
         payload["user"] = {"id": person.id, "name": person.name}
         payload["decks"] = _rows(chosen, deck_meta)
-        self._json(200, payload)
+        return self._json(200, payload)
 
     def _feed(self, query):
         try:

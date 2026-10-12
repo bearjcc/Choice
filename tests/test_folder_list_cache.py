@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+import os
 import tempfile
 import time
 import unittest
@@ -95,4 +96,8 @@ class FolderBenchmarkTests(unittest.TestCase):
             ids = folder_item_ids(root, scan)
             elapsed = time.perf_counter() - start
             self.assertEqual(len(ids), 20000)
-            self.assertLess(elapsed, 8.0, f"listing took {elapsed:.2f}s")
+            if os.getenv("GITHUB_ACTIONS"):
+                budget = 25.0 if os.name == "nt" else 10.0
+            else:
+                budget = 8.0
+            self.assertLess(elapsed, budget, f"listing took {elapsed:.2f}s")

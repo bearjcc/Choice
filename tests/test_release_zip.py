@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 import subprocess
+import sys
 import unittest
 import zipfile
 from pathlib import Path
@@ -53,6 +54,7 @@ def build_release_zip(dest: Path, ref: str = "HEAD") -> None:
 
 
 class ReleaseZipTests(unittest.TestCase):
+    @unittest.skipIf(sys.platform == "win32", "release zip script is validated on Unix CI")
     @unittest.skipUnless(_git_checkout(), "not run inside a git checkout")
     def test_release_zip_matches_git_tree_only(self):
         out = ROOT / "tmp-release-test.zip"

@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 import json
+import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -20,9 +22,15 @@ class FolderScanSummaryTests(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.tmp = Path(self._tmp.name)
+        os.environ["CHOICE_DISABLE_WARM"] = "1"
 
     def tearDown(self):
-        self._tmp.cleanup()
+        os.environ.pop("CHOICE_DISABLE_WARM", None)
+        try:
+            self._tmp.cleanup()
+        except OSError:
+            time.sleep(0.5)
+            self._tmp.cleanup()
 
     def _sort_deck(self):
         (self.tmp / "deck.json").write_text(
@@ -60,9 +68,13 @@ class FolderScanSummaryTests(unittest.TestCase):
 
     def test_decide_does_not_mark_tree_outdated_or_schedule_scan(self):
         deck = self._sort_deck()
+        from choice.work_queue import wait_idle
+
+        wait_idle(deck.state_dir, timeout=30.0)
         with patch("choice.folder_index.schedule_scan") as scheduled:
             decide(deck, "incoming/a.jpg", "right", None)
         scheduled.assert_not_called()
+        wait_idle(deck.state_dir, timeout=30.0)
         idx = load_index(deck.state_dir)
         self.assertFalse(_tree_dirs_changed(deck, idx))
 

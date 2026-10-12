@@ -15,11 +15,24 @@ class StateCleanupTests(unittest.TestCase):
     def test_pid_alive_current(self):
         self.assertTrue(pid_alive(os.getpid()))
 
-    def test_removes_stale_tmp_for_dead_pid(self):
+    def test_keeps_young_tmp_without_pid_probe(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            young = root / "list_counts.json.999999.tmp"
+            young.write_text("partial", encoding="utf-8")
+            with mock.patch("choice.state_cleanup.pid_alive") as probe:
+                removed = cleanup_atomic_tmp_in(root, now=time.time())
+                probe.assert_not_called()
+            self.assertEqual(removed, [])
+            self.assertTrue(young.is_file())
+
+    def test_removes_stale_tmp_for_dead_pid_after_probe_age(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             stale = root / "list_counts.json.999999.tmp"
             stale.write_text("partial", encoding="utf-8")
+            aged = time.time() - 35
+            os.utime(stale, (aged, aged))
             removed = cleanup_atomic_tmp_in(root, now=time.time())
             self.assertIn(stale, removed)
             self.assertFalse(stale.exists())

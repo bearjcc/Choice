@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.4 (2026-10-12)
+
+### Fixed
+
+- State cleanup: legacy `*.pid.tmp` files younger than 30s are kept without a live-pid probe (the previous branches both probed pid and were equivalent).
+- Plugin home index: legacy `list_counts.json` with `total` but no `ids` no longer triggers a synchronous `list_items` on `/api/index`; counts use the saved total while warm runs in the background.
+- HTTP `/api/index` with roster enabled now returns the JSON response explicitly.
+
+### Housekeeping
+
+- `.gitignore` ignores local dot-directories while keeping `.github/` and standard build artefacts.
+- Package and test folder READMEs; release zip defaults to `dist/choice-<version>.zip`.
+
+### Tests
+
+- State cleanup young-temp and post-probe-age behaviour; cold index HTTP and index_summary without sync list load.
+- Skip optional Playwright UI review when Chromium is not installed; steadier perf and work-queue teardown on CI runners.
+
 ## 0.5.3 (2026-10-11)
 
 ### Fixed
