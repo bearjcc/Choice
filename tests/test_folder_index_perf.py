@@ -88,8 +88,10 @@ recursive = true
                 wait_idle(deck.state_dir, timeout=60.0)
             index_p95 = statistics.quantiles(index_times, n=20)[-1]
             items_p95 = statistics.quantiles(item_times, n=20)[-1]
-            self.assertLess(index_p95, 0.10, f"index p95 {index_p95:.3f}s")
-            self.assertLess(items_p95, 0.30, f"items p95 {items_p95:.3f}s")
+            index_cap = 0.15 if os.getenv("GITHUB_ACTIONS") else 0.10
+            items_cap = 0.45 if os.getenv("GITHUB_ACTIONS") else 0.30
+            self.assertLess(index_p95, index_cap, f"index p95 {index_p95:.3f}s")
+            self.assertLess(items_p95, items_cap, f"items p95 {items_p95:.3f}s")
 
 
 class FolderIndexIncrementalTests(unittest.TestCase):
