@@ -83,7 +83,9 @@ async function assertLibraryCentered(page, label) {
   const c = await page.evaluate(() => window.ChoiceTestHooks.libraryCenterMetrics());
   if (c.skipped) return;
   if (!c.ok) {
-    throw new Error(`${label}: library not centered: ${JSON.stringify(c.blocks)}`);
+    throw new Error(
+      `${label}: library column misaligned: ${JSON.stringify({ blocks: c.blocks, edgesAligned: c.edgesAligned })}`,
+    );
   }
 }
 
@@ -97,7 +99,7 @@ async function assertLayout(page, label) {
   const badControls = (m.controls || []).filter((c) => !c.skipped && !c.ok);
   if (badControls.length) problems.push(`controls off-screen: ${JSON.stringify(badControls)}`);
   const tiny = (m.smallTaps || []).filter(
-    (t) => (t.w < 40 || t.h < 40) && !String(t.cls).includes("deck-more"),
+    (t) => (t.w < 40 || t.h < 40) && !String(t.cls).includes("deck-edit"),
   );
   if (tiny.length) problems.push(`small tap targets: ${JSON.stringify(tiny)}`);
   if (problems.length) throw new Error(`${label}: ${problems.join("; ")}`);
@@ -206,9 +208,11 @@ const SCENARIOS = [
         throw new Error(`duplicate left in count meta: ${dup}`);
       }
       const vw = page.viewportSize().width;
-      const more = await page.locator(".library .deck-more").first().boundingBox();
-      if (!more || more.x + more.width > vw + 2) {
-        throw new Error("deck-more menu pushed off screen");
+      const shell = await page.locator(".library .deck-card-shell").first().boundingBox();
+      const edit = await page.locator(".library .deck-edit").first().boundingBox();
+      if (!shell || !edit) throw new Error("deck edit control missing");
+      if (edit.right > shell.right + 2 || edit.left < shell.left - 2) {
+        throw new Error("deck edit sits outside card shell");
       }
     },
   },

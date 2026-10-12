@@ -34,6 +34,7 @@
   /* Layout */
   --tap-min: 44px;
   --library-max: 760px;
+  --page-gutter: var(--space-3);
   --shell-max: 1200px;
   --dialog-pad: var(--space-3);
 

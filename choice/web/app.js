@@ -237,6 +237,11 @@ function serverAdminAllowed(cfg) {
   return !!cfg.editable || !!(cfg.decks && cfg.decks.length);
 }
 
+function setLibraryChrome(on) {
+  const top = document.querySelector(".top");
+  if (top) top.classList.toggle("top--library", !!on);
+}
+
 function updateHeaderChrome() {
   const indexOk = state.index && state.index.ok;
   const onDeck = !!state.deckId && !!state.payload;
@@ -434,6 +439,7 @@ function showProblem(message) {
   box.append(el("p", null, message));
   const main = $("main");
   main.classList.remove("library-view", "deck-view");
+  setLibraryChrome(false);
   main.replaceChildren(box);
 }
 
@@ -521,20 +527,24 @@ async function paintHomeLibrary() {
       }
       openDeck(deck.id, true);
     });
-    const more = el("button", "deck-more", "Edit");
-    more.type = "button";
-    more.setAttribute("aria-label", "Edit deck settings");
-    more.dataset.choiceModal = "deck-edit";
-    more.addEventListener("click", (event) => {
+    const shell = el("div", "deck-card-shell");
+    const edit = el("button", "deck-edit icon-btn");
+    edit.type = "button";
+    edit.setAttribute("aria-label", "Edit deck settings");
+    edit.dataset.choiceModal = "deck-edit";
+    if (typeof ChoiceMdi !== "undefined") {
+      edit.innerHTML = ChoiceMdi.svg("edit", "deck-edit-icon");
+    }
+    edit.addEventListener("click", (event) => {
       event.stopPropagation();
       openDeckEdit(deck.id);
     });
-    item.append(card, more);
+    shell.append(card, edit);
+    item.append(shell);
     list.append(item);
   });
-  const parts = [];
-  (state.index.warnings || []).forEach((warning) => parts.push(el("p", "warn", warning)));
   const home = el("div", "library-home");
+  (state.index.warnings || []).forEach((warning) => home.append(el("p", "warn", warning)));
   if (!list.childNodes.length) {
     const box = el("div", "empty");
     const person = currentPerson();
@@ -560,12 +570,12 @@ async function paintHomeLibrary() {
     if (cfg && cfg.ok) home.append(buildLibraryToolbar(cfg));
     home.append(list);
   }
-  parts.push(home);
-  parts.push(licenceLine());
+  home.append(licenceLine());
   const main = $("main");
   main.classList.add("library-view");
   main.classList.remove("deck-view");
-  main.replaceChildren(...parts);
+  setLibraryChrome(true);
+  main.replaceChildren(home);
 }
 
 async function showLibrary() {
@@ -1520,6 +1530,7 @@ function renderDeck() {
   $("menu").hidden = false;
   $("main").classList.remove("library-view");
   $("main").classList.add("deck-view");
+  setLibraryChrome(false);
   updateHeaderChrome();
   paintFilterBar(data.plugin_filters);
   paintFilterStats();
@@ -2981,6 +2992,7 @@ function renderPeople() {
   $("count").textContent = "";
   $("title").textContent = "People";
   $("main").classList.remove("library-view", "deck-view");
+  setLibraryChrome(false);
   const wrap = el("div", "people");
   (state.index.warnings || []).forEach((warning) => wrap.append(el("p", "warn", warning)));
   const users = (state.index && state.index.users) || [];
@@ -3284,15 +3296,34 @@ function installTestHooks() {
         const r = node.getBoundingClientRect();
         const left = r.left;
         const right = vp - r.right;
-        return { label, left, right, delta: Math.abs(left - right), ok: Math.abs(left - right) <= tol };
+        return {
+          label,
+          left,
+          right,
+          delta: Math.abs(left - right),
+          ok: Math.abs(left - right) <= tol,
+        };
       };
-      const blocks = [measure(home, "home")];
+      const blocks = [];
+      const header = document.querySelector(".top-inner");
+      if (header) blocks.push(measure(header, "header"));
+      blocks.push(measure(home, "home"));
       const toolbar = home.querySelector(".library-toolbar");
       const list = home.querySelector(".library");
+      const footer = home.querySelector(".fine");
       if (toolbar) blocks.push(measure(toolbar, "toolbar"));
-      if (list) blocks.push(measure(list, "list"));
+      if (list) blocks.push(measure(list, "grid"));
+      if (footer) blocks.push(measure(footer, "footer"));
+      const lefts = blocks.map((row) => row.left);
+      const rights = blocks.map((row) => row.right);
+      const edgesAligned =
+        blocks.length < 2
+          ? true
+          : Math.max(...lefts) - Math.min(...lefts) <= tol &&
+            Math.max(...rights) - Math.min(...rights) <= tol;
       return {
-        ok: blocks.every((row) => row.ok),
+        ok: blocks.every((row) => row.ok) && edgesAligned,
+        edgesAligned,
         skipped: false,
         viewport: vp,
         blocks,
@@ -3314,7 +3345,7 @@ function installTestHooks() {
       const smallTaps = [];
       document.querySelectorAll("button, a[href]").forEach((el) => {
         if (el.hidden || el.offsetParent === null) return;
-        if (el.closest(".fine, .setup-link")) return;
+        if (el.closest(".fine, .setup-link, .deck-edit")) return;
         const r = el.getBoundingClientRect();
         if (r.width < 1 || r.height < 1) return;
         if (r.width < 44 || r.height < 44) {
