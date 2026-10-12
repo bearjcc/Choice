@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 import json
+import os
 import shutil
 import tempfile
 import threading
@@ -70,6 +71,10 @@ class ScanMaxWaitTests(unittest.TestCase):
             self.assertNotIn("incoming/batch/new.jpg", idx.ordered)
             stop.set()
             poller.join(timeout=2.0)
+            from choice.work_queue import wait_idle
+
+            wait_idle(deck.state_dir, timeout=60.0)
+            time.sleep(0.5 if os.name == "nt" else 0.25)
 
 
 if __name__ == "__main__":
