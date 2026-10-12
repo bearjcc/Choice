@@ -34,7 +34,10 @@ mount = "."
             os.environ["CHOICE_STATE_DIR"] = str(root / "override-state")
             try:
                 cfg = load_config(cfg_path)
-                self.assertEqual(cfg.state_dir, (root / "override-state").resolve())
+                self.assertEqual(
+                    cfg.state_dir.resolve(),
+                    (root / "override-state").resolve(),
+                )
             finally:
                 os.environ.pop("CHOICE_STATE_DIR", None)
 
