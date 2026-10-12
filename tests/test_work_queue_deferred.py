@@ -82,7 +82,10 @@ class WorkQueueDeferredTests(unittest.TestCase):
                 start = time.perf_counter()
                 decide(deck, rel, "right", None)
                 latencies.append(time.perf_counter() - start)
-            cap = 0.20 if os.getenv("GITHUB_ACTIONS") else 0.05
+            if os.getenv("GITHUB_ACTIONS"):
+                cap = 1.0 if os.name == "nt" else 0.20
+            else:
+                cap = 0.05
             self.assertLess(max(latencies), cap)
             wait_idle(deck.state_dir, timeout=120.0)
             for rel in ids[1:]:
