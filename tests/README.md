@@ -15,4 +15,4 @@ node tests/web/action_icons.test.mjs
 node tests/web/dialog_layout.test.mjs
 ```
 
-Playwright scripts under `tests/web/` are optional local checks; they are not part of the default CI matrix.
+Playwright UI review (`tests/test_web_ui_review.py`) runs only when `CHOICE_RUN_PLAYWRIGHT=1` and browsers are installed locally.

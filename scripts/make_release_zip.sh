@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 set -eu
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VER="$(python3 -c 'import choice; print(choice.__version__)')"
+if command -v python3 >/dev/null 2>&1; then
+  PY=python3
+else
+  PY=python
+fi
+VER="$("$PY" -c 'import choice; print(choice.__version__)')"
 OUT="${1:-$ROOT/dist/choice-${VER}.zip}"
 mkdir -p "$(dirname "$OUT")"
 REF="${CHOICE_RELEASE_GIT_REF:-HEAD}"

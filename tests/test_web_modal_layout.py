@@ -44,6 +44,10 @@ class WebModalLayoutTests(unittest.TestCase):
         )
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
 
+    @unittest.skipUnless(
+        os.environ.get("CHOICE_RUN_PLAYWRIGHT"),
+        "optional; set CHOICE_RUN_PLAYWRIGHT=1 with Playwright browsers installed",
+    )
     def test_modal_layout_playwright(self):
         web_pkg = ROOT / "tests" / "web" / "node_modules" / "playwright"
         if not web_pkg.is_dir():

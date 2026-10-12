@@ -35,6 +35,10 @@ class WebCardLayoutTests(unittest.TestCase):
         self.server.server_close()
         os.environ.pop("CHOICE_DISABLE_WARM", None)
 
+    @unittest.skipUnless(
+        os.environ.get("CHOICE_RUN_PLAYWRIGHT"),
+        "optional; set CHOICE_RUN_PLAYWRIGHT=1 with Playwright browsers installed",
+    )
     def test_single_image_card_layout(self):
         web_pkg = ROOT / "tests" / "web" / "node_modules" / "playwright"
         if not web_pkg.is_dir():
