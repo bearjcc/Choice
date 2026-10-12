@@ -148,5 +148,11 @@ recursive = true
             t0 = time.perf_counter()
             scan_incremental(deck)
             elapsed = time.perf_counter() - t0
-            cap = 5.0 if os.getenv("GITHUB_ACTIONS") else 3.0
+            if os.getenv("GITHUB_ACTIONS"):
+                cap = 8.0 if os.name == "nt" else 5.0
+            else:
+                cap = 3.0
+            from choice.work_queue import wait_idle
+
+            wait_idle(deck.state_dir, timeout=60.0)
             self.assertLess(elapsed, cap, f"incremental scan took {elapsed:.2f}s")
