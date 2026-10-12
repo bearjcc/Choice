@@ -35,10 +35,13 @@
     const id = restoredItem && restoredItem.id;
     if (!id) return { items: list, pos };
     const existing = list.findIndex((row) => row.id === id);
-    if (existing >= 0) return { items: list, pos: existing };
-    const insertAt = Math.max(0, Math.min(pos, list.length));
-    list.splice(insertAt, 0, restoredItem);
-    return { items: list, pos: insertAt };
+    if (existing >= 0) {
+      const row = list.splice(existing, 1)[0];
+      list.unshift(row);
+      return { items: list, pos: 0 };
+    }
+    list.unshift(restoredItem);
+    return { items: list, pos: 0 };
   }
 
   function mergeReloadItems(prevItems, serverItems, pos) {
