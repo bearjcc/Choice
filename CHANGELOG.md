@@ -5,7 +5,7 @@
 ### Added
 
 - Deck-declared plugin filters: optional `filters()` schema, `filter=` on `list_items` / `stats`, URL `?f=` (base64url JSON) and per-deck session persistence, chip UI with multi-select, all/any, and sort.
-- Optional image codecs: `.heic`, `.heif`, `.jxl` via `pillow-heif` / `pillow-jxl` extras (`choice.optional_codecs` registers HEIF and JXL openers when installed); folder scan skips zero-byte and unreadable images (cached by mtime and size).
+- Optional image codecs: `.heic`, `.heif`, `.jxl` via `pillow-heif` / `pillow-jxl-plugin` extras (`choice.optional_codecs` registers HEIF and JXL openers when installed); folder scan skips zero-byte and unreadable images (cached by mtime and size).
 
 ### Tests
 
