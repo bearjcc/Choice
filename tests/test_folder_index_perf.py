@@ -82,7 +82,10 @@ recursive = true
                     item_times.append(time.perf_counter() - t0)
             finally:
                 stop.set()
-                thread.join(timeout=2.0)
+                thread.join(timeout=5.0)
+                from choice.work_queue import wait_idle
+
+                wait_idle(deck.state_dir, timeout=60.0)
             index_p95 = statistics.quantiles(index_times, n=20)[-1]
             items_p95 = statistics.quantiles(item_times, n=20)[-1]
             self.assertLess(index_p95, 0.10, f"index p95 {index_p95:.3f}s")
