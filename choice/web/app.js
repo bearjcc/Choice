@@ -26,7 +26,14 @@ const state = {
   filterStats: null,
   filterFlushing: false,
   filterEpoch: 0,
+  decideHistory: [],
+  mediaBlobs: [],
+  undoInFlight: false,
+  undoEpoch: 0,
 };
+
+const DECIDE_HISTORY_MAX = 10;
+const MEDIA_BLOB_MAX = 12;
 
 const $ = (id) => document.getElementById(id);
 
@@ -1055,6 +1062,8 @@ async function openDeck(id, push) {
   state.pos = 0;
   state.filterStats = null;
   state.filterSelection = loadFilterSelectionForDeck(id);
+  state.decideHistory = [];
+  state.undoInFlight = false;
   $("status").textContent = "";
   const stored = localStorage.getItem(blindKey(id));
   const deck = (state.index.decks || []).find((row) => row.id === id);
@@ -1536,7 +1545,7 @@ function preloadMedia() {
   urls.forEach((url) => {
     const img = new Image();
     img.decoding = "async";
-    img.src = url;
+    img.src = resolvedMediaSrc(url);
     if (img.decode) {
       img.decode().catch(() => {});
     }
@@ -1728,6 +1737,85 @@ function updateMediaWidth() {
   state.mediaWidth = pick;
 }
 
+function deepCopyItem(item) {
+  return JSON.parse(JSON.stringify(item));
+}
+
+function mediaUrlsForItem(item) {
+  const urls = [];
+  if (!item) return urls;
+  if (item.kind === "gallery" && item.images) {
+    item.images.forEach((slide) => {
+      if (slide) urls.push(mediaSrc(item, null, slide.index));
+    });
+  } else if (item.kind === "image" && item.media) {
+    urls.push(mediaSrc(item, null));
+  }
+  if (item.kind === "pair" && item.sides) {
+    item.sides.forEach((side) => {
+      if (side && side.media) urls.push(mediaSrc(item, side));
+    });
+  }
+  return urls;
+}
+
+function blobEntryForUrl(url) {
+  const list = state.mediaBlobs || [];
+  for (let i = list.length - 1; i >= 0; i--) {
+    if (list[i].url === url) return list[i];
+  }
+  return null;
+}
+
+function rememberMediaBlob(url, itemId, blob) {
+  if (!url || !blob) return;
+  if (blobEntryForUrl(url)) return;
+  const objectUrl = URL.createObjectURL(blob);
+  state.mediaBlobs.push({ url, itemId, objectUrl, blob });
+  while (state.mediaBlobs.length > MEDIA_BLOB_MAX) {
+    const old = state.mediaBlobs.shift();
+    if (old && old.objectUrl) URL.revokeObjectURL(old.objectUrl);
+  }
+}
+
+function prefetchItemMedia(item) {
+  mediaUrlsForItem(item).forEach((url) => {
+    void fetchMediaBlob(url, item.id);
+  });
+}
+
+async function fetchMediaBlob(url, itemId) {
+  if (blobEntryForUrl(url)) return;
+  try {
+    const res = await fetch(withUser(url), { credentials: "same-origin" });
+    if (!res.ok) return;
+    const blob = await res.blob();
+    rememberMediaBlob(url, itemId, blob);
+  } catch (_err) {
+    /* offline */
+  }
+}
+
+function resolvedMediaSrc(url) {
+  const hit = blobEntryForUrl(url);
+  return hit ? hit.objectUrl : url;
+}
+
+function pushDecideHistory(swipe) {
+  if (!swipe || !swipe.item) return;
+  state.decideHistory.push({
+    item: deepCopyItem(swipe.item),
+    direction: swipe.direction,
+    later: !!swipe.later,
+  });
+  while (state.decideHistory.length > DECIDE_HISTORY_MAX) state.decideHistory.shift();
+  prefetchItemMedia(swipe.item);
+}
+
+function popDecideHistory() {
+  if (state.decideHistory.length) state.decideHistory.pop();
+}
+
 function mediaSrc(item, side, imageIndex) {
   let url = apiPath("/api/decks/" + encodeURIComponent(state.deckId) + "/media?item=" + encodeURIComponent(item.id));
   if (side) url += "&side=" + encodeURIComponent(side.key);
@@ -1746,7 +1834,7 @@ function mediaSrc(item, side, imageIndex) {
 function appendPhoto(frame, src, alt) {
   const img = el("img");
   img.alt = alt;
-  img.src = src;
+  img.src = resolvedMediaSrc(src);
   img.draggable = false;
   frame.append(img);
 }
@@ -1909,7 +1997,7 @@ function renderActions() {
     const undoSpec = { id: "undo", label: "Undo" };
     const undo = actionButton(undoSpec, "Undo", "undo");
     undo.classList.add("action-undo");
-    undo.disabled = !state.payload.can_undo || state.busy;
+    undo.disabled = !state.payload.can_undo || state.busy || state.undoInFlight;
     centerSlot.append(undo);
   }
   requestAnimationFrame(() => syncActionBarDisplay());
@@ -2083,6 +2171,16 @@ function itemFromUndoHint(hint) {
 }
 
 function buildUndoHint() {
+  const hist = state.decideHistory;
+  if (hist && hist.length) {
+    const top = hist[hist.length - 1];
+    return {
+      item: top.item.id,
+      direction: top.direction,
+      later: top.later,
+      card: top.item,
+    };
+  }
   const hint = state.payload && state.payload.undo_hint;
   if (hint && hint.item) return hint;
   if (state.lastSwipe && state.lastSwipe.item) {
@@ -2110,8 +2208,9 @@ function applyOptimisticUndo(hint) {
       state.pos = next.pos;
     } else {
       const idx = items.findIndex((row) => row.id === restored.id);
-      if (idx === -1) items.splice(state.pos, 0, restored);
-      state.pos = items.findIndex((row) => row.id === restored.id);
+      if (idx >= 0) items.splice(idx, 1);
+      items.unshift(restored);
+      state.pos = 0;
     }
   } else if (nav) {
     state.pos = nav.syncPosToAnchor(items, state.pos, restored.id);
@@ -2155,7 +2254,9 @@ async function act(direction) {
   const spec = specFor(direction);
   const item = current();
   const label = spec && item ? buttonLabel(spec, item) : null;
-  if (!spec || !item || !label || state.busy || state.filterFlushing) return;
+  if (!spec || !item || !label || state.busy || state.filterFlushing || state.undoInFlight) {
+    return;
+  }
   if (ChoiceDialog.isOpen()) ChoiceDialog.close();
   const epochAtAct = state.filterEpoch || 0;
   state.busy = true;
@@ -2165,7 +2266,8 @@ async function act(direction) {
   const snapshot = state.payload;
   const itemId = item.id;
   const later = !!spec.later;
-  state.lastSwipe = { item: { ...item }, direction, later };
+  state.lastSwipe = { item: deepCopyItem(item), direction, later };
+  pushDecideHistory(state.lastSwipe);
   advanceAfterSwipe(itemId, later);
   if (!reduceMotion()) await wait(40);
   state.busy = false;
@@ -2182,6 +2284,7 @@ async function act(direction) {
   }
   if (!data.ok) {
     state.payload = snapshot;
+    popDecideHistory();
     const nav = pileNav();
     const items = snapshot.items || [];
     state.pos = nav
@@ -2230,8 +2333,23 @@ async function runPluginAction(spec) {
   if (await loadItems()) renderDeck();
 }
 
+async function reconcileAfterUndo(anchorId, epoch) {
+  if (!anchorId) return;
+  const seq = ++state.itemsLoadSeq;
+  const ok = await loadItems(undefined, { anchorId });
+  if (epoch !== state.undoEpoch || seq !== state.itemsLoadSeq) return;
+  if (!ok) return;
+  const cur = current();
+  if (cur && cur.id === anchorId) return;
+  state.pos = pileNav()
+    ? pileNav().syncPosToAnchor(state.payload.items || [], state.pos, anchorId)
+    : state.pos;
+}
+
 async function undoLast() {
-  if (state.busy || !undoEnabled() || !state.payload || !state.payload.can_undo) return;
+  if (state.busy || state.undoInFlight || !undoEnabled() || !state.payload || !state.payload.can_undo) {
+    return;
+  }
   const hint = buildUndoHint();
   if (!hint || !hint.item) return;
   const direction = hint.direction || "right";
@@ -2242,36 +2360,38 @@ async function undoLast() {
     },
     pos: state.pos,
     lastSwipe: state.lastSwipe,
+    decideHistory: state.decideHistory.slice(),
   };
   applyOptimisticUndo(hint);
-  state.busy = true;
+  const anchorId = current() && current().id;
+  state.undoInFlight = true;
+  const epoch = ++state.undoEpoch;
   renderActions();
   renderDeck();
   const card = document.querySelector(".card");
   unflingCard(card, direction);
-  if (!reduceMotion()) await wait(40);
-  state.busy = false;
-  renderActions();
   let data;
   try {
     data = await api("/api/decks/" + encodeURIComponent(state.deckId) + "/undo", {});
   } catch (_err) {
     data = { ok: false, message: "Could not reach Choice." };
   }
+  state.undoInFlight = false;
   if (!data.ok) {
     state.payload = snapshot.payload;
     state.pos = snapshot.pos;
     state.lastSwipe = snapshot.lastSwipe;
+    state.decideHistory = snapshot.decideHistory;
     renderDeck();
     setStatus(data.message || "Undo failed");
     renderActions();
     return;
   }
-  if (data.item) state.anchorAfterLoad = data.item;
+  popDecideHistory();
+  if (data.can_undo !== undefined) state.payload.can_undo = data.can_undo;
   setStatus(data.message || "");
-  const ok = await loadItems();
-  if (ok) renderDeck();
-  else renderActions();
+  renderActions();
+  void reconcileAfterUndo(anchorId, epoch);
 }
 
 async function openMenu() {

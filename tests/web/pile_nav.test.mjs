@@ -98,3 +98,13 @@ test("undo pending: after swipe then optimistic restore shows undone card", () =
   const afterUndo = nav.restorePendingUndo(afterSwipe.items, afterSwipe.pos, item("a"));
   assert.equal(nav.currentItem(afterUndo.items, afterUndo.pos).id, "a");
 });
+
+test("undo pending: restored card is pinned to pile front", () => {
+  let items = [item("a"), item("b"), item("c")];
+  const pos = 1;
+  const afterSwipe = nav.removePendingSwipe(items, pos, "b");
+  const afterUndo = nav.restorePendingUndo(afterSwipe.items, afterSwipe.pos, item("b"));
+  assert.equal(afterUndo.pos, 0);
+  assert.equal(afterUndo.items[0].id, "b");
+  assert.equal(nav.currentItem(afterUndo.items, afterUndo.pos).id, "b");
+});

@@ -19,10 +19,11 @@
 - Server honours `held=` on `/items` so ids already on the client stay in order while the source reorders; configurable preload via `[client] buffer`, `CHOICE_CLIENT_BUFFER`, or `--client-buffer`.
 - Folder scan already appends new files; undo readmit still pins the card to the front of the index.
 - Plugin `handle` may return `ok: true, noop: true`; Choice records the swipe and treats it as success.
+- Instant undo: client restores the last card from a short in-memory history (with warmed media blobs), posts undo in the background, and reconciles without jumping away from the restored card. Pending undo pins the card to the pile front to match the server.
 
 ### Tests
 
-- Client buffer merge, plugin noop, reorder-with-held regression, pile_nav merge/anchor tests.
+- Client buffer merge, plugin noop, reorder-with-held regression, pile_nav merge/anchor tests, media ETag/304 cache, instant undo client wiring.
 
 ## 0.5.4 (2026-10-12)
 
