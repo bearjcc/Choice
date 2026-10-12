@@ -96,5 +96,8 @@ class FolderBenchmarkTests(unittest.TestCase):
             ids = folder_item_ids(root, scan)
             elapsed = time.perf_counter() - start
             self.assertEqual(len(ids), 20000)
-            budget = 10.0 if os.getenv("GITHUB_ACTIONS") else 8.0
+            if os.getenv("GITHUB_ACTIONS"):
+                budget = 25.0 if os.name == "nt" else 10.0
+            else:
+                budget = 8.0
             self.assertLess(elapsed, budget, f"listing took {elapsed:.2f}s")

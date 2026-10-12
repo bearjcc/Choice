@@ -51,7 +51,7 @@ class WorkQueueConcurrentTests(unittest.TestCase):
         try:
             self._tmp.cleanup()
         except OSError:
-            time.sleep(0.25)
+            time.sleep(1.0)
             self._tmp.cleanup()
 
     def _burst_deck(self, n_files: int):

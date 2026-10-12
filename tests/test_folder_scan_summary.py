@@ -60,9 +60,13 @@ class FolderScanSummaryTests(unittest.TestCase):
 
     def test_decide_does_not_mark_tree_outdated_or_schedule_scan(self):
         deck = self._sort_deck()
+        from choice.work_queue import wait_idle
+
+        wait_idle(deck.state_dir, timeout=30.0)
         with patch("choice.folder_index.schedule_scan") as scheduled:
             decide(deck, "incoming/a.jpg", "right", None)
         scheduled.assert_not_called()
+        wait_idle(deck.state_dir, timeout=30.0)
         idx = load_index(deck.state_dir)
         self.assertFalse(_tree_dirs_changed(deck, idx))
 
