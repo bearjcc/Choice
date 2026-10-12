@@ -54,6 +54,7 @@ class AppConfig:
     secrets_file: Path | None = None
     roster_path: Path | None = None
     app_title: str = DEFAULT_APP_TITLE
+    client_buffer: int = 30
 
     def source(self, source_id: str) -> SourceSpec | None:
         for spec in self.sources:
@@ -92,6 +93,13 @@ def load_config(path: Path) -> AppConfig:
     roster_raw = state_block.get("users_file")
     roster_path = _expand(roster_raw, path.parent) if roster_raw else None
 
+    client_buffer = 30
+    client_block = raw.get("client")
+    if isinstance(client_block, dict):
+        raw_buf = client_block.get("buffer") or client_block.get("preload")
+        if isinstance(raw_buf, int) and raw_buf > 0:
+            client_buffer = raw_buf
+
     sources: list[SourceSpec] = []
     for idx, row in enumerate(raw.get("sources") or raw.get("source") or []):
         sources.append(_parse_source(row, idx))
@@ -125,6 +133,7 @@ def load_config(path: Path) -> AppConfig:
         secrets_file=secrets_file,
         roster_path=roster_path,
         app_title=app_title,
+        client_buffer=client_buffer,
     )
     from choice.env_config import apply_config_env
 

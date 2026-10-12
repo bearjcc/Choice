@@ -541,6 +541,7 @@ def progress_page(
     limit: int,
     *,
     after: str | None = None,
+    held: list[str] | None = None,
 ) -> tuple[list[str], int, int, int, list[str], str | None, bool, int]:
     """Return page ids, total, decided, left, warnings, next_after, scanning, pile_size."""
     from choice.deck_index import plugin_pile_counts
@@ -574,6 +575,10 @@ def progress_page(
                 continue
         pile.append(rid)
     pile = apply_pending_front(idx, pile)
+    if held:
+        from choice.client_buffer import merge_held_pile
+
+        pile = merge_held_pile(pile, held)
     from choice.pile_page import page_after
 
     if limit <= 0:

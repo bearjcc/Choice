@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.5 (2026-10-12)
+
+### Fixed
+
+- Wrong-card decides: client reload anchors at response time, merges server items append-only, and falls back to the nearest index when the anchor vanishes (`pile_nav.js`, `app.js`).
+- Server honours `held=` on `/items` so ids already on the client stay in order while the source reorders; configurable preload via `[client] buffer`, `CHOICE_CLIENT_BUFFER`, or `--client-buffer`.
+- Folder scan already appends new files; undo readmit still pins the card to the front of the index.
+- Plugin `handle` may return `ok: true, noop: true`; Choice records the swipe and treats it as success.
+
+### Tests
+
+- Client buffer merge, plugin noop, reorder-with-held regression, pile_nav merge/anchor tests.
+
 ## 0.5.4 (2026-10-12)
 
 ### Fixed

@@ -66,11 +66,24 @@ class ChoiceSite(ThreadingHTTPServer):
         config_path: Path | None = None,
         base_path: str = "",
         app_title: str = DEFAULT_APP_TITLE,
+        client_buffer_size: int | None = None,
     ):
         self.choice_root = root
         self.config_path = config_path
         self.base_path = normalize_base_path(base_path)
         self.app_title = (app_title or DEFAULT_APP_TITLE).strip() or DEFAULT_APP_TITLE
+        from choice.client_buffer import buffer_size_from_env
+
+        if client_buffer_size is not None and client_buffer_size > 0:
+            self.client_buffer_size = client_buffer_size
+        elif config_path is not None and config_path.is_file():
+            try:
+                cfg = load_config(config_path)
+                self.client_buffer_size = max(1, int(cfg.client_buffer))
+            except ConfigProblem:
+                self.client_buffer_size = buffer_size_from_env()
+        else:
+            self.client_buffer_size = buffer_size_from_env()
         super().__init__(address, Handler)
         _boot_work_queue(self)
 
@@ -342,8 +355,17 @@ class Handler(BaseHTTPRequestHandler):
         after = str(after_raw).strip() or None
         if deck.folder_scan is not None and limit <= 0:
             limit = 200
+        from choice.client_buffer import parse_held
+
+        buf_cap = getattr(self.server, "client_buffer_size", 30)
+        held = parse_held((query.get("held") or [""])[0], limit=buf_cap)
         snap = progress(
-            deck, pending=pending, limit=limit, offset=offset, after=after
+            deck,
+            pending=pending,
+            limit=limit,
+            offset=offset,
+            after=after,
+            held=held or None,
         )
         if (
             limit > 0
@@ -361,8 +383,9 @@ class Handler(BaseHTTPRequestHandler):
         warnings = list(snap.get("warnings") or [])
         snap.update(deck.public_meta())
         snap["warnings"] = warnings
+        snap["client_buffer"] = buf_cap
         self._warm_upcoming(deck, snap.get("items") or [], query)
-        self._json(200, snap)
+        return self._json(200, snap)
 
     def _media(self, deck_id, query):
         deck = self._opened(deck_id, self._requested_user(query, None))
@@ -1074,6 +1097,7 @@ def serve(
     config_path: Path | None = None,
     base_path: str = "",
     app_title: str = DEFAULT_APP_TITLE,
+    client_buffer_size: int | None = None,
 ) -> None:
     ChoiceSite.allow_reuse_address = True
     try:
@@ -1083,6 +1107,7 @@ def serve(
             config_path=config_path,
             base_path=base_path,
             app_title=app_title,
+            client_buffer_size=client_buffer_size,
         )
     except OSError as exc:
         raise SystemExit(f"Cannot listen on {host}:{port} ({exc.strerror or exc}).") from exc

@@ -99,6 +99,18 @@ def main(argv=None) -> int:
     for deck in opened.decks:
         cleanup_dirs.append(deck.state_dir)
     cleanup_state_dirs(cleanup_dirs)
+    client_buffer = args.client_buffer
+    if client_buffer is None and config_path is not None:
+        try:
+            from choice.config import load_config
+
+            client_buffer = load_config(config_path).client_buffer
+        except Exception:
+            client_buffer = None
+    from choice.client_buffer import buffer_size_from_env
+
+    if client_buffer is None:
+        client_buffer = buffer_size_from_env()
     serve(
         root,
         host,
@@ -106,6 +118,7 @@ def main(argv=None) -> int:
         config_path=config_path.resolve() if config_path else None,
         base_path=base_path,
         app_title=app_title,
+        client_buffer_size=client_buffer,
     )
     return 0
 
@@ -174,6 +187,12 @@ def _parser() -> argparse.ArgumentParser:
         "--title",
         default=os.environ.get("CHOICE_TITLE"),
         help="App name in the tab, header, and PWA manifest (overrides choice.toml title)",
+    )
+    parser.add_argument(
+        "--client-buffer",
+        type=int,
+        default=None,
+        help="Cards to preload and hold order-stable (default 30; CHOICE_CLIENT_BUFFER)",
     )
     parser.add_argument(
         "--open",

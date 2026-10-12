@@ -20,6 +20,8 @@ const state = {
   galleryAt: {},
   anchorAfterLoad: null,
   lastSwipe: null,
+  bufferSize: 30,
+  itemsLoadSeq: 0,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -997,6 +999,16 @@ async function openDeck(id, push) {
   }
 }
 
+function heldItemIds() {
+  const items = (state.payload && state.payload.items) || [];
+  const cap = state.bufferSize || 30;
+  if (!items.length) return "";
+  return items
+    .slice(0, cap)
+    .map((row) => row.id)
+    .join(",");
+}
+
 function itemsApiPath(cursor, limit) {
   const w = state.mediaWidth || 1280;
   let path =
@@ -1009,6 +1021,8 @@ function itemsApiPath(cursor, limit) {
     "&w=" +
     w;
   if (cursor) path += "&after=" + encodeURIComponent(cursor);
+  const held = heldItemIds();
+  if (held) path += "&held=" + encodeURIComponent(held);
   return path;
 }
 
@@ -1147,26 +1161,46 @@ function applyPosAnchor(items) {
   state.anchorAfterLoad = null;
 }
 
-async function loadItems(storedBlind) {
-  const anchorId = anchorItemId();
+function mergeItemsFromServer(prevPayload, data, anchorId) {
+  const prevItems = (prevPayload && prevPayload.items) || [];
+  const incoming = data.items || [];
+  const nav = pileNav();
+  const merged = nav ? nav.mergeReloadItems(prevItems, incoming, state.pos) : incoming;
+  return { ...data, items: merged };
+}
+
+async function loadItems(storedBlind, opts) {
+  const seq = ++state.itemsLoadSeq;
+  const prevPayload = state.payload;
   let data;
   try {
     updateMediaWidth();
-    data = await api(itemsApiPath(null, state.pageSize));
+    const limit = Math.max(state.pageSize, state.bufferSize || 30);
+    data = await api(itemsApiPath(null, limit));
   } catch (_err) {
     return showProblem("Could not reach Choice.");
   }
+  if (seq !== state.itemsLoadSeq) return false;
   if (!data.ok) {
     showProblem(data.message || "Could not read this deck.");
     return false;
   }
-  state.payload = data;
+  if (typeof data.client_buffer === "number" && data.client_buffer > 0) {
+    state.bufferSize = data.client_buffer;
+    state.pageSize = Math.max(state.pageSize, state.bufferSize);
+  }
+  const anchorId =
+    (opts && opts.anchorId) ||
+    (current() && current().id) ||
+    anchorItemId();
+  const merged = mergeItemsFromServer(prevPayload, data, anchorId);
+  state.payload = merged;
   applyPagedMeta(data);
   if (storedBlind !== undefined) {
     state.blind = storedBlind === null ? !!data.blind : storedBlind === "1";
   }
   if (anchorId) state.anchorAfterLoad = anchorId;
-  applyPosAnchor(data.items || []);
+  applyPosAnchor(merged.items || []);
   return true;
 }
 
@@ -1911,14 +1945,18 @@ async function act(direction) {
   }
   if (!data.ok) {
     state.payload = snapshot;
-    state.pos = (snapshot.items || []).findIndex((row) => row.id === itemId);
-    if (state.pos < 0) state.pos = 0;
+    const nav = pileNav();
+    const items = snapshot.items || [];
+    state.pos = nav
+      ? nav.syncPosToAnchor(items, state.pos, itemId)
+      : Math.max(0, items.findIndex((row) => row.id === itemId));
     renderDeck();
     setStatus(data.message || "Not saved");
     return;
   }
   setStatus(data.message || label);
-  loadItems().then((ok) => {
+  const anchorAtResponse = (current() && current().id) || itemId;
+  loadItems(undefined, { anchorId: anchorAtResponse }).then((ok) => {
     if (ok) {
       refreshQueueBadge();
       renderDeck();

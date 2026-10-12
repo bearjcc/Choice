@@ -113,7 +113,9 @@ def decide(deck: Deck, item_id: str, direction: str, note: str | None) -> dict:
                 if action.id == "left":
                     record["undo_token"] = item.id
                 result = _plugin_handle(deck, item, action.id, note)
-                if not result.get("ok", True):
+                if result.get("noop"):
+                    record["plugin_noop"] = True
+                elif not result.get("ok", True):
                     raise _OpError(
                         _plugin_message(result.get("message")) or "Plugin failed."
                     )
@@ -158,7 +160,15 @@ def decide(deck: Deck, item_id: str, direction: str, note: str | None) -> dict:
 
         bust_item_cache(deck, invalidate_folder=False)
         message = "{}: {}".format(record["label"], item.title) + hook_note
-        return {"ok": True, "message": message, "can_undo": _has_undo(deck), "allow_undo": _undo_allowed(deck)}
+        out = {
+            "ok": True,
+            "message": message,
+            "can_undo": _has_undo(deck),
+            "allow_undo": _undo_allowed(deck),
+        }
+        if record.get("plugin_noop"):
+            out["noop"] = True
+        return out
 
 
 def undo(deck: Deck) -> dict:
@@ -412,12 +422,13 @@ def progress(
     limit: int = 0,
     offset: int = 0,
     after: str | None = None,
+    held: list[str] | None = None,
 ) -> dict:
     """Counts, tally, and the cards still to show. Caller may pass items it already loaded."""
     if items is None and deck.folder_scan is not None:
-        return _folder_progress(deck, pending, offset, limit, after=after)
+        return _folder_progress(deck, pending, offset, limit, after=after, held=held)
     if items is None and deck.plugin is not None and limit > 0:
-        return _plugin_progress_page(deck, pending, offset, limit, after=after)
+        return _plugin_progress_page(deck, pending, offset, limit, after=after, held=held)
     try:
         flow = view(deck, items)
     except DeckProblem as exc:
@@ -568,7 +579,9 @@ def _plugin_progress_page(
     limit: int,
     *,
     after: str | None = None,
+    held: list[str] | None = None,
 ) -> dict:
+    from choice.client_buffer import merge_held_pile
     from choice.pile_page import page_after
 
     choices = _choices(deck)
@@ -594,6 +607,8 @@ def _plugin_progress_page(
             if pending:
                 continue
         pile.append(rid)
+    if held:
+        pile = merge_held_pile(pile, held)
     if after is not None:
         page_ids, next_after = page_after(pile, after or None, limit)
     else:
@@ -657,13 +672,14 @@ def _folder_progress(
     limit: int,
     *,
     after: str | None = None,
+    held: list[str] | None = None,
 ) -> dict:
     from choice.count_prefs import today_count_label
     from choice.folder_index import item_for_id, progress_page
 
     choices = _choices(deck)
     page_ids, total, decided, left, warnings, next_after, scanning, pile_size = progress_page(
-        deck, choices, pending, offset, limit, after=after
+        deck, choices, pending, offset, limit, after=after, held=held
     )
     visible = []
     for rid in page_ids:

@@ -17,7 +17,15 @@ class FolderSortIndexTests(unittest.TestCase):
         self.tmp = Path(self._tmp.name)
 
     def tearDown(self):
-        self._tmp.cleanup()
+        from choice.work_queue import wait_idle
+
+        for queue in self.tmp.rglob("work_queue.json"):
+            wait_idle(queue.parent, timeout=30.0)
+        try:
+            self._tmp.cleanup()
+        except OSError:
+            time.sleep(0.5)
+            self._tmp.cleanup()
 
     def _sort_deck(self, extra_sort: dict | None = None):
         sort = {"right": "keep", "left": "reject", "up": "like", "down": "love"}
@@ -73,6 +81,9 @@ class FolderSortIndexTests(unittest.TestCase):
         (self.tmp / "incoming" / "b.jpg").write_bytes(b"y")
         scan_incremental(deck)
         decide(deck, "incoming/b.jpg", "left", None)
+        from choice.work_queue import wait_idle
+
+        wait_idle(deck.state_dir, timeout=30.0)
         self.assertTrue((self.tmp / "reject" / "b.jpg").is_file())
         again = decide(deck, "incoming/b.jpg", "right", None)
         self.assertFalse(again["ok"])

@@ -67,6 +67,20 @@ test("undo: anchor restores undone card index", () => {
   assert.equal(restored[afterUndo].id, "a");
 });
 
+test("missing anchor keeps nearest index not zero", () => {
+  const items = [item("b"), item("c"), item("d")];
+  const pos = nav.syncPosToAnchor(items, 2, "a");
+  assert.equal(pos, 2);
+  assert.equal(items[pos].id, "d");
+});
+
+test("merge reload keeps client order then appends server tail", () => {
+  const prev = [item("a"), item("b"), item("c")];
+  const server = [item("z"), item("a"), item("b")];
+  const merged = nav.mergeReloadItems(prev, server, 1);
+  assert.equal(merged.map((r) => r.id).join(","), "a,b,z");
+});
+
 test("undo pending: restored card is current", () => {
   const items = [item("b"), item("c")];
   const pos = 0;
