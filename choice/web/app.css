@@ -1,53 +1,26 @@
 :root {
   color-scheme: light dark;
-  --bg: #f3efe8;
-  --card: #fffcf8;
-  --text: #1c1916;
-  --muted: #655f57;
-  --line: #e4ddd3;
-  --fill: #ebe4da;
-  --yes: #157a42;
-  --on-yes: #fff;
-  --no: #b42318;
-  --on-no: #fff;
-  --up: #e2b340;
-  --on-up: #1c1608;
-  --down: #4a5568;
-  --on-down: #fff;
-  --focus: #1d4e89;
-  --shadow: #1c19161f;
-  --photo: #14120f;
-  --drag-yes: #157a4240;
-  --drag-no: #b4231840;
-  --drag-fav: #e2b34040;
-  --drag-skip: #4a556840;
-  --dialog-pad: 12px;
+  --bg: var(--color-bg);
+  --card: var(--color-surface);
+  --text: var(--color-text);
+  --muted: var(--color-text-muted);
+  --line: var(--color-border);
+  --fill: var(--color-fill);
+  --yes: var(--color-yes);
+  --on-yes: var(--color-on-yes);
+  --no: var(--color-no);
+  --on-no: var(--color-on-no);
+  --up: var(--color-up);
+  --on-up: var(--color-on-up);
+  --down: var(--color-down);
+  --on-down: var(--color-on-down);
+  --focus: var(--color-accent);
+  --shadow: var(--shadow-color);
+  --photo: var(--color-photo);
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0e1014;
-    --card: #171b22;
-    --text: #eceef2;
-    --muted: #9aa3b2;
-    --line: #2c3340;
-    --fill: #232833;
-    --yes: #1f9d55;
-    --on-yes: #fff;
-    --no: #d45353;
-    --on-no: #fff;
-    --up: #e2b340;
-    --on-up: #1c1608;
-    --down: #5c6b86;
-    --on-down: #fff;
-    --focus: #9dc1ee;
-    --shadow: #00000073;
-    --photo: #07080b;
-  }
 }
 
 * { box-sizing: border-box; }
@@ -65,7 +38,9 @@ body {
   overflow-x: clip;
   background: var(--bg);
   color: var(--text);
-  font: 17px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: var(--font-family);
+  font-size: 17px;
+  line-height: var(--line-height-body);
   padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
   -webkit-text-size-adjust: 100%;
 }
@@ -76,12 +51,12 @@ button, input {
 }
 
 button {
-  min-height: 44px;
+  min-height: var(--tap-min);
   background: var(--card);
   border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 8px 14px;
-  font-weight: 600;
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  font-weight: var(--font-weight-semibold);
   cursor: pointer;
 }
 
@@ -96,21 +71,37 @@ button:disabled:active { transform: none; }
 
 .top {
   flex-shrink: 0;
-  padding: 10px 16px 0;
+  padding: var(--space-2) var(--page-gutter) 0;
+}
+
+.top-inner {
+  width: min(var(--library-max), 100%);
+  margin-inline: auto;
+  box-sizing: border-box;
 }
 
 .top-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-2);
+}
+
+.nav-back {
+  margin-right: -4px;
+}
+
+.nav-icon {
+  width: 1.35rem;
+  height: 1.35rem;
+  display: block;
 }
 
 .icon-btn {
   flex-shrink: 0;
-  min-width: 44px;
-  min-height: 44px;
-  padding: 4px 12px;
-  border-radius: 999px;
+  min-width: var(--tap-min);
+  min-height: var(--tap-min);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
   background: transparent;
   border-color: transparent;
   color: var(--muted);
@@ -123,7 +114,7 @@ button:disabled:active { transform: none; }
   color: var(--muted);
   min-height: 36px;
   padding: 4px 10px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   flex-shrink: 0;
 }
 
@@ -136,8 +127,8 @@ button:disabled:active { transform: none; }
 
 .top h1 {
   margin: 0;
-  font-size: 1.05rem;
-  font-weight: 700;
+  font-size: var(--text-title);
+  font-weight: var(--font-weight-bold);
   letter-spacing: -0.01em;
   flex: 1;
   min-width: 0;
@@ -149,7 +140,7 @@ button:disabled:active { transform: none; }
 .count {
   margin: 0;
   color: var(--muted);
-  font-size: 0.82rem;
+  font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
   flex: 1 1 auto;
   min-width: 0;
@@ -162,9 +153,17 @@ button:disabled:active { transform: none; }
 .filter-bar {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 0.35rem 0.75rem;
   padding: 0.35rem 0.5rem 0.15rem;
   border-top: 1px solid var(--line, rgba(0, 0, 0, 0.08));
+}
+
+.filter-bar-icon {
+  display: flex;
+  align-items: center;
+  color: var(--muted);
+  margin-right: var(--space-1);
 }
 
 .filter-group {
@@ -193,7 +192,7 @@ button:disabled:active { transform: none; }
   font: inherit;
   font-size: 0.78rem;
   padding: 0.2rem 0.55rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid var(--line, rgba(0, 0, 0, 0.12));
   background: var(--surface, transparent);
   color: inherit;
@@ -243,11 +242,11 @@ button:disabled:active { transform: none; }
   margin: 0;
   padding: 2px 8px;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: transparent;
   color: var(--muted);
   font-size: 0.72rem;
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   font-variant-numeric: tabular-nums;
   line-height: 1.2;
   white-space: nowrap;
@@ -266,12 +265,12 @@ button:disabled:active { transform: none; }
 
 .tools button {
   min-height: 36px;
-  padding: 4px 12px;
-  border-radius: 999px;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
   background: transparent;
   color: var(--muted);
-  font-size: 0.875rem;
-  font-weight: 600;
+  font-size: var(--text-md);
+  font-weight: var(--font-weight-semibold);
 }
 
 .tools button[aria-pressed="true"] {
@@ -281,7 +280,7 @@ button:disabled:active { transform: none; }
 }
 
 .track {
-  margin: 12px -16px 0;
+  margin: var(--space-3) 0 0;
   height: 4px;
   background: color-mix(in srgb, var(--text) 22%, var(--bg));
 }
@@ -299,16 +298,137 @@ main {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  padding: 12px 12px 8px;
+  padding: var(--space-3) var(--page-gutter) var(--space-2);
 }
 
-.library, .empty, .card, .stack {
-  width: min(760px, 100%);
+main.library-view {
+  align-items: center;
+}
+
+main.library-view > .warn {
+  width: min(var(--library-max), 100%);
+  margin-inline: auto;
+}
+
+.library-home {
+  width: 100%;
+  max-width: var(--library-max);
+  margin-inline: auto;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+
+.library-home > .fine,
+.library-home > .warn {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.library-home > .fine {
+  margin: var(--space-4) 0 0;
+  text-align: center;
+}
+
+.library-home .library-toolbar,
+.library-home .library,
+.library-home .empty {
+  width: 100%;
+  margin-inline: 0;
+  max-width: none;
+}
+
+.card, .stack {
+  width: min(var(--library-max), 100%);
+  margin-inline: auto;
+}
+
+.empty:not(.library-home .empty) {
+  width: min(var(--library-max), 100%);
   margin-inline: auto;
 }
 
 .setup-link {
   margin-top: 1.25rem;
+}
+
+.library-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: 14px;
+  padding: 0 2px;
+}
+
+.library-toolbar .toolbar-spacer {
+  flex: 1 1 auto;
+  min-width: 8px;
+}
+
+button.primary {
+  background: var(--focus);
+  color: #fff;
+  border-color: transparent;
+}
+
+button.primary:focus-visible {
+  outline-color: var(--text);
+}
+
+button.danger {
+  background: var(--no);
+  color: var(--on-no);
+  border-color: transparent;
+}
+
+.admin-deck-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.admin-deck-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--card);
+}
+
+.admin-deck-row .deck-name {
+  flex: 1 1 12rem;
+  min-width: 0;
+  font-size: 1rem;
+}
+
+.admin-deck-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.admin-locked {
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  background: var(--fill);
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.client-prefs-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 28rem;
 }
 
 .setup-form {
@@ -338,7 +458,7 @@ dialog.app-dialog .order-filter-form {
 }
 
 .setup-label {
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
   color: var(--muted);
   margin-top: 0.5rem;
 }
@@ -347,7 +467,7 @@ dialog.app-dialog .order-filter-form {
 .order-filter-form select {
   width: 100%;
   box-sizing: border-box;
-  min-height: 44px;
+  min-height: var(--tap-min);
   padding: 0.6rem 0.75rem;
   font-size: 1rem;
   border: 1px solid var(--line);
@@ -359,7 +479,7 @@ dialog.app-dialog .order-filter-form {
 .setup-seed-row {
   display: flex;
   align-items: stretch;
-  gap: 8px;
+  gap: var(--space-2);
   width: 100%;
 }
 
@@ -370,7 +490,7 @@ dialog.app-dialog .order-filter-form {
 
 .seed-reshuffle {
   flex: 0 0 auto;
-  min-height: 44px;
+  min-height: var(--tap-min);
   padding: 0 0.85rem;
   white-space: nowrap;
 }
@@ -392,31 +512,59 @@ dialog.app-dialog .order-filter-form {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-2);
+}
+
+@media (min-width: 768px) {
+  .library-home .library {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+    gap: var(--space-2);
+  }
 }
 
 .library li {
   margin: 0;
-  display: flex;
-  align-items: stretch;
-  gap: 4px;
+  min-width: 0;
+  list-style: none;
+}
+
+.deck-card-shell {
+  position: relative;
+  width: 100%;
   min-width: 0;
 }
 
-.deck-more {
-  flex: 0 0 auto;
-  align-self: center;
-  min-width: 44px;
-  padding: 8px;
-  background: transparent;
-  border-color: transparent;
+.deck-edit {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  z-index: 1;
+  min-width: var(--tap-min);
+  min-height: var(--tap-min);
+  padding: var(--space-1);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--card) 88%, transparent);
   color: var(--muted);
+}
+
+.deck-edit:hover,
+.deck-edit:focus-visible {
+  color: var(--text);
+  background: var(--fill);
+}
+
+.deck-edit-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  display: block;
 }
 
 .deck-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
   width: 100%;
   min-width: 0;
 }
@@ -439,19 +587,19 @@ dialog.app-dialog .order-filter-form {
 }
 
 .deck-link {
-  flex: 1 1 auto;
-  min-width: 0;
-  width: 0;
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 10px;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   text-align: left;
   background: var(--card);
   border: 1px solid var(--line);
-  border-radius: 16px;
-  padding: 14px 16px 12px;
-  box-shadow: 0 1px 0 var(--shadow);
+  border-radius: var(--radius-lg);
+  padding: 14px calc(var(--tap-min) + var(--space-2)) 12px var(--space-4);
+  box-shadow: var(--shadow-sm);
 }
 
 .deck-copy {
@@ -464,8 +612,8 @@ dialog.app-dialog .order-filter-form {
 }
 
 .deck-name {
-  font-weight: 700;
-  font-size: 1.15rem;
+  font-weight: var(--font-weight-bold);
+  font-size: var(--text-deck);
   letter-spacing: -0.01em;
   line-height: 1.25;
   flex: 0 1 auto;
@@ -529,7 +677,7 @@ dialog.app-dialog .order-filter-form {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  gap: 10px;
+  gap: var(--space-2);
 }
 
 .stack .card { width: 100%; }
@@ -545,7 +693,7 @@ dialog.app-dialog .order-filter-form {
 }
 
 .sides.media {
-  gap: 12px;
+  gap: var(--space-3);
   padding: 0 12px 12px;
 }
 
@@ -560,7 +708,7 @@ dialog.app-dialog .order-filter-form {
   margin: 0 0 6px;
   color: var(--muted);
   font-size: 0.8rem;
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
 }
 
 .side > .body { margin: 0; }
@@ -572,7 +720,7 @@ dialog.app-dialog .order-filter-form {
 }
 
 .side.has-media:not(.pair-stack .side) {
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   overflow: hidden;
   background: var(--photo);
 }
@@ -612,7 +760,7 @@ dialog.app-dialog .order-filter-form {
   min-height: 0;
   max-height: 100%;
   border: 1px solid var(--line);
-  border-radius: 18px;
+  border-radius: var(--radius-xl);
   background: var(--card);
   box-shadow: 0 10px 28px var(--shadow);
   overflow: auto;
@@ -679,7 +827,7 @@ dialog.app-dialog .order-filter-form {
 
 .cap h2 {
   margin: 0 0 4px;
-  font-size: 1.15rem;
+  font-size: var(--text-deck);
 }
 
 .cap .body { margin: 0; }
@@ -691,7 +839,7 @@ dialog.app-dialog .order-filter-form {
 .card h2 {
   margin: 0 0 8px;
   font-size: 1.45rem;
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   letter-spacing: -0.02em;
   overflow-wrap: anywhere;
 }
@@ -711,7 +859,7 @@ dialog.app-dialog .order-filter-form {
 
 .chip {
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--fill);
   padding: 3px 10px;
   color: var(--muted);
@@ -727,7 +875,7 @@ dialog.app-dialog .order-filter-form {
   transform: translate(-50%, -50%);
   padding: 6px 16px;
   border: 2px solid var(--text);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--card) 88%, transparent);
   font-weight: 800;
   font-size: 1.2rem;
@@ -763,7 +911,7 @@ dialog.app-dialog .order-filter-form {
 }
 
 .card.pair.pair-side-by-side .sides.media {
-  gap: 10px;
+  gap: var(--space-2);
 }
 
 .card.pair.pair-side-by-side .side {
@@ -786,13 +934,13 @@ dialog.app-dialog .order-filter-form {
   z-index: 20;
   right: calc(16px + env(safe-area-inset-right));
   bottom: calc(16px + env(safe-area-inset-bottom));
-  min-height: 44px;
+  min-height: var(--tap-min);
   padding: 10px 16px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid var(--line);
   background: var(--card);
   box-shadow: 0 4px 16px var(--shadow);
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   font-size: 0.9rem;
 }
 
@@ -826,9 +974,9 @@ dialog.app-dialog .order-filter-form {
   min-width: 28px;
   min-height: 28px;
   padding: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-size: 0.75rem;
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   border: 1px solid var(--line);
   background: var(--card);
 }
@@ -847,13 +995,13 @@ dialog.app-dialog .order-filter-form {
 .setup-step {
   margin: 0 0 8px;
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
 }
 
 .tile-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  gap: var(--space-2);
 }
 
 .type-tile {
@@ -872,13 +1020,13 @@ dialog.app-dialog .order-filter-form {
   background: var(--fill);
 }
 
-.tile-label { font-weight: 700; font-size: 1.05rem; }
+.tile-label { font-weight: var(--font-weight-bold); font-size: var(--text-title); }
 .tile-hint { font-size: 0.8rem; color: var(--muted); font-weight: 500; }
 
 .switch-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
   margin: 8px 0;
   cursor: pointer;
 }
@@ -894,7 +1042,7 @@ dialog.app-dialog .order-filter-form {
   position: relative;
   width: 2.75rem;
   height: 1.55rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--line);
   flex-shrink: 0;
 }
@@ -916,7 +1064,7 @@ dialog.app-dialog .order-filter-form {
 
 .path-row {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .path-row input { flex: 1; min-width: 0; }
@@ -925,7 +1073,7 @@ dialog.app-dialog .order-filter-form {
 .setup-nav {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
   margin-top: 16px;
 }
 
@@ -977,7 +1125,7 @@ button.primary {
 .empty button {
   margin-top: 16px;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--text);
   color: var(--bg);
   padding: 8px 18px;
@@ -1010,13 +1158,13 @@ button.primary {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 8px 12px;
+  gap: var(--space-2) 12px;
   padding: 10px 0;
   border-top: 1px solid var(--line);
 }
 
 .place, .mark {
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1040,7 +1188,7 @@ button.primary {
 
 .result-note {
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
 }
 
 .status {
@@ -1050,7 +1198,7 @@ button.primary {
   padding: 2px 16px 0;
   text-align: center;
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
 }
 
 .actions {
@@ -1059,7 +1207,7 @@ button.primary {
   flex-wrap: wrap;
   justify-content: center;
   align-items: stretch;
-  gap: 8px;
+  gap: var(--space-2);
   padding: 8px 10px calc(10px + env(safe-area-inset-bottom));
   padding-left: calc(10px + env(safe-area-inset-left));
   padding-right: calc(10px + env(safe-area-inset-right));
@@ -1074,13 +1222,13 @@ button.primary {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: stretch;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .action-slot {
   display: flex;
   align-items: stretch;
-  gap: 8px;
+  gap: var(--space-2);
   min-width: 0;
 }
 
@@ -1202,7 +1350,7 @@ dialog.app-dialog .dialog-shell {
   box-sizing: border-box;
   border: 1px solid var(--line);
   background: var(--card);
-  border-radius: 18px 18px 0 0;
+  border-radius: var(--radius-xl) 18px 0 0;
   box-shadow: 0 -12px 40px var(--shadow);
   display: flex;
   flex-direction: column;
@@ -1234,7 +1382,7 @@ dialog.app-dialog .dialog-body {
 .person {
   display: flex;
   align-items: stretch;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .person .deck-link {
@@ -1257,16 +1405,16 @@ dialog.app-dialog .dialog-body {
 
 .add-person {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   margin-top: 16px;
 }
 
 .add-person input {
   flex: 1;
   min-width: 0;
-  min-height: 44px;
+  min-height: var(--tap-min);
   padding: 8px 12px;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--line);
   background: var(--card);
 }
@@ -1283,8 +1431,8 @@ dialog.app-dialog .dialog-body {
 .assign-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: 44px;
+  gap: var(--space-2);
+  min-height: var(--tap-min);
 }
 
 .assign-row input {
@@ -1297,14 +1445,14 @@ dialog::backdrop { background: #0000008c; }
 
 dialog h2 {
   margin: 0 0 12px;
-  font-size: 1.15rem;
+  font-size: var(--text-deck);
 }
 
 dialog .side-label {
   margin: 14px 0 4px;
   color: var(--muted);
   font-size: 0.8rem;
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
 }
 
 dialog p { margin: 0 0 8px; }
@@ -1312,7 +1460,7 @@ dialog p { margin: 0 0 8px; }
 .sheet-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
   margin: 14px 0;
 }
 
@@ -1326,7 +1474,7 @@ dialog p { margin: 0 0 8px; }
   width: 100%;
   margin-top: 8px;
   padding: 10px 12px;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--line);
   background: var(--bg);
 }
@@ -1334,12 +1482,17 @@ dialog p { margin: 0 0 8px; }
 .fine {
   margin: 8px 0 0;
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
 }
 
 main > .fine {
-  width: min(760px, 100%);
+  width: min(var(--library-max), 100%);
   margin: 16px auto 8px;
+}
+
+main.library-view > .fine {
+  width: min(var(--library-max), 100%);
+  margin-inline: auto;
 }
 
 .fine a {
@@ -1347,24 +1500,37 @@ main > .fine {
   display: inline-block;
   padding: 10px 2px;
   margin: -6px 0;
-  min-height: 44px;
+  min-height: var(--tap-min);
   line-height: 1.4;
 }
 
 @media (min-width: 700px) {
   main { padding: 16px 20px 10px; }
   dialog.app-dialog .dialog-shell {
-    border-radius: 18px;
-    box-shadow: 0 12px 40px var(--shadow);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-dialog);
   }
 }
 
 @media (min-width: 1200px) {
-  .library,
-  .empty,
   .card,
   .stack {
-    width: min(920px, 100%);
+    width: min(var(--library-max), 100%);
+  }
+
+  .actions.deck-bar {
+    width: min(980px, 100%);
+    margin-inline: auto;
+    border-left: 1px solid var(--line);
+    border-right: 1px solid var(--line);
+    border-radius: var(--radius-lg) 16px 0 0;
+  }
+}
+
+@media (min-width: 1800px) {
+  .card,
+  .stack {
+    width: min(var(--library-max), 100%);
   }
 }
 
@@ -1426,4 +1592,13 @@ main > .fine {
 @media (prefers-reduced-motion: reduce) {
   .card, button { transition: none; }
   button:active { transform: none; }
+}
+
+html[data-reduce-motion="on"] .card,
+html[data-reduce-motion="on"] button {
+  transition: none;
+}
+
+html[data-reduce-motion="on"] button:active {
+  transform: none;
 }

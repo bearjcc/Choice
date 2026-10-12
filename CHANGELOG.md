@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.7 (2026-10-12)
+
+### Changed
+
+- Web UI pass: dedicated **Back to decks** control in the header (out of the deck menu), centered layout shell on wide and ultrawide viewports, and a **Settings** panel for per-device preferences (motion, decide-bar labels).
+- **Design tokens** (`design-tokens.css`): spacing, radius, colour, type scale, and shadows; `app.css` uses semantic aliases.
+- **Icons**: vendored Material Design Icons subset (`mdi.js`, `MDI-ATTRIBUTION.txt`) for header, deck sources, filters, and action buttons (inline SVG, no font/CDN).
+- **Server admin** panel for config-backed installs: add/edit/delete decks with confirmations, toolbar on the library, clearer empty states; when People mode is on, only the `owner` in `users.json` (default: first person) may change server config.
+
+### Tests
+
+- Playwright UI review: back button, client settings, server admin, and extra desktop viewports (1440, 1920, ultrawide).
+
 ## 0.5.6 (2026-10-12)
 
 ### Added

@@ -19,13 +19,28 @@ const ALL_VIEWPORTS = [
   { name: "768x1024", width: 768, height: 1024, mobile: false },
   { name: "1366x768", width: 1366, height: 768, mobile: false },
   { name: "1920x1080", width: 1920, height: 1080, mobile: false },
+  { name: "1440x900", width: 1440, height: 900, mobile: false },
+  { name: "2560x1080", width: 2560, height: 1080, mobile: false },
 ];
 
 const VIEWPORTS = process.env.CHOICE_UI_VIEWPORTS
   ? ALL_VIEWPORTS.filter((vp) => process.env.CHOICE_UI_VIEWPORTS.split(",").includes(vp.name))
   : ALL_VIEWPORTS;
 
-const SHOT_WIDTHS = new Set(["390x844", "1366x768"]);
+const SHOT_WIDTHS = new Set(["390x844", "1366x768", "1440x900", "1920x1080", "2560x1080"]);
+
+const CENTER_VIEWPORTS = new Set([
+  "390x844",
+  "768x1024",
+  "1440x900",
+  "1920x1080",
+  "2560x1080",
+]);
+
+const TWO_DECKS = [
+  { id: "alpha", title: "Album alpha", left: 12, total: 40, source_type: "folder" },
+  { id: "beta", title: "Album beta", left: 3, total: 10, source_type: "folder" },
+];
 
 const STRESS_DECKS = [
   {
@@ -64,6 +79,16 @@ function launchBrowser() {
   return chromium.launch({ headless: true, executablePath: chrome });
 }
 
+async function assertLibraryCentered(page, label) {
+  const c = await page.evaluate(() => window.ChoiceTestHooks.libraryCenterMetrics());
+  if (c.skipped) return;
+  if (!c.ok) {
+    throw new Error(
+      `${label}: library column misaligned: ${JSON.stringify({ blocks: c.blocks, edgesAligned: c.edgesAligned })}`,
+    );
+  }
+}
+
 async function assertLayout(page, label) {
   const m = await page.evaluate(() => window.ChoiceTestHooks.layoutMetrics());
   const problems = [];
@@ -74,7 +99,7 @@ async function assertLayout(page, label) {
   const badControls = (m.controls || []).filter((c) => !c.skipped && !c.ok);
   if (badControls.length) problems.push(`controls off-screen: ${JSON.stringify(badControls)}`);
   const tiny = (m.smallTaps || []).filter(
-    (t) => (t.w < 40 || t.h < 40) && !String(t.cls).includes("deck-more"),
+    (t) => (t.w < 40 || t.h < 40) && !String(t.cls).includes("deck-edit"),
   );
   if (tiny.length) problems.push(`small tap targets: ${JSON.stringify(tiny)}`);
   if (problems.length) throw new Error(`${label}: ${problems.join("; ")}`);
@@ -98,14 +123,29 @@ async function ensureLibrary(page) {
 async function openDeck(page, title) {
   await ensureLibrary(page);
   await page.locator("ul.library button.deck-link").filter({ hasText: title }).first().click();
-  await page.waitForSelector("#menu:not([hidden])", { timeout: 15_000 });
+  await page.waitForSelector("#back-library:not([hidden])", { timeout: 15_000 });
 }
 
-async function installStressIndexStub(page) {
+async function installConfigStub(page) {
   const body = JSON.stringify({
     ok: true,
-    library: STRESS_DECKS,
-    decks: STRESS_DECKS,
+    editable: true,
+    admin_allowed: true,
+    path: "/tmp/choice.toml",
+    state_dir: "/tmp/state",
+    sources: [],
+    decks: [],
+  });
+  await page.route("**/api/config**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body });
+  });
+}
+
+async function installStressIndexStub(page, decks = STRESS_DECKS) {
+  const body = JSON.stringify({
+    ok: true,
+    library: decks,
+    decks,
     app_title: "Choice UI",
     warnings: [],
   });
@@ -117,25 +157,47 @@ async function installStressIndexStub(page) {
 async function runScenario(page, vp, scenario) {
   await page.setViewportSize({ width: vp.width, height: vp.height });
   if (scenario.indexStub) {
-    await installStressIndexStub(page);
+    await installStressIndexStub(page, scenario.decks || STRESS_DECKS);
+    await installConfigStub(page);
   } else {
     await page.unroute("**/api/index**").catch(() => {});
+    await page.unroute("**/api/config**").catch(() => {});
   }
   await page.goto(baseUrl, { waitUntil: "domcontentloaded", timeout: 25_000 });
   await page.waitForFunction(() => window.ChoiceTestHooks);
   await scenario.setup(page);
+  if (scenario.checkLibraryCenter) {
+    await page.waitForSelector("main.library-view .library-home", { timeout: 15_000 });
+  }
   await page.waitForTimeout(80);
   await assertLayout(page, `${vp.name}/${scenario.name}`);
+  if (scenario.checkLibraryCenter && CENTER_VIEWPORTS.has(vp.name)) {
+    await assertLibraryCentered(page, `${vp.name}/${scenario.name}`);
+  }
   await maybeShot(page, vp, scenario.name);
   if (scenario.after) await scenario.after(page);
 }
 
 const SCENARIOS = [
   {
+    name: "home-two-decks",
+    indexStub: true,
+    decks: TWO_DECKS,
+    checkLibraryCenter: true,
+    setup: async (page) => {
+      await page.evaluate(async (decks) => {
+        await window.ChoiceTestHooks.seedHomeLibrary(decks);
+      }, TWO_DECKS);
+    },
+  },
+  {
     name: "home-stress",
     indexStub: true,
+    checkLibraryCenter: true,
     setup: async (page) => {
-      await page.evaluate((decks) => window.ChoiceTestHooks.seedHomeLibrary(decks), STRESS_DECKS);
+      await page.evaluate(async (decks) => {
+        await window.ChoiceTestHooks.seedHomeLibrary(decks);
+      }, STRESS_DECKS);
       const dup = await page.evaluate(() =>
         window.ChoiceTestHooks.formatCountMeta({
           left: 3810,
@@ -146,22 +208,28 @@ const SCENARIOS = [
         throw new Error(`duplicate left in count meta: ${dup}`);
       }
       const vw = page.viewportSize().width;
-      const more = await page.locator(".library .deck-more").first().boundingBox();
-      if (!more || more.x + more.width > vw + 2) {
-        throw new Error("deck-more menu pushed off screen");
+      const shell = await page.locator(".library .deck-card-shell").first().boundingBox();
+      const edit = await page.locator(".library .deck-edit").first().boundingBox();
+      if (!shell || !edit) throw new Error("deck edit control missing");
+      if (edit.right > shell.right + 2 || edit.left < shell.left - 2) {
+        throw new Error("deck edit sits outside card shell");
       }
     },
   },
   {
     name: "home-empty",
+    checkLibraryCenter: true,
     setup: async (page) => {
-      await page.evaluate(() => window.ChoiceTestHooks.seedHomeLibrary([]));
+      await page.evaluate(async () => {
+        await window.ChoiceTestHooks.seedHomeLibrary([]);
+      });
     },
   },
   {
     name: "home-live",
+    checkLibraryCenter: true,
     setup: async (page) => {
-      await page.waitForSelector("ul.library, .empty", { timeout: 20_000 });
+      await page.waitForSelector("main.library-view .library-home", { timeout: 20_000 });
     },
   },
   {
@@ -208,6 +276,36 @@ const SCENARIOS = [
       await page.waitForSelector("ul.library button.deck-link", { timeout: 20_000 });
       await openDeck(page, "Yes or no");
       await page.click("#menu");
+      await page.waitForFunction(() => window.ChoiceDialog.isOpen());
+    },
+    after: async (page) => {
+      await page.evaluate(() => window.ChoiceDialog.close());
+    },
+  },
+  {
+    name: "back-to-decks",
+    setup: async (page) => {
+      await openDeck(page, "Yes or no");
+      await page.click("#back-library");
+      await page.waitForSelector("ul.library, .empty", { timeout: 15_000 });
+    },
+  },
+  {
+    name: "modal-client-settings",
+    setup: async (page) => {
+      await ensureLibrary(page);
+      await page.click("#client-settings");
+      await page.waitForFunction(() => window.ChoiceDialog.isOpen());
+    },
+    after: async (page) => {
+      await page.evaluate(() => window.ChoiceDialog.close());
+    },
+  },
+  {
+    name: "modal-server-admin",
+    setup: async (page) => {
+      await ensureLibrary(page);
+      await page.evaluate(() => window.ChoiceTestHooks.openAdminPanel());
       await page.waitForFunction(() => window.ChoiceDialog.isOpen());
     },
     after: async (page) => {

@@ -7,15 +7,25 @@
 <meta name="theme-color" content="#f3efe8" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0e1014" media="(prefers-color-scheme: dark)">
 <title>Choice</title>
+<link rel="stylesheet" href="design-tokens.css">
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
 <header class="top">
+  <div class="top-inner">
   <div class="top-row">
+    <button id="back-library" type="button" class="icon-btn nav-back" hidden aria-label="Back to decks">
+      <span class="icon-slot" data-mdi="back" data-mdi-class="nav-icon" aria-hidden="true"></span>
+    </button>
     <h1 id="title">Choice</h1>
     <p id="count" class="count"></p>
     <button id="queue-badge" type="button" class="queue-badge" hidden aria-label="Background queue" data-choice-modal="queue-failures"></button>
-    <button id="menu" type="button" class="icon-btn" aria-label="Menu" aria-haspopup="true" hidden data-choice-modal="menu">⋯</button>
+    <button id="client-settings" type="button" class="icon-btn" aria-label="Settings" hidden data-choice-modal="client-settings">
+      <span class="icon-slot" data-mdi="settings" data-mdi-class="nav-icon" aria-hidden="true"></span>
+    </button>
+    <button id="menu" type="button" class="icon-btn" aria-label="Deck menu" aria-haspopup="true" hidden data-choice-modal="menu">
+      <span class="icon-slot" data-mdi="menu" data-mdi-class="nav-icon" aria-hidden="true"></span>
+    </button>
   </div>
   <div id="filter-bar" class="filter-bar" hidden></div>
   <div class="tools" id="tools" hidden aria-hidden="true">
@@ -26,6 +36,7 @@
     <button id="counts" type="button">Counts</button>
   </div>
   <div class="track" id="track" hidden><div id="fill"></div></div>
+  </div>
 </header>
 <main id="main"></main>
 <p id="status" class="status" aria-live="polite"></p>
@@ -38,6 +49,7 @@
 <script src="dialog_ui.js"></script>
 <script src="pile_nav.js"></script>
 <script src="swipe_ui.js"></script>
+<script src="mdi.js"></script>
 <script src="action_icons.js"></script>
 <script src="app.js" defer></script>
 </body>

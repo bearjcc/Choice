@@ -114,7 +114,7 @@ const HOOK_SCENARIOS = [
   {
     name: "deck-edit",
     needsDeck: false,
-    run: async (page) => page.locator("button.deck-more").first().click(),
+    run: async (page) => page.locator("button.deck-edit").first().click(),
     click: "#dialog .setup-wizard button",
   },
 ];

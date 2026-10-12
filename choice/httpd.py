@@ -54,6 +54,9 @@ _STATIC = {
     "pile_nav.js": "text/javascript; charset=utf-8",
     "swipe_ui.js": "text/javascript; charset=utf-8",
     "action_icons.js": "text/javascript; charset=utf-8",
+    "mdi.js": "text/javascript; charset=utf-8",
+    "design-tokens.css": "text/css; charset=utf-8",
+    "MDI-ATTRIBUTION.txt": "text/plain; charset=utf-8",
     "app.css": "text/css; charset=utf-8",
     "sw.js": "text/javascript; charset=utf-8",
 }
@@ -155,7 +158,7 @@ class Handler(BaseHTTPRequestHandler):
         if parts == ["api", "feed"]:
             return self._feed(parse_qs(parsed.query))
         if parts == ["api", "config"]:
-            return self._config_get()
+            return self._config_get(parse_qs(parsed.query))
         if parts == ["api", "reload"]:
             return self._reload_library()
         if parts == ["api", "source-types"]:
@@ -299,6 +302,7 @@ class Handler(BaseHTTPRequestHandler):
             "ok": True,
             "direct": opened.direct,
             "users": [person.public() for person in roster.people],
+            "owner_id": roster.owner_id,
             "library": library,
             "warnings": warnings,
             "app_title": app_title,
@@ -595,6 +599,22 @@ class Handler(BaseHTTPRequestHandler):
         deck.actor = person.id
         return deck
 
+    def _config_admin_allowed(self, user_id: str | None) -> bool:
+        try:
+            roster = load_roster(self.server.choice_root)
+        except DeckProblem:
+            return True
+        if not roster.enabled:
+            return True
+        owner = roster.owner_id
+        if not owner:
+            return True
+        if user_id is None:
+            return False
+        if user_id == "":
+            return False
+        return user_id == owner
+
     def _requested_user(self, query, body):
         """'' if omitted, None if the id is not a person id."""
         raw = ""
@@ -725,14 +745,35 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def _config_get(self):
+    def _config_get(self, query):
         path = self.server.config_path
+        admin_allowed = self._config_admin_allowed(self._requested_user(query, None))
         if path is None or not path.is_file():
-            return self._json(200, {"ok": True, "config": None, "editable": False})
+            return self._json(
+                200,
+                {
+                    "ok": True,
+                    "config": None,
+                    "editable": False,
+                    "admin_allowed": admin_allowed,
+                },
+            )
         try:
             cfg = load_config(path)
         except ConfigProblem as exc:
             return self._json(400, {"ok": False, "message": str(exc)})
+        if not admin_allowed:
+            decks = [{"id": d.id, "title": d.title} for d in cfg.decks]
+            return self._json(
+                200,
+                {
+                    "ok": True,
+                    "editable": False,
+                    "admin_allowed": False,
+                    "path": str(path),
+                    "decks": decks,
+                },
+            )
         sources = [mask_secrets({"id": s.id, "type": s.type, **s.options}) for s in cfg.sources]
         decks = [
             {"id": d.id, "title": d.title, "source": d.source, "mount": d.mount, **d.options}
@@ -743,6 +784,7 @@ class Handler(BaseHTTPRequestHandler):
             {
                 "ok": True,
                 "editable": True,
+                "admin_allowed": True,
                 "path": str(path),
                 "state_dir": str(cfg.state_dir),
                 "sources": sources,
@@ -755,6 +797,15 @@ class Handler(BaseHTTPRequestHandler):
         if path is None:
             return self._json(
                 400, {"ok": False, "message": "Server was not started with --config."}
+            )
+        user_id = self._requested_user(None, body)
+        if not self._config_admin_allowed(user_id):
+            return self._json(
+                403,
+                {
+                    "ok": False,
+                    "message": "Only the server owner can change decks and sources.",
+                },
             )
         try:
             cfg = load_config(path)

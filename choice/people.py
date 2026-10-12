@@ -50,6 +50,8 @@ class Roster:
     # True when users.json exists. An empty list still counts: the shared
     # log stays unused until the file is removed.
     enabled: bool
+    # Who may edit choice.toml when people mode is on (defaults to first person).
+    owner_id: str | None = None
 
     def get(self, person_id: str) -> Person | None:
         for person in self.people:
@@ -67,7 +69,7 @@ def roster_path(root: Path) -> Path:
 def load_roster(root: Path) -> Roster:
     path = roster_path(root)
     if not path.is_file():
-        return Roster([], [], False)
+        return Roster([], [], False, None)
     try:
         raw = path.read_text(encoding="utf-8")
     except OSError as exc:
@@ -82,8 +84,12 @@ def load_roster(root: Path) -> Roster:
     if not isinstance(rows, list):
         raise DeckProblem("users.json: users must be a list.")
     warnings = []
+    owner_id: str | None = None
+    owner_raw = data.get("owner")
+    if isinstance(owner_raw, str) and owner_raw.strip():
+        owner_id = owner_raw.strip()
     for key in data:
-        if key != "users":
+        if key not in {"users", "owner"}:
             warnings.append(f"users.json: unknown key '{key}' (ignored)")
     people: list[Person] = []
     seen: set[str] = set()
@@ -98,7 +104,12 @@ def load_roster(root: Path) -> Roster:
             continue
         seen.add(person.id)
         people.append(person)
-    return Roster(people, warnings, True)
+    if owner_id is None and people:
+        owner_id = people[0].id
+    elif owner_id and not any(p.id == owner_id for p in people):
+        warnings.append(f"users.json: owner '{owner_id}' is not a person (ignored)")
+        owner_id = people[0].id if people else None
+    return Roster(people, warnings, True, owner_id)
 
 
 def assignment_warnings(people: list[Person], deck_ids: set[str]) -> list[str]:
@@ -114,7 +125,19 @@ def assignment_warnings(people: list[Person], deck_ids: set[str]) -> list[str]:
 
 def save_roster(root: Path, people: list[Person]) -> None:
     path = roster_path(root)
+    owner = None
+    if path.is_file():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(data.get("owner"), str) and data.get("owner").strip():
+                owner = data.get("owner").strip()
+        except (OSError, json.JSONDecodeError):
+            owner = None
+    if owner is None and people:
+        owner = people[0].id
     payload = {"users": [person.public() for person in people]}
+    if owner:
+        payload["owner"] = owner
     text = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
     _write(path, text)
 

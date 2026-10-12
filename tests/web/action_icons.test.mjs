@@ -11,6 +11,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..");
 const require = createRequire(import.meta.url);
 
+const mdiScript = readFileSync(join(root, "choice/web/mdi.js"), "utf8");
+eval(mdiScript);
 const script = readFileSync(join(root, "choice/web/action_icons.js"), "utf8");
 eval(script);
 const icons = globalThis.ChoiceActionIcons;
