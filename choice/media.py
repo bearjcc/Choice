@@ -218,7 +218,12 @@ def _edge_limit(max_edge: int, width: int | None) -> int:
 
 
 def _resize_allowed(path: Path) -> bool:
-    return path.suffix.lower() in _RESIZE_EXT
+    ext = path.suffix.lower()
+    if ext in _RESIZE_EXT:
+        return True
+    if ext in {".heic", ".heif", ".jxl"}:
+        return _pillow_ready()
+    return False
 
 
 def _bytes_resizable(ctype: str, data: bytes) -> bool:
@@ -313,11 +318,18 @@ def _touch(path: Path) -> None:
         return
 
 
+def _register_optional_codecs() -> None:
+    from choice.optional_codecs import register_optional_codecs
+
+    register_optional_codecs()
+
+
 def _encode_image_file(path: Path, edge: int) -> tuple[bytes | None, str]:
     try:
         from PIL import Image, ImageOps
     except ImportError:
         return None, ""
+    _register_optional_codecs()
     try:
         from choice.source_reads import hold_source_read
 

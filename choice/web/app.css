@@ -159,6 +159,68 @@ button:disabled:active { transform: none; }
   white-space: nowrap;
 }
 
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  padding: 0.35rem 0.5rem 0.15rem;
+  border-top: 1px solid var(--line, rgba(0, 0, 0, 0.08));
+}
+
+.filter-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.35rem;
+  min-width: 0;
+}
+
+.filter-label {
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.filter-chip,
+.filter-match-btn {
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--line, rgba(0, 0, 0, 0.12));
+  background: var(--surface, transparent);
+  color: inherit;
+  cursor: pointer;
+}
+
+.filter-chip.on,
+.filter-match-btn.on {
+  border-color: var(--accent, #2a5);
+  background: color-mix(in srgb, var(--accent, #2a5) 12%, transparent);
+}
+
+.filter-match {
+  display: flex;
+  gap: 0.2rem;
+}
+
+.filter-sort {
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 0.15rem 0.35rem;
+  border-radius: 0.35rem;
+  border: 1px solid var(--line, rgba(0, 0, 0, 0.12));
+  background: var(--surface, transparent);
+  color: inherit;
+}
+
 @media (max-width: 699px) {
   .top-row {
     flex-wrap: wrap;

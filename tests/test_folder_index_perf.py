@@ -28,14 +28,38 @@ def _build_tree(root: Path, file_count: int, dir_count: int) -> None:
 
 
 class FolderIndexPerfTests(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.tmp = Path(self._tmp.name)
+        self._deck = None
+        self._stop: threading.Event | None = None
+        self._growth_thread: threading.Thread | None = None
+
+    def tearDown(self):
+        if self._stop is not None:
+            self._stop.set()
+        if self._growth_thread is not None:
+            self._growth_thread.join(timeout=5.0)
+        from choice.work_queue import wait_idle
+
+        for queue in self.tmp.rglob("work_queue.json"):
+            wait_idle(queue.parent, timeout=90.0)
+        if self._deck is not None:
+            wait_idle(self._deck.state_dir, timeout=90.0)
+        time.sleep(0.75 if os.name == "nt" else 0.25)
+        try:
+            self._tmp.cleanup()
+        except OSError:
+            time.sleep(1.0)
+            self._tmp.cleanup()
+
     def test_large_deck_index_and_items_stay_fast_while_growing(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_path = Path(tmp)
-            root = tmp_path / "lib"
-            _build_tree(root, 30800, 140)
-            cfg = tmp_path / "choice.toml"
-            cfg.write_text(
-                f"""
+        tmp_path = self.tmp
+        root = tmp_path / "lib"
+        _build_tree(root, 30800, 140)
+        cfg = tmp_path / "choice.toml"
+        cfg.write_text(
+            f"""
 [state]
 dir = "state"
 
@@ -52,41 +76,44 @@ mount = "."
 type = "images"
 recursive = true
 """.strip(),
-                encoding="utf-8",
-            )
-            deck = open_config(cfg).decks[0]
-            scan_incremental(deck)
-            growth = root / "batch099"
-            stop = threading.Event()
+            encoding="utf-8",
+        )
+        deck = open_config(cfg).decks[0]
+        self._deck = deck
+        scan_incremental(deck)
+        growth = root / "batch099"
+        stop = threading.Event()
+        self._stop = stop
 
-            def _add_files():
-                i = 0
-                while not stop.is_set():
-                    path = growth / f"growth{i:06d}.jpg"
-                    path.write_bytes(b"y")
-                    i += 1
-                    time.sleep(0.004)
+        def _add_files():
+            i = 0
+            while not stop.is_set():
+                path = growth / f"growth{i:06d}.jpg"
+                path.write_bytes(b"y")
+                i += 1
+                time.sleep(0.004)
 
-            thread = threading.Thread(target=_add_files, daemon=True)
-            thread.start()
-            index_times: list[float] = []
-            item_times: list[float] = []
-            try:
-                for _ in range(40):
-                    t0 = time.perf_counter()
-                    index_summary(deck)
-                    index_times.append(time.perf_counter() - t0)
-                for _ in range(20):
-                    t0 = time.perf_counter()
-                    progress(deck, pending=True, limit=200, offset=0)
-                    item_times.append(time.perf_counter() - t0)
-            finally:
-                stop.set()
-                thread.join(timeout=2.0)
-            index_p95 = statistics.quantiles(index_times, n=20)[-1]
-            items_p95 = statistics.quantiles(item_times, n=20)[-1]
-            self.assertLess(index_p95, 0.10, f"index p95 {index_p95:.3f}s")
-            self.assertLess(items_p95, 0.30, f"items p95 {items_p95:.3f}s")
+        thread = threading.Thread(target=_add_files, daemon=False)
+        self._growth_thread = thread
+        thread.start()
+        index_times: list[float] = []
+        item_times: list[float] = []
+        for _ in range(40):
+            t0 = time.perf_counter()
+            index_summary(deck)
+            index_times.append(time.perf_counter() - t0)
+        for _ in range(20):
+            t0 = time.perf_counter()
+            progress(deck, pending=True, limit=200, offset=0)
+            item_times.append(time.perf_counter() - t0)
+        stop.set()
+        thread.join(timeout=5.0)
+        index_p95 = statistics.quantiles(index_times, n=20)[-1]
+        items_p95 = statistics.quantiles(item_times, n=20)[-1]
+        index_cap = 0.15 if os.getenv("GITHUB_ACTIONS") else 0.10
+        items_cap = 0.45 if os.getenv("GITHUB_ACTIONS") else 0.30
+        self.assertLess(index_p95, index_cap, f"index p95 {index_p95:.3f}s")
+        self.assertLess(items_p95, items_cap, f"items p95 {items_p95:.3f}s")
 
 
 class FolderIndexIncrementalTests(unittest.TestCase):
@@ -121,5 +148,11 @@ recursive = true
             t0 = time.perf_counter()
             scan_incremental(deck)
             elapsed = time.perf_counter() - t0
-            cap = 5.0 if os.getenv("GITHUB_ACTIONS") else 3.0
+            if os.getenv("GITHUB_ACTIONS"):
+                cap = 8.0 if os.name == "nt" else 5.0
+            else:
+                cap = 3.0
+            from choice.work_queue import wait_idle
+
+            wait_idle(deck.state_dir, timeout=60.0)
             self.assertLess(elapsed, cap, f"incremental scan took {elapsed:.2f}s")

@@ -8,6 +8,7 @@ Media URLs only serve a file that is currently a card.
 
 from __future__ import annotations
 
+import contextlib
 import gzip
 import html
 import json
@@ -171,6 +172,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._deck_view(parts[2])
         if len(parts) == 4 and parts[0] == "api" and parts[1] == "decks" and parts[3] == "items":
             return self._items(parts[2], parse_qs(parsed.query))
+        if len(parts) == 4 and parts[0] == "api" and parts[1] == "decks" and parts[3] == "filters":
+            return self._deck_filters(parts[2], parse_qs(parsed.query))
         if len(parts) == 4 and parts[0] == "api" and parts[1] == "decks" and parts[3] == "media":
             return self._media(parts[2], parse_qs(parsed.query))
         self._json(404, {"ok": False, "message": "No such page."})
@@ -344,6 +347,31 @@ class Handler(BaseHTTPRequestHandler):
 
         self._json(200, {"ok": True, "view": public_view(deck)})
 
+    @contextlib.contextmanager
+    def _plugin_filter_scope(self, deck, query):
+        from choice.plugin_filters import (
+            decode_filter_param,
+            plugin_accepts_list_filter,
+            plugin_declares_filters,
+            reset_request_filter,
+            set_request_filter,
+        )
+
+        plugin = deck.plugin
+        if plugin is None:
+            yield
+            return
+        if not plugin_declares_filters(plugin) and not plugin_accepts_list_filter(plugin):
+            yield
+            return
+        raw = (query.get("f") or [""])[0]
+        selection = decode_filter_param(raw) if raw else None
+        token = set_request_filter(selection)
+        try:
+            yield
+        finally:
+            reset_request_filter(token)
+
     def _items(self, deck_id, query):
         deck = self._opened(deck_id, self._requested_user(query, None))
         if isinstance(deck, dict):
@@ -359,14 +387,15 @@ class Handler(BaseHTTPRequestHandler):
 
         buf_cap = getattr(self.server, "client_buffer_size", 30)
         held = parse_held((query.get("held") or [""])[0], limit=buf_cap)
-        snap = progress(
-            deck,
-            pending=pending,
-            limit=limit,
-            offset=offset,
-            after=after,
-            held=held or None,
-        )
+        with self._plugin_filter_scope(deck, query):
+            snap = progress(
+                deck,
+                pending=pending,
+                limit=limit,
+                offset=offset,
+                after=after,
+                held=held or None,
+            )
         if (
             limit > 0
             and snap.get("ok")
@@ -386,6 +415,18 @@ class Handler(BaseHTTPRequestHandler):
         snap["client_buffer"] = buf_cap
         self._warm_upcoming(deck, snap.get("items") or [], query)
         return self._json(200, snap)
+
+    def _deck_filters(self, deck_id, query):
+        deck = self._opened(deck_id, self._requested_user(query, None))
+        if isinstance(deck, dict):
+            return self._reply(deck)
+        from choice.plugin_filters import fetch_filter_schema
+
+        plugin = deck.plugin
+        if plugin is None:
+            return self._json(200, {"ok": True, "filters": None})
+        schema = fetch_filter_schema(plugin)
+        return self._json(200, {"ok": True, "filters": schema})
 
     def _media(self, deck_id, query):
         deck = self._opened(deck_id, self._requested_user(query, None))
@@ -778,6 +819,11 @@ class Handler(BaseHTTPRequestHandler):
         deck = self._opened(deck_id, self._requested_user(query, None))
         if isinstance(deck, dict):
             return self._reply(deck)
+        from choice.plugin_filters import (
+            plugin_accepts_stats_filter,
+            plugin_declares_filters,
+            selection_to_plugin_filter,
+        )
         from choice.work_queue import failures_for
         from choice.work_queue import snapshot_for as queue_snapshot
 
@@ -786,13 +832,22 @@ class Handler(BaseHTTPRequestHandler):
         queue_payload = qsnap.to_dict()
         if qsnap.failed:
             queue_payload["failures"] = failures_for(deck)
-        if plugin is not None and hasattr(plugin, "stats"):
-            data = plugin.stats()
-            if data:
-                data = dict(data)
-                data["queue"] = queue_payload
-                return self._json(200, {"ok": True, "stats": data})
-        snap = progress(deck, pending=False, limit=1, offset=0)
+        with self._plugin_filter_scope(deck, query):
+            if plugin is not None and hasattr(plugin, "stats"):
+                filt = None
+                if plugin_declares_filters(plugin) or plugin_accepts_stats_filter(plugin):
+                    from choice.plugin_filters import get_request_filter
+
+                    filt = selection_to_plugin_filter(get_request_filter())
+                if filt is not None and plugin_accepts_stats_filter(plugin):
+                    data = plugin.stats(filter=filt)
+                else:
+                    data = plugin.stats()
+                if data:
+                    data = dict(data)
+                    data["queue"] = queue_payload
+                    return self._json(200, {"ok": True, "stats": data})
+            snap = progress(deck, pending=False, limit=1, offset=0)
         payload = {"tally": snap.get("tally"), "total": snap.get("total")}
         payload["queue"] = queue_payload
         return self._json(200, {"ok": True, "stats": payload})

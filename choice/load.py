@@ -22,7 +22,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-IMAGE_EXT = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".avif"}
+IMAGE_EXT = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".avif", ".heic", ".heif", ".jxl"}
 ITEM_FILES = ("items.jsonl", "items.csv", "items.json")
 SKIP_NAMES = {"deck.json"}
 _TEMPLATE = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
@@ -288,6 +288,11 @@ class Deck:
                     )
             if rows:
                 out["actions"] = rows
+            from choice.plugin_filters import fetch_filter_schema
+
+            schema = fetch_filter_schema(plugin)
+            if schema:
+                out["plugin_filters"] = schema
         if self.folder_scan is not None:
             from choice.view_prefs import public_view
 

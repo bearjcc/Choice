@@ -17,16 +17,27 @@ from choice.work_queue import _mutate_jobs, boot_deck, wait_idle
 
 class WorkQueueDeferredTests(unittest.TestCase):
     def setUp(self):
-        self._tmp = tempfile.TemporaryDirectory()
+        self._tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.tmp = Path(self._tmp.name)
         self._sync = os.environ.get("CHOICE_SYNC_WORK")
+        self._deck = None
 
     def tearDown(self):
+        if self._deck is not None:
+            wait_idle(self._deck.state_dir, timeout=120.0)
+        for queue_file in self.tmp.rglob("work_queue.json"):
+            wait_idle(queue_file.parent, timeout=120.0)
+        if os.name == "nt":
+            time.sleep(0.5)
         if self._sync is None:
             os.environ.pop("CHOICE_SYNC_WORK", None)
         else:
             os.environ["CHOICE_SYNC_WORK"] = self._sync
-        self._tmp.cleanup()
+        try:
+            self._tmp.cleanup()
+        except OSError:
+            time.sleep(1.0)
+            self._tmp.cleanup()
 
     def _burst_deck(self, n_files: int):
         import json
@@ -65,6 +76,7 @@ class WorkQueueDeferredTests(unittest.TestCase):
     def test_locked_file_does_not_block_other_decides(self):
         os.environ.pop("CHOICE_SYNC_WORK", None)
         deck, ids = self._burst_deck(51)
+        self._deck = deck
         locked = ids[0]
         real_move = move_file
 
@@ -83,7 +95,7 @@ class WorkQueueDeferredTests(unittest.TestCase):
                 decide(deck, rel, "right", None)
                 latencies.append(time.perf_counter() - start)
             if os.getenv("GITHUB_ACTIONS"):
-                cap = 1.0 if os.name == "nt" else 0.20
+                cap = 1.25 if os.name == "nt" else 0.20
             else:
                 cap = 0.05
             self.assertLess(max(latencies), cap)

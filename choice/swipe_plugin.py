@@ -72,11 +72,23 @@ class SwipePlugin:
             return result, "application/octet-stream"
         return None
 
-    def stats(self) -> dict | None:
+    def filters(self) -> dict | None:
+        fn = getattr(self.obj, "filters", None)
+        if not callable(fn):
+            return None
+        try:
+            raw = fn()
+        except Exception:
+            return None
+        return dict(raw) if isinstance(raw, dict) else None
+
+    def stats(self, filter: dict | None = None) -> dict | None:
         fn = getattr(self.obj, "stats", None)
         if not callable(fn):
             return None
         try:
+            if filter is not None and _accepts(fn, "filter"):
+                return dict(fn(filter=filter) or {})
             return dict(fn() or {})
         except Exception:
             return None

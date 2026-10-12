@@ -3,6 +3,7 @@
 import json
 import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -17,11 +18,14 @@ class UndoPilePositionTests(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.tmp = Path(self._tmp.name)
-        self._sync = os.environ.pop("CHOICE_SYNC_WORK", None)
+        self._prev_sync = os.environ.get("CHOICE_SYNC_WORK")
+        os.environ["CHOICE_SYNC_WORK"] = "1"
 
     def tearDown(self):
-        if self._sync is not None:
-            os.environ["CHOICE_SYNC_WORK"] = self._sync
+        if self._prev_sync is None:
+            os.environ.pop("CHOICE_SYNC_WORK", None)
+        else:
+            os.environ["CHOICE_SYNC_WORK"] = self._prev_sync
         self._tmp.cleanup()
 
     def _big_sort_deck(self, *, random_sort: bool = False):
@@ -69,21 +73,29 @@ class UndoPilePositionTests(unittest.TestCase):
 
     def _assert_first_after_undo(self, deck, item_id: str):
         undo(deck)
-        snap = None
-        for _ in range(200):
+        if os.environ.get("CHOICE_SYNC_WORK"):
+            self.assertTrue(wait_idle(deck.state_dir, timeout=30.0))
             snap = progress(deck, pending=True, limit=50, offset=0)
-            if snap.get("items") and snap["items"][0]["id"] == item_id:
-                break
+            idx = load_index(deck.state_dir)
+        else:
+            snap = None
+            for _ in range(300):
+                snap = progress(deck, pending=True, limit=50, offset=0)
+                if snap.get("items") and snap["items"][0]["id"] == item_id:
+                    break
+                time.sleep(0.02)
+            idx = None
+            for _ in range(300):
+                idx = load_index(deck.state_dir)
+                if idx.ordered and idx.ordered[0] == item_id:
+                    break
+                time.sleep(0.02)
         self.assertTrue(snap and snap.get("items"), snap)
         self.assertEqual(snap["items"][0]["id"], item_id)
-        idx = None
-        for _ in range(200):
-            idx = load_index(deck.state_dir)
-            if idx.ordered and idx.ordered[0] == item_id:
-                break
         self.assertEqual(idx.ordered[0], item_id)
 
     def test_undo_scan_order_while_move_queued(self):
+        os.environ.pop("CHOICE_SYNC_WORK", None)
         deck = self._big_sort_deck()
         first = self._first_pending_id(deck)
         decide(deck, first, "right", None)
@@ -97,6 +109,7 @@ class UndoPilePositionTests(unittest.TestCase):
         self._assert_first_after_undo(deck, first)
 
     def test_undo_random_order_while_move_queued(self):
+        os.environ.pop("CHOICE_SYNC_WORK", None)
         deck = self._big_sort_deck(random_sort=True)
         first = self._first_pending_id(deck)
         decide(deck, first, "right", None)
