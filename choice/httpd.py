@@ -54,6 +54,9 @@ _STATIC = {
     "pile_nav.js": "text/javascript; charset=utf-8",
     "swipe_ui.js": "text/javascript; charset=utf-8",
     "action_icons.js": "text/javascript; charset=utf-8",
+    "mdi.js": "text/javascript; charset=utf-8",
+    "design-tokens.css": "text/css; charset=utf-8",
+    "MDI-ATTRIBUTION.txt": "text/plain; charset=utf-8",
     "app.css": "text/css; charset=utf-8",
     "sw.js": "text/javascript; charset=utf-8",
 }

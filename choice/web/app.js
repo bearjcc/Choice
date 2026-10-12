@@ -344,35 +344,13 @@ function sourceIcon(type) {
   return map[type] || "deck";
 }
 
-function iconPath(kind) {
-  const paths = {
-    folder: "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z",
-    layers: "M12 3 3 8l9 5 9-5-9-5zm0 7 3-1.7v3.4L12 16l-9-5v3.4l9 5 9-5v-3.4L12 10z",
-    cloud: "M7 18a4 4 0 1 1 .9-7.9A5 5 0 0 1 19 10a3 3 0 0 1 0 6H7z",
-    feed: "M4 11a8 8 0 0 1 8 8M4 4a16 16 0 0 1 16 16M5 19a1 1 0 1 1-2 0 1 1 0 0 1 2 0z",
-    remote: "M4 6h16v12H4zM8 10h8M8 14h5",
-    deck: "M5 5h14v14H5z",
-  };
-  return paths[kind] || paths.deck;
-}
-
 function appendSourceIcon(parent, type) {
   const kind = sourceIcon(type);
   const wrap = el("span", "deck-icon");
   wrap.setAttribute("aria-hidden", "true");
-  const ns = "http://www.w3.org/2000/svg";
-  const svg = document.createElementNS(ns, "svg");
-  svg.setAttribute("viewBox", "0 0 24 24");
-  svg.setAttribute("class", "deck-icon-svg");
-  const path = document.createElementNS(ns, "path");
-  path.setAttribute("fill", "none");
-  path.setAttribute("stroke", "currentColor");
-  path.setAttribute("stroke-width", "1.75");
-  path.setAttribute("stroke-linecap", "round");
-  path.setAttribute("stroke-linejoin", "round");
-  path.setAttribute("d", iconPath(kind));
-  svg.append(path);
-  wrap.append(svg);
+  if (typeof ChoiceMdi !== "undefined") {
+    wrap.innerHTML = ChoiceMdi.svg(kind, "deck-icon-svg");
+  }
   parent.append(wrap);
   return wrap;
 }
@@ -380,6 +358,7 @@ function appendSourceIcon(parent, type) {
 async function boot() {
   registerServiceWorker();
   applyClientPrefs();
+  if (typeof ChoiceMdi !== "undefined") ChoiceMdi.applySlots(document);
   watchActionBarFit();
   const goLibrary = () => {
     if (state.picking) return backFromPeople();
@@ -1269,6 +1248,12 @@ function paintFilterBar(schema) {
   }
   bar.hidden = false;
   bar.replaceChildren();
+  if (typeof ChoiceMdi !== "undefined") {
+    const icon = el("span", "filter-bar-icon");
+    icon.setAttribute("aria-hidden", "true");
+    icon.innerHTML = ChoiceMdi.svg("filter", "nav-icon");
+    bar.append(icon);
+  }
   const sel = state.filterSelection || {};
   schema.filters.forEach((filterSpec) => {
     if (!filterSpec || filterSpec.type !== "tags" || !filterSpec.id) return;
@@ -2919,6 +2904,10 @@ function licenceLine() {
   const link = el("a", null, "AGPL-3.0 licence");
   link.href = apiPath("/license");
   note.append(link);
+  note.append(document.createTextNode(" · Icons: "));
+  const mdi = el("a", null, "Material Design Icons");
+  mdi.href = apiPath("/MDI-ATTRIBUTION.txt");
+  note.append(mdi);
   return note;
 }
 

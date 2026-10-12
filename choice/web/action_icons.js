@@ -1,26 +1,7 @@
-/* Built-in inline SVG icons for deck action buttons. */
+/* Deck action button icons (Material Design Icons via ChoiceMdi). */
 
 const ChoiceActionIcons = (function () {
-  const PATHS = {
-    star:
-      "M12 3.2l2.35 4.76 5.25.77-3.8 3.68.9 5.23L12 15.9l-4.7 2.74.9-5.23-3.8-3.68 5.25-.77L12 3.2z",
-    trash:
-      "M9 4h6m-8 3h10m-1 0-.7 11.2c-.1 1-.9 1.8-1.9 1.8H9.6c-1 0-1.8-.8-1.9-1.8L7 7m3 3v5m4-5v5",
-    heart: "M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.2A4 4 0 0 1 19 10c0 5.6-7 10-7 10z",
-    check: "M5 12.5 9.5 17 19 7",
-    skip: "M12 5v9m0 0 4-4m-4 4-4-4",
-    undo: "M8 9H4V5M4 9a7 7 0 1 1 2.2 5.1",
-    up: "M12 18V6m0 0-4.5 4.5M12 6l4.5 4.5",
-    down: "M12 6v12m0 0-4.5-4.5M12 18l4.5-4.5",
-    left: "M17 12H7m0 0 4-4m-4 4 4 4",
-    right: "M7 12h10m0 0-4-4m4 4-4 4",
-    x: "M7 7l10 10M17 7 7 17",
-    equals: "M6 10h12M6 14h12",
-    question: "M9.5 9a3 3 0 1 1 5.5 2c0 2-3 2.2-3 4.2V16M12 19.2h.01",
-    "letter-a": "M12 18V6l-4 12h2.2l.8-2.6h3.8l.8 2.6H18L14 6h-2z",
-    "letter-b":
-      "M9 18V6h4.2a3.2 3.2 0 0 1 0 6.4H11v5.6H9zm2-8.2h2a1.4 1.4 0 0 0 0-2.8H11v2.8z",
-  };
+  const mdi = typeof ChoiceMdi !== "undefined" ? ChoiceMdi : null;
 
   const NEUTRAL_WORDS = new Set([
     "unsure",
@@ -37,14 +18,14 @@ const ChoiceActionIcons = (function () {
 
   const OPPOSITE = { left: "right", right: "left", up: "down", down: "up" };
 
+  function hasPath(name) {
+    if (!mdi) return false;
+    return !!mdi.paths[mdi.resolve(name)];
+  }
+
   function svg(name) {
-    const d = PATHS[name] || PATHS.check;
-    return (
-      '<svg class="action-icon-svg" viewBox="0 0 24 24" focusable="false" aria-hidden="true">' +
-      '<path fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" d="' +
-      d +
-      '"></path></svg>'
-    );
+    if (mdi) return mdi.svg(name, "action-icon-svg");
+    return "";
   }
 
   function tokenize(text) {
@@ -136,7 +117,7 @@ const ChoiceActionIcons = (function () {
     if (id === "undo") return "undo";
 
     const configured = spec && spec.icon;
-    if (configured && PATHS[configured]) return configured;
+    if (configured && hasPath(configured)) return configured;
 
     if (hasNegative(words, raw)) return "x";
 
@@ -238,7 +219,7 @@ const ChoiceActionIcons = (function () {
 
   function resolve(spec, label, options) {
     const configured = spec && spec.icon;
-    if (configured && PATHS[configured]) return configured;
+    if (configured && hasPath(configured)) return configured;
     const peers = options && options.peers;
     if (peers && peers.length) {
       const entries = peers.map((p) => ({
@@ -256,7 +237,7 @@ const ChoiceActionIcons = (function () {
     entries.forEach((e) => {
       const id = e.spec.id;
       const configured = e.spec.icon;
-      if (configured && PATHS[configured]) {
+      if (configured && hasPath(configured)) {
         resolved[id] = configured;
       } else {
         resolved[id] = inferOne(e.spec, e.label);
@@ -266,30 +247,16 @@ const ChoiceActionIcons = (function () {
     return resolved;
   }
 
-  /** Unit-test helper: dominant direction of arrow icon stems (−1..1 on each axis). */
   function arrowVector(name) {
-    const d = PATHS[name];
-    if (!d) return null;
-    const absV = d.match(/M[\d.]+ ([\d.]+)V([\d.]+)/);
-    if (absV) {
-      const dy = parseFloat(absV[2]) - parseFloat(absV[1]);
-      return { dx: 0, dy: dy < 0 ? -1 : 1 };
-    }
-    const relV = d.match(/M[\d.]+ ([\d.]+)v([\d.]+)/);
-    if (relV) {
-      return { dx: 0, dy: 1 };
-    }
-    const absH = d.match(/M([\d.]+) [\d.]+H([\d.]+)/);
-    if (absH) {
-      const dx = parseFloat(absH[2]) - parseFloat(absH[1]);
-      return { dx: dx < 0 ? -1 : 1, dy: 0 };
-    }
-    const relH = d.match(/M([\d.]+) [\d.]+h([\d.]+)/);
-    if (relH) {
-      const dx = parseFloat(relH[2]);
-      return { dx: dx < 0 ? -1 : 1, dy: 0 };
-    }
+    if (mdi) return mdi.arrowVector(name);
     return null;
+  }
+
+  const PATHS = {};
+  if (mdi) {
+    Object.keys(mdi.aliases).forEach((key) => {
+      PATHS[key] = mdi.paths[mdi.resolve(key)] || "";
+    });
   }
 
   return {

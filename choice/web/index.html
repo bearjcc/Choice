@@ -7,6 +7,7 @@
 <meta name="theme-color" content="#f3efe8" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0e1014" media="(prefers-color-scheme: dark)">
 <title>Choice</title>
+<link rel="stylesheet" href="design-tokens.css">
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
@@ -14,15 +15,17 @@
   <div class="top-inner">
   <div class="top-row">
     <button id="back-library" type="button" class="icon-btn nav-back" hidden aria-label="Back to decks">
-      <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M15 6l-6 6 6 6"/></svg>
+      <span class="icon-slot" data-mdi="back" data-mdi-class="nav-icon" aria-hidden="true"></span>
     </button>
     <h1 id="title">Choice</h1>
     <p id="count" class="count"></p>
     <button id="queue-badge" type="button" class="queue-badge" hidden aria-label="Background queue" data-choice-modal="queue-failures"></button>
     <button id="client-settings" type="button" class="icon-btn" aria-label="Settings" hidden data-choice-modal="client-settings">
-      <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/><path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.51 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.51-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.51 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1z"/></svg>
+      <span class="icon-slot" data-mdi="settings" data-mdi-class="nav-icon" aria-hidden="true"></span>
     </button>
-    <button id="menu" type="button" class="icon-btn" aria-label="Deck menu" aria-haspopup="true" hidden data-choice-modal="menu">⋯</button>
+    <button id="menu" type="button" class="icon-btn" aria-label="Deck menu" aria-haspopup="true" hidden data-choice-modal="menu">
+      <span class="icon-slot" data-mdi="menu" data-mdi-class="nav-icon" aria-hidden="true"></span>
+    </button>
   </div>
   <div id="filter-bar" class="filter-bar" hidden></div>
   <div class="tools" id="tools" hidden aria-hidden="true">
@@ -46,6 +49,7 @@
 <script src="dialog_ui.js"></script>
 <script src="pile_nav.js"></script>
 <script src="swipe_ui.js"></script>
+<script src="mdi.js"></script>
 <script src="action_icons.js"></script>
 <script src="app.js" defer></script>
 </body>

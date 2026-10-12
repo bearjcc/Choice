@@ -1,0 +1,97 @@
+/* Choice design tokens — spacing, radius, colour, type, shadow */
+
+:root {
+  /* Spacing scale */
+  --space-0: 0;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+
+  /* Radius */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 18px;
+  --radius-pill: 999px;
+
+  /* Type scale */
+  --font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --line-height-body: 1.45;
+  --line-height-tight: 1.25;
+  --text-xs: 0.72rem;
+  --text-sm: 0.82rem;
+  --text-md: 0.875rem;
+  --text-base: 1rem;
+  --text-title: 1.05rem;
+  --text-deck: 1.15rem;
+
+  /* Layout */
+  --tap-min: 44px;
+  --library-max: 760px;
+  --shell-max: 1200px;
+  --dialog-pad: var(--space-3);
+
+  /* Elevation */
+  --shadow-color: #1c19161f;
+  --shadow-sm: 0 1px 0 var(--shadow-color);
+  --shadow-dialog: 0 12px 40px var(--shadow-color);
+
+  /* Semantic colours (light) */
+  --color-bg: #f3efe8;
+  --color-surface: #fffcf8;
+  --color-text: #1c1916;
+  --color-text-muted: #655f57;
+  --color-border: #e4ddd3;
+  --color-fill: #ebe4da;
+  --color-accent: #1d4e89;
+  --color-photo: #14120f;
+  --color-yes: #157a42;
+  --color-on-yes: #fff;
+  --color-no: #b42318;
+  --color-on-no: #fff;
+  --color-up: #e2b340;
+  --color-on-up: #1c1608;
+  --color-down: #4a5568;
+  --color-on-down: #fff;
+  --drag-yes: #157a4240;
+  --drag-no: #b4231840;
+  --drag-fav: #e2b34040;
+  --drag-skip: #4a556840;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --shadow-color: #00000073;
+    --color-bg: #0e1014;
+    --color-surface: #171b22;
+    --color-text: #eceef2;
+    --color-text-muted: #9aa3b2;
+    --color-border: #2c3340;
+    --color-fill: #232833;
+    --color-accent: #9dc1ee;
+    --color-photo: #07080b;
+    --color-yes: #1f9d55;
+    --color-no: #d45353;
+    --color-down: #5c6b86;
+  }
+}
+
+@media (min-width: 1200px) {
+  :root {
+    --library-max: 920px;
+    --shell-max: 1280px;
+  }
+}
+
+@media (min-width: 1800px) {
+  :root {
+    --library-max: 960px;
+    --shell-max: 1400px;
+  }
+}
