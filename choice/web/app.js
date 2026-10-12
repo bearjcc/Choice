@@ -205,6 +205,49 @@ async function api(path, body) {
   return data;
 }
 
+const CLIENT_PREFS_KEY = "choice.clientPrefs";
+
+function readClientPrefs() {
+  try {
+    const raw = localStorage.getItem(CLIENT_PREFS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch (_err) {
+    return {};
+  }
+}
+
+function writeClientPrefs(patch) {
+  const next = Object.assign(readClientPrefs(), patch);
+  localStorage.setItem(CLIENT_PREFS_KEY, JSON.stringify(next));
+  applyClientPrefs();
+}
+
+function applyClientPrefs() {
+  const mode = readClientPrefs().reduceMotion || "system";
+  if (mode === "on" || mode === "off") {
+    document.documentElement.dataset.reduceMotion = mode;
+  } else {
+    document.documentElement.removeAttribute("data-reduce-motion");
+  }
+}
+
+function serverAdminAllowed(cfg) {
+  if (!cfg || !cfg.ok) return false;
+  if (cfg.admin_allowed === false) return false;
+  return !!cfg.editable || !!(cfg.decks && cfg.decks.length);
+}
+
+function updateHeaderChrome() {
+  const indexOk = state.index && state.index.ok;
+  const onDeck = !!state.deckId && !!state.payload;
+  const back = $("back-library");
+  const settings = $("client-settings");
+  const menu = $("menu");
+  if (back) back.hidden = !onDeck;
+  if (settings) settings.hidden = !indexOk;
+  if (menu) menu.hidden = !indexOk;
+}
+
 function setStatus(text) {
   $("status").hidden = false;
   $("status").textContent = text || "";
@@ -336,11 +379,15 @@ function appendSourceIcon(parent, type) {
 
 async function boot() {
   registerServiceWorker();
+  applyClientPrefs();
   watchActionBarFit();
-  $("home").addEventListener("click", () => {
+  const goLibrary = () => {
     if (state.picking) return backFromPeople();
     showLibrary();
-  });
+  };
+  $("home").addEventListener("click", goLibrary);
+  $("back-library").addEventListener("click", goLibrary);
+  $("client-settings").addEventListener("click", () => openClientSettings());
   $("who").addEventListener("click", showPeople);
   $("pending").addEventListener("click", togglePending);
   $("blind").addEventListener("click", toggleBlind);
@@ -399,6 +446,7 @@ function showProblem(message) {
   $("actions").hidden = true;
   $("menu").hidden = false;
   $("count").textContent = "";
+  updateHeaderChrome();
   paintWho();
   setStatus("");
   $("status").hidden = true;
@@ -415,8 +463,35 @@ function libraryDeckRows() {
     : state.index.library || [];
 }
 
-function paintHomeLibrary() {
+function buildLibraryToolbar(cfg) {
+  const bar = el("div", "library-toolbar");
+  bar.setAttribute("role", "toolbar");
+  bar.setAttribute("aria-label", "Deck library");
+  if (serverAdminAllowed(cfg)) {
+    const add = el("button", "primary library-add", "Add deck");
+    add.type = "button";
+    add.dataset.choiceModal = "add-deck";
+    add.addEventListener("click", () => showSetup(cfg));
+    bar.append(add);
+  }
+  const spacer = el("span", "toolbar-spacer");
+  bar.append(spacer);
+  const admin = el("button", null, "Server admin");
+  admin.type = "button";
+  admin.dataset.choiceModal = "server-admin";
+  admin.addEventListener("click", () => openAdminPanel(cfg));
+  bar.append(admin);
+  return bar;
+}
+
+async function paintHomeLibrary() {
   const deckRows = libraryDeckRows();
+  let cfg = null;
+  try {
+    cfg = await api("/api/config");
+  } catch (_err) {
+    cfg = null;
+  }
   const list = el("ul", "library");
   deckRows.forEach((deck) => {
     const item = el("li");
@@ -465,9 +540,9 @@ function paintHomeLibrary() {
       }
       openDeck(deck.id, true);
     });
-    const more = el("button", "deck-more", "...");
+    const more = el("button", "deck-more", "Edit");
     more.type = "button";
-    more.setAttribute("aria-label", "Edit deck");
+    more.setAttribute("aria-label", "Edit deck settings");
     more.dataset.choiceModal = "deck-edit";
     more.addEventListener("click", (event) => {
       event.stopPropagation();
@@ -482,15 +557,28 @@ function paintHomeLibrary() {
     const box = el("div", "empty");
     const person = currentPerson();
     box.append(el("h2", null, "No decks"));
-    box.append(el("p", null, person
-      ? person.name + " has no decks yet. Open People and tick the ones they should see."
-      : "Add a folder with deck.json, or point Choice at a photo folder."));
+    box.append(
+      el(
+        "p",
+        null,
+        person
+          ? person.name + " has no decks yet. Open People and assign decks, or ask the server owner to add one."
+          : "Add a deck to connect a photo folder, plugin, or remote source.",
+      ),
+    );
+    if (cfg && serverAdminAllowed(cfg)) {
+      const add = el("button", "primary", "Add deck");
+      add.type = "button";
+      add.dataset.choiceModal = "add-deck";
+      add.addEventListener("click", () => showSetup(cfg));
+      box.append(add);
+    }
     parts.push(box);
   } else {
+    if (cfg && cfg.ok) parts.unshift(buildLibraryToolbar(cfg));
     parts.push(list);
   }
   parts.push(licenceLine());
-  setupLink(parts);
   $("main").replaceChildren(...parts);
 }
 
@@ -519,24 +607,8 @@ async function showLibrary() {
   paintWho();
   $("status").textContent = "";
   $("status").hidden = true;
-  paintHomeLibrary();
-}
-
-async function setupLink(parts) {
-  let cfg = null;
-  try {
-    cfg = await api("/api/config");
-  } catch (_err) {
-    return;
-  }
-  if (!cfg.ok || !cfg.editable) return;
-  const wrap = el("div", "setup-link");
-  const btn = el("button", null, "Sources and decks");
-  btn.type = "button";
-  btn.addEventListener("click", () => showSetup(cfg));
-  btn.dataset.choiceModal = "add-deck";
-  wrap.append(btn);
-  parts.push(wrap);
+  updateHeaderChrome();
+  await paintHomeLibrary();
 }
 
 function showSetup(cfg, editDeckId) {
@@ -1454,6 +1526,7 @@ function renderDeck() {
   setBrowserTitle(data.title);
   $("tools").hidden = true;
   $("menu").hidden = false;
+  updateHeaderChrome();
   paintFilterBar(data.plugin_filters);
   paintFilterStats();
   const countText = formatCountMeta(data);
@@ -2029,6 +2102,8 @@ function actionButton(spec, label, iconOverride) {
 }
 
 function actionBarNarrow() {
+  const prefs = readClientPrefs();
+  if (prefs.actionLabels === "always") return false;
   return window.matchMedia("(max-width: 699px)").matches;
 }
 
@@ -2394,10 +2469,175 @@ async function undoLast() {
   void reconcileAfterUndo(anchorId, epoch);
 }
 
+async function openClientSettings() {
+  const prefs = readClientPrefs();
+  const body = $("dialog-body");
+  body.replaceChildren();
+  body.append(el("h2", null, "Settings"));
+  body.append(el("p", "fine", "These preferences stay on this device."));
+  const form = el("div", "client-prefs-form");
+  const motion = el("select", "setup-input");
+  [
+    ["system", "Follow system"],
+    ["on", "Reduce motion"],
+    ["off", "Allow motion"],
+  ].forEach(([value, label]) => {
+    const opt = document.createElement("option");
+    opt.value = value;
+    opt.textContent = label;
+    if ((prefs.reduceMotion || "system") === value) opt.selected = true;
+    motion.append(opt);
+  });
+  form.append(el("label", "setup-label", "Motion"));
+  form.append(motion);
+  const labels = el("select", "setup-input");
+  [
+    ["auto", "Auto (icons on small screens)"],
+    ["always", "Always show action labels"],
+  ].forEach(([value, label]) => {
+    const opt = document.createElement("option");
+    opt.value = value;
+    opt.textContent = label;
+    if ((prefs.actionLabels || "auto") === value) opt.selected = true;
+    labels.append(opt);
+  });
+  form.append(el("label", "setup-label", "Decide bar labels"));
+  form.append(labels);
+  body.append(form);
+  const adminRow = el("div", "sheet-actions");
+  const adminBtn = el("button", null, "Server admin");
+  adminBtn.type = "button";
+  adminBtn.dataset.choiceModal = "server-admin";
+  adminBtn.addEventListener("click", async () => {
+    const cfg = await api("/api/config");
+    openAdminPanel(cfg);
+  });
+  adminRow.append(adminBtn);
+  body.append(adminRow);
+  const row = el("div", "sheet-actions");
+  const save = el("button", "primary", "Save");
+  save.addEventListener("click", () => {
+    writeClientPrefs({
+      reduceMotion: motion.value,
+      actionLabels: labels.value,
+    });
+    ChoiceDialog.close();
+    setStatus("Settings saved on this device.");
+  });
+  row.append(save);
+  const close = el("button", null, "Close");
+  close.addEventListener("click", () => ChoiceDialog.close());
+  row.append(close);
+  body.append(row);
+  ChoiceDialog.open();
+}
+
+async function openAdminPanel(cfg) {
+  let config = cfg;
+  if (!config) {
+    try {
+      config = await api("/api/config");
+    } catch (_err) {
+      setStatus("Could not reach Choice.");
+      return;
+    }
+  }
+  const body = $("dialog-body");
+  body.replaceChildren();
+  body.append(el("h2", null, "Server admin"));
+  if (!config.ok) {
+    body.append(el("p", "problem", config.message || "Server config is not available."));
+    ChoiceDialog.open();
+    return;
+  }
+  if (!serverAdminAllowed(config)) {
+    const note = el("div", "admin-locked");
+    note.append(
+      el(
+        "p",
+        null,
+        "Deck and source changes are limited to the server owner when People mode is on.",
+      ),
+    );
+    if (peopleOn()) {
+      note.append(el("p", null, "Switch to the owner profile in People, or ask them to make changes."));
+    }
+    body.append(note);
+    const close = el("button", null, "Close");
+    close.addEventListener("click", () => ChoiceDialog.close());
+    body.append(close);
+    ChoiceDialog.open();
+    return;
+  }
+  if (config.path) {
+    body.append(el("p", "fine", "Config: " + config.path));
+  }
+  if (config.state_dir) {
+    body.append(el("p", "fine", "State: " + config.state_dir));
+  }
+  const toolbar = el("div", "sheet-actions");
+  const add = el("button", "primary", "Add deck");
+  add.type = "button";
+  add.dataset.choiceModal = "add-deck";
+  add.addEventListener("click", () => showSetup(config));
+  toolbar.append(add);
+  body.append(toolbar);
+  const list = el("ul", "admin-deck-list");
+  (config.decks || []).forEach((deck) => {
+    const row = el("li", "admin-deck-row");
+    row.append(el("span", "deck-name", deck.title || deck.id));
+    const actions = el("div", "admin-deck-actions");
+    const edit = el("button", null, "Edit");
+    edit.type = "button";
+    edit.dataset.choiceModal = "deck-edit";
+    edit.addEventListener("click", () => showSetup(config, deck.id));
+    const del = el("button", "danger", "Delete");
+    del.type = "button";
+    del.addEventListener("click", () => deleteDeckFromAdmin(deck.id, config));
+    actions.append(edit, del);
+    row.append(actions);
+    list.append(row);
+  });
+  if (!list.childNodes.length) {
+    body.append(el("p", null, "No decks yet. Add one to get started."));
+  } else {
+    body.append(list);
+  }
+  const close = el("button", null, "Close");
+  close.addEventListener("click", () => ChoiceDialog.close());
+  body.append(close);
+  ChoiceDialog.open();
+}
+
+async function deleteDeckFromAdmin(deckId, cfg) {
+  const deck = (cfg.decks || []).find((d) => d.id === deckId);
+  const title = deck ? deck.title : deckId;
+  const okRemove = await ChoiceDialog.confirm(
+    'Delete "' + title + '" from Choice? Files on disk are not removed.',
+    { title: "Delete deck", confirmLabel: "Delete", cancelLabel: "Cancel" },
+  );
+  if (!okRemove) return;
+  const removed = (cfg.decks || []).find((d) => d.id === deckId);
+  const decks = (cfg.decks || []).filter((d) => d.id !== deckId);
+  const sources = (cfg.sources || []).filter((s) => {
+    if (!removed || s.id !== removed.source) return true;
+    return decks.some((d) => d.source === s.id);
+  });
+  const res = await api("/api/config", { sources, decks });
+  if (!res.ok) {
+    setStatus(res.message || "Could not save.");
+    return;
+  }
+  setStatus("Deck deleted.");
+  await refreshIndex();
+  const fresh = await api("/api/config");
+  openAdminPanel(fresh);
+}
+
 async function openMenu() {
   const body = $("dialog-body");
   body.replaceChildren();
-  body.append(el("h2", null, "Menu"));
+  body.append(el("h2", null, "Deck menu"));
   const list = el("div", "menu-list");
   const add = (label, fn, modalId, opts = {}) => {
     const btn = el("button", "menu-item", label);
@@ -2419,14 +2659,7 @@ async function openMenu() {
     add("Counts", openCounts, "counts", { keepDialog: true });
   }
   if (peopleOn()) add("People", showPeople, "people");
-  const decks = (state.index && state.index.decks) || [];
-  if (!state.deckId || decks.length > 1) add("Decks", () => showLibrary(), null);
-  try {
-    const cfg = await api("/api/config");
-    if (cfg.ok && cfg.editable) add("Add deck", () => showSetup(cfg), "add-deck", { keepDialog: true });
-  } catch (_err) {
-    /* no config mode */
-  }
+  add("Settings", openClientSettings, "client-settings", { keepDialog: true });
   (state.payload && state.payload.actions || []).forEach((spec) => {
     add(spec.label, () => runPluginAction(spec));
   });
@@ -2746,6 +2979,7 @@ function renderPeople() {
   $("track").hidden = true;
   $("actions").hidden = true;
   $("menu").hidden = false;
+  updateHeaderChrome();
   $("count").textContent = "";
   $("title").textContent = "People";
   const wrap = el("div", "people");
@@ -2950,11 +3184,15 @@ function installTestHooks() {
       const cfg = await api("/api/config");
       if (cfg.ok && cfg.editable) showSetup(cfg);
     },
+    openClientSettings,
+    openAdminPanel,
     expectedModalTriggerIds() {
       return [
         "menu",
         "order-settings",
         "count-settings",
+        "client-settings",
+        "server-admin",
         "queue-failures",
         "add-deck",
         "deck-edit",
@@ -2968,9 +3206,11 @@ function installTestHooks() {
       const left = bar.querySelector('[data-dir="left"]');
       const right = bar.querySelector('[data-dir="right"]');
       if (!left || !right) return { ok: false, reason: "missing-left-right" };
+      const barRect = bar.getBoundingClientRect();
       const lr = left.getBoundingClientRect();
       const rr = right.getBoundingClientRect();
       const edgeSlack = 56;
+      const insetSlack = 8;
       const labels = [...bar.querySelectorAll(".action-text")].map((node) => {
         const btn = node.closest("button");
         const hidden = btn && btn.classList.contains("action-icon-only");
@@ -2986,11 +3226,14 @@ function installTestHooks() {
       const hasIcons = bar.querySelectorAll(".action-icon-svg").length >= 2;
       return {
         ok:
-          lr.left <= edgeSlack &&
-          rr.right >= vp - edgeSlack &&
+          (barRect.width >= vp - edgeSlack * 2
+            ? lr.left <= edgeSlack && rr.right >= vp - edgeSlack
+            : lr.left >= barRect.left - insetSlack && rr.right <= barRect.right + insetSlack) &&
           labels.every((row) => !row.wraps) &&
           (!narrow || hasIcons),
         viewportWidth: vp,
+        barLeft: barRect.left,
+        barRight: barRect.right,
         leftX: lr.left,
         rightX: rr.right,
         narrow,
@@ -3026,6 +3269,7 @@ function installTestHooks() {
       $("track").hidden = true;
       $("actions").hidden = true;
       $("menu").hidden = false;
+      updateHeaderChrome();
       $("status").hidden = true;
       paintHomeLibrary();
     },
@@ -3057,7 +3301,15 @@ function installTestHooks() {
           });
         }
       });
-      const controls = ["#menu", "#actions", "#home", "#pending", "#queue-badge"].map((sel) => {
+      const controls = [
+        "#menu",
+        "#actions",
+        "#back-library",
+        "#client-settings",
+        "#home",
+        "#pending",
+        "#queue-badge",
+      ].map((sel) => {
         const node = document.querySelector(sel);
         if (!node || node.hidden) return { sel, ok: true, skipped: true };
         const r = node.getBoundingClientRect();

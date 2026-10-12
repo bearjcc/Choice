@@ -99,10 +99,25 @@ button:disabled:active { transform: none; }
   padding: 10px 16px 0;
 }
 
+.top-inner {
+  width: min(1200px, 100%);
+  margin-inline: auto;
+}
+
 .top-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+}
+
+.nav-back {
+  margin-right: -4px;
+}
+
+.nav-icon {
+  width: 1.35rem;
+  height: 1.35rem;
+  display: block;
 }
 
 .icon-btn {
@@ -309,6 +324,87 @@ main {
 
 .setup-link {
   margin-top: 1.25rem;
+}
+
+.library-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  width: min(760px, 100%);
+  margin: 0 auto 14px;
+  padding: 0 2px;
+}
+
+.library-toolbar .toolbar-spacer {
+  flex: 1 1 auto;
+  min-width: 8px;
+}
+
+button.primary {
+  background: var(--focus);
+  color: #fff;
+  border-color: transparent;
+}
+
+button.primary:focus-visible {
+  outline-color: var(--text);
+}
+
+button.danger {
+  background: var(--no);
+  color: var(--on-no);
+  border-color: transparent;
+}
+
+.admin-deck-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.admin-deck-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+}
+
+.admin-deck-row .deck-name {
+  flex: 1 1 12rem;
+  min-width: 0;
+  font-size: 1rem;
+}
+
+.admin-deck-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.admin-locked {
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--fill);
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.client-prefs-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: 28rem;
 }
 
 .setup-form {
@@ -1363,8 +1459,35 @@ main > .fine {
   .library,
   .empty,
   .card,
-  .stack {
+  .stack,
+  .library-toolbar {
     width: min(920px, 100%);
+  }
+
+  .top-inner {
+    width: min(1280px, 100%);
+  }
+
+  .actions.deck-bar {
+    width: min(980px, 100%);
+    margin-inline: auto;
+    border-left: 1px solid var(--line);
+    border-right: 1px solid var(--line);
+    border-radius: 16px 16px 0 0;
+  }
+}
+
+@media (min-width: 1800px) {
+  .library,
+  .empty,
+  .card,
+  .stack,
+  .library-toolbar {
+    width: min(960px, 100%);
+  }
+
+  .top-inner {
+    width: min(1400px, 100%);
   }
 }
 
@@ -1426,4 +1549,13 @@ main > .fine {
 @media (prefers-reduced-motion: reduce) {
   .card, button { transition: none; }
   button:active { transform: none; }
+}
+
+html[data-reduce-motion="on"] .card,
+html[data-reduce-motion="on"] button {
+  transition: none;
+}
+
+html[data-reduce-motion="on"] button:active {
+  transform: none;
 }

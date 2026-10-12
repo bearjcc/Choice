@@ -19,13 +19,15 @@ const ALL_VIEWPORTS = [
   { name: "768x1024", width: 768, height: 1024, mobile: false },
   { name: "1366x768", width: 1366, height: 768, mobile: false },
   { name: "1920x1080", width: 1920, height: 1080, mobile: false },
+  { name: "1440x900", width: 1440, height: 900, mobile: false },
+  { name: "2560x1080", width: 2560, height: 1080, mobile: false },
 ];
 
 const VIEWPORTS = process.env.CHOICE_UI_VIEWPORTS
   ? ALL_VIEWPORTS.filter((vp) => process.env.CHOICE_UI_VIEWPORTS.split(",").includes(vp.name))
   : ALL_VIEWPORTS;
 
-const SHOT_WIDTHS = new Set(["390x844", "1366x768"]);
+const SHOT_WIDTHS = new Set(["390x844", "1366x768", "1440x900", "1920x1080", "2560x1080"]);
 
 const STRESS_DECKS = [
   {
@@ -98,7 +100,7 @@ async function ensureLibrary(page) {
 async function openDeck(page, title) {
   await ensureLibrary(page);
   await page.locator("ul.library button.deck-link").filter({ hasText: title }).first().click();
-  await page.waitForSelector("#menu:not([hidden])", { timeout: 15_000 });
+  await page.waitForSelector("#back-library:not([hidden])", { timeout: 15_000 });
 }
 
 async function installStressIndexStub(page) {
@@ -208,6 +210,36 @@ const SCENARIOS = [
       await page.waitForSelector("ul.library button.deck-link", { timeout: 20_000 });
       await openDeck(page, "Yes or no");
       await page.click("#menu");
+      await page.waitForFunction(() => window.ChoiceDialog.isOpen());
+    },
+    after: async (page) => {
+      await page.evaluate(() => window.ChoiceDialog.close());
+    },
+  },
+  {
+    name: "back-to-decks",
+    setup: async (page) => {
+      await openDeck(page, "Yes or no");
+      await page.click("#back-library");
+      await page.waitForSelector("ul.library, .empty", { timeout: 15_000 });
+    },
+  },
+  {
+    name: "modal-client-settings",
+    setup: async (page) => {
+      await ensureLibrary(page);
+      await page.click("#client-settings");
+      await page.waitForFunction(() => window.ChoiceDialog.isOpen());
+    },
+    after: async (page) => {
+      await page.evaluate(() => window.ChoiceDialog.close());
+    },
+  },
+  {
+    name: "modal-server-admin",
+    setup: async (page) => {
+      await ensureLibrary(page);
+      await page.evaluate(() => window.ChoiceTestHooks.openAdminPanel());
       await page.waitForFunction(() => window.ChoiceDialog.isOpen());
     },
     after: async (page) => {
