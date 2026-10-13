@@ -2242,7 +2242,15 @@ async function act(direction) {
   const spec = specFor(direction);
   const item = current();
   const label = spec && item ? buttonLabel(spec, item) : null;
-  if (!spec || !item || !label || state.busy || state.filterFlushing || state.undoInFlight) {
+  if (
+    !spec ||
+    !item ||
+    !label ||
+    state.busy ||
+    state.filterFlushing ||
+    state.undoInFlight ||
+    (typeof ChoiceFilterPanel !== "undefined" && ChoiceFilterPanel.isOpen())
+  ) {
     return;
   }
   if (ChoiceDialog.isOpen()) ChoiceDialog.close();
