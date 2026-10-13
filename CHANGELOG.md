@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.3 (2026-10-13)
+
+### Fixed
+
+- Filtered plugin decks: `/media` and `/decide` honor the `f=` filter (matching items/stats). `mediaSrc` sends the active filter; item lookup uses the filtered snapshot and last served list before reloading `list_items`.
+- Plugin item cache stamp includes list generation so a changed filtered list invalidates the 1s item cache (not only folder mtime).
+- Deck header: back, title, filter, settings, and menu stay on one row from 320px up; long titles ellipsize instead of wrapping controls.
+
+### Tests
+
+- HTTP regression for filtered plugin media (200) and decide under filter; plugin cache stamp test; CSS regression for top bar nowrap/ellipsis.
+
 ## 0.6.2 (2026-10-13)
 
 ### Fixed

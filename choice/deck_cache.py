@@ -40,6 +40,9 @@ def load_items(deck: Deck) -> tuple[list, list]:
     else:
         if deck.plugin is None:
             record_items(deck, items)
+    from choice.served_items import record_served_items
+
+    record_served_items(deck, items)
     _cache.set(key, (now + _TTL, stamp, items, warnings))
     return items, warnings
 
@@ -63,6 +66,10 @@ def _stamp(deck: Deck, filt_key: str = "") -> tuple:
         from choice.folder_index import generation
 
         return ("folder_index", generation(deck.state_dir), filt_key)
+    if deck.plugin is not None:
+        from choice.deck_index import list_generation, snapshot_cache_key
+
+        return ("plugin", snapshot_cache_key(deck), list_generation(deck), filt_key)
     root = deck.root
     try:
         return ("root", root.stat().st_mtime_ns, filt_key)

@@ -185,6 +185,11 @@ function withUser(path) {
   return path + join + "user=" + encodeURIComponent(state.user);
 }
 
+function filterQuerySuffix() {
+  const f = encodeFilterParam(state.filterSelection);
+  return f ? "&f=" + encodeURIComponent(f) : "";
+}
+
 async function api(path, body) {
   const opts = {};
   if (body !== undefined) {
@@ -1891,7 +1896,7 @@ function mediaSrc(item, side, imageIndex) {
     }
   }
   url += "&w=" + encodeURIComponent(String(state.mediaWidth || 1280));
-  return withUser(url + "&v=" + encodeURIComponent(token || ""));
+  return withUser(url + "&v=" + encodeURIComponent(token || "") + filterQuerySuffix());
 }
 
 function appendPhoto(frame, src, alt) {
@@ -2347,7 +2352,10 @@ async function act(direction) {
   renderDeck();
   let data;
   try {
-    data = await api("/api/decks/" + encodeURIComponent(state.deckId) + "/decide", {
+    let decidePath = "/api/decks/" + encodeURIComponent(state.deckId) + "/decide";
+    const f = encodeFilterParam(state.filterSelection);
+    if (f) decidePath += "?f=" + encodeURIComponent(f);
+    data = await api(decidePath, {
       item: item.id,
       direction: direction,
       deck_id: state.deckId,
