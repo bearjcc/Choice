@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.0 (2026-10-13)
+
+### Added
+
+- **Server Admin** panel (separate from **Manage decks**): network/bind settings, graceful restart with uptime and version, session list with revoke, HTTP compression mode, image transcode-on-serve with disk variant cache and test preview, and hardware-path detection (Pillow CPU, optional ffmpeg/libvips). Owner-only when People mode is on.
+- Server settings map to `choice.toml` (`[network]`, `[http]`, `[images]`) and `CHOICE_*` env overrides.
+
+### Tests
+
+- Server settings TOML round-trip, image variant cache keys, admin API owner enforcement.
+
 ## 0.5.8 (2026-10-13)
 
 ### Fixed

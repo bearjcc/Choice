@@ -466,11 +466,18 @@ function buildLibraryToolbar(cfg) {
   }
   const spacer = el("span", "toolbar-spacer");
   bar.append(spacer);
-  const admin = el("button", null, "Server admin");
-  admin.type = "button";
-  admin.dataset.choiceModal = "server-admin";
-  admin.addEventListener("click", () => openAdminPanel(cfg));
-  bar.append(admin);
+  if (serverAdminAllowed(cfg)) {
+    const decksBtn = el("button", null, "Manage decks");
+    decksBtn.type = "button";
+    decksBtn.dataset.choiceModal = "deck-manager";
+    decksBtn.addEventListener("click", () => openDeckManager(cfg));
+    bar.append(decksBtn);
+    const admin = el("button", null, "Server admin");
+    admin.type = "button";
+    admin.dataset.choiceModal = "server-admin";
+    admin.addEventListener("click", () => openServerAdminPanel());
+    bar.append(admin);
+  }
   return bar;
 }
 
@@ -610,6 +617,17 @@ async function showLibrary() {
   await paintHomeLibrary();
 }
 
+async function ensureConfigSchema() {
+  if (window.__choiceConfigSchema) return window.__choiceConfigSchema;
+  try {
+    const res = await api("/api/admin/config-schema");
+    if (res.ok) window.__choiceConfigSchema = res;
+    return res;
+  } catch (_err) {
+    return { ok: false, fields: [] };
+  }
+}
+
 function showSetup(cfg, editDeckId) {
   state.deckId = null;
   $("title").textContent = editDeckId ? "Edit deck" : "Add deck";
@@ -634,7 +652,7 @@ function showSetup(cfg, editDeckId) {
 
 function openSetupDialog(wizard) {
   wizard._dialog = true;
-  paintSetupStep(wizard);
+  ensureConfigSchema().then(() => paintSetupStep(wizard));
   ChoiceDialog.open();
 }
 
@@ -719,10 +737,18 @@ function setupStepFields(wizard) {
 
   const fields = el("div", "setup-type-fields");
   if (wizard.type === "folder") {
+    form.append(fieldLabel("Source root path"));
+    const srcPath = el("input");
+    srcPath.name = "source_path";
+    srcPath.setAttribute("data-config-key", "sources.path");
+    srcPath.placeholder = "examples";
+    if (srcExisting && srcExisting.path) srcPath.value = srcExisting.path;
+    form.append(srcPath);
     form.append(fieldLabel("Folder path"));
     const pathRow = el("div", "path-row");
     const mount = el("input");
     mount.name = "mount";
+    mount.setAttribute("data-config-key", "decks.mount");
     mount.placeholder = ".";
     mount.value = existing ? (existing.mount || ".") : ".";
     mount.setAttribute("list", "browse-list");
@@ -739,6 +765,7 @@ function setupStepFields(wizard) {
 
     const output = el("select");
     output.name = "output";
+    output.setAttribute("data-config-key", "decks.output");
     [["results", "Results (log only)"], ["sort", "Sort into folders"]].forEach(([value, label]) => {
       const opt = el("option", null, label);
       opt.value = value;
@@ -747,32 +774,42 @@ function setupStepFields(wizard) {
     });
     form.append(fieldLabel("Output"));
     form.append(output);
-    form.append(toggleSwitch("recursive", "Recursive scan", existing && existing.recursive));
+    const recRow = toggleSwitch("recursive", "Recursive scan", existing && existing.recursive);
+    recRow.querySelector("input").setAttribute("data-config-key", "decks.recursive");
+    form.append(recRow);
 
     const more = el("details", "setup-more");
     more.append(el("summary", null, "More options"));
     const include = el("input");
     include.name = "include";
+    include.setAttribute("data-config-key", "decks.include");
     include.placeholder = "*.jpg, *.png";
     if (existing && existing.include) include.value = existing.include.join(", ");
     more.append(fieldLabel("Include globs"), include);
     const exclude = el("input");
     exclude.name = "exclude";
+    exclude.setAttribute("data-config-key", "decks.exclude");
     if (existing && existing.exclude) exclude.value = existing.exclude.join(", ");
     more.append(fieldLabel("Exclude globs"), exclude);
     const sortRight = el("input");
     sortRight.name = "sort_right";
+    sortRight.setAttribute("data-config-key", "decks.sort_right");
     if (existing && existing.sort_right) sortRight.value = existing.sort_right;
     more.append(fieldLabel("Sort folder: right"), sortRight);
     const sortLeft = el("input");
     sortLeft.name = "sort_left";
+    sortLeft.setAttribute("data-config-key", "decks.sort_left");
     if (existing && existing.sort_left) sortLeft.value = existing.sort_left;
     more.append(fieldLabel("Sort folder: left"), sortLeft);
     form.append(more);
+    ensureConfigSchema().then((schema) => {
+      if (schema.ok) ChoiceConfigUi.appendDeckFields(form, schema, existing, "folder");
+    });
   } else if (wizard.type === "immich") {
     form.append(fieldLabel("Immich URL"));
     const url = el("input");
     url.name = "url";
+    url.setAttribute("data-config-key", "sources.url");
     url.placeholder = "https://photos.example.com";
     if (srcExisting && srcExisting.url) url.value = srcExisting.url;
     form.append(url);
@@ -780,52 +817,80 @@ function setupStepFields(wizard) {
     const key = el("input");
     key.type = "password";
     key.name = "api_key";
+    key.setAttribute("data-config-key", "sources.api_key");
     key.autocomplete = "off";
     form.append(key);
     form.append(fieldLabel("Album id or search mount"));
     const mount = el("input");
     mount.name = "mount";
+    mount.setAttribute("data-config-key", "decks.mount");
     mount.value = existing ? (existing.mount || "") : "";
     form.append(mount);
+    const exArch = toggleSwitch(
+      "exclude_archived",
+      "Exclude archived assets",
+      srcExisting ? srcExisting.exclude_archived !== false : true,
+    );
+    exArch.querySelector("input").setAttribute("data-config-key", "sources.exclude_archived");
+    form.append(exArch);
+    ensureConfigSchema().then((schema) => {
+      if (schema.ok) ChoiceConfigUi.appendDeckFields(form, schema, existing, "immich");
+    });
   } else if (wizard.type === "rss") {
     form.append(fieldLabel("Feed URL"));
     const feed = el("input");
     feed.name = "url";
+    feed.setAttribute("data-config-key", "sources.url");
     if (srcExisting && srcExisting.url) feed.value = srcExisting.url;
     form.append(feed);
+    ensureConfigSchema().then((schema) => {
+      if (schema.ok) ChoiceConfigUi.appendDeckFields(form, schema, existing, "rss");
+    });
   } else if (wizard.type === "webdav") {
     form.append(fieldLabel("WebDAV URL"));
     const url = el("input");
     url.name = "url";
+    url.setAttribute("data-config-key", "sources.url");
     if (srcExisting && srcExisting.url) url.value = srcExisting.url;
     form.append(url);
     form.append(fieldLabel("Username"));
     const user = el("input");
     user.name = "username";
+    user.setAttribute("data-config-key", "sources.username");
     if (srcExisting && srcExisting.username) user.value = srcExisting.username;
     form.append(user);
     form.append(fieldLabel("Password"));
     const pass = el("input");
     pass.type = "password";
     pass.name = "password";
+    pass.setAttribute("data-config-key", "sources.password");
     pass.autocomplete = "off";
     form.append(pass);
     form.append(fieldLabel("Remote folder"));
     const mount = el("input");
     mount.name = "mount";
+    mount.setAttribute("data-config-key", "decks.mount");
     mount.value = existing ? (existing.mount || "/") : "/";
     form.append(mount);
+    ensureConfigSchema().then((schema) => {
+      if (schema.ok) ChoiceConfigUi.appendDeckFields(form, schema, existing, "webdav");
+    });
   } else if (wizard.type === "swipe") {
     form.append(fieldLabel("Plugin folder path"));
     const plug = el("input");
     plug.name = "path";
+    plug.setAttribute("data-config-key", "sources.path");
     if (srcExisting && srcExisting.path) plug.value = srcExisting.path;
     form.append(plug);
     form.append(fieldLabel("Deck mount within plugin"));
     const mount = el("input");
     mount.name = "mount";
+    mount.setAttribute("data-config-key", "decks.mount");
     mount.value = existing ? (existing.mount || ".") : ".";
     form.append(mount);
+    ensureConfigSchema().then((schema) => {
+      if (schema.ok) ChoiceConfigUi.appendDeckFields(form, schema, existing, "swipe");
+    });
   }
   form.append(fields);
 
@@ -872,7 +937,8 @@ function readSetupDraft(form, wizard) {
     draft.exclude = splitGlobs((form.querySelector("[name=exclude]") || {}).value);
     draft.sort_right = (form.querySelector("[name=sort_right]") || {}).value.trim();
     draft.sort_left = (form.querySelector("[name=sort_left]") || {}).value.trim();
-    draft.source.path = ".";
+    const srcPathEl = form.querySelector("[name=source_path]");
+    draft.source.path = srcPathEl ? srcPathEl.value.trim() || "." : ".";
     draft.source.output = draft.output;
     draft.source.recursive = draft.recursive;
   }
@@ -1069,6 +1135,17 @@ async function saveSetupDeck(wizard) {
     source: draft.sourceId,
     mount: draft.mount,
   };
+  const schema = window.__choiceConfigSchema;
+  if (schema && schema.ok && typeof ChoiceConfigUi !== "undefined") {
+    const form = document.querySelector(".setup-form");
+    if (form) {
+      Object.assign(entry, ChoiceConfigUi.readDeckOptions(form, schema, draft.type));
+      Object.assign(srcRow, ChoiceConfigUi.readSourceOptions(form, schema, draft.type));
+    }
+  }
+  if (draft.type === "immich") {
+    srcRow.api_key = draft.secret_name || "IMMICH_API_KEY";
+  }
   if (draft.type === "folder") {
     entry.output = draft.output;
     entry.recursive = draft.recursive;
@@ -2429,10 +2506,7 @@ async function openClientSettings() {
   const adminBtn = el("button", null, "Server admin");
   adminBtn.type = "button";
   adminBtn.dataset.choiceModal = "server-admin";
-  adminBtn.addEventListener("click", async () => {
-    const cfg = await api("/api/config");
-    openAdminPanel(cfg);
-  });
+  adminBtn.addEventListener("click", () => openServerAdminPanel());
   adminRow.append(adminBtn);
   body.append(adminRow);
   const row = el("div", "sheet-actions");
@@ -2453,7 +2527,7 @@ async function openClientSettings() {
   ChoiceDialog.open();
 }
 
-async function openAdminPanel(cfg) {
+async function openDeckManager(cfg) {
   let config = cfg;
   if (!config) {
     try {
@@ -2465,7 +2539,7 @@ async function openAdminPanel(cfg) {
   }
   const body = $("dialog-body");
   body.replaceChildren();
-  body.append(el("h2", null, "Server admin"));
+  body.append(el("h2", null, "Manage decks"));
   if (!config.ok) {
     body.append(el("p", "problem", config.message || "Server config is not available."));
     ChoiceDialog.open();
@@ -2552,7 +2626,7 @@ async function deleteDeckFromAdmin(deckId, cfg) {
   setStatus("Deck deleted.");
   await refreshIndex();
   const fresh = await api("/api/config");
-  openAdminPanel(fresh);
+  openDeckManager(fresh);
 }
 
 async function openMenu() {
@@ -3113,7 +3187,8 @@ function installTestHooks() {
       if (cfg.ok && cfg.editable) showSetup(cfg);
     },
     openClientSettings,
-    openAdminPanel,
+    openDeckManager,
+    openServerAdminPanel,
     expectedModalTriggerIds() {
       return [
         "menu",
@@ -3121,6 +3196,7 @@ function installTestHooks() {
         "count-settings",
         "client-settings",
         "server-admin",
+        "deck-manager",
         "queue-failures",
         "add-deck",
         "deck-edit",

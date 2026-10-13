@@ -4,7 +4,10 @@
 # Environment overrides (see also CLI flags):
 #   CHOICE_CONFIG, CHOICE_PATH, CHOICE_HOST, CHOICE_PORT, CHOICE_LAN, CHOICE_OPEN,
 #   CHOICE_BASE_PATH, CHOICE_TITLE, CHOICE_STATE_DIR, CHOICE_SECRETS_FILE,
-#   CHOICE_USERS_FILE, CHOICE_DISABLE_WARM, CHOICE_SYNC_WORK, CHOICE_CLIENT_BUFFER
+#   CHOICE_USERS_FILE, CHOICE_DISABLE_WARM, CHOICE_SYNC_WORK, CHOICE_CLIENT_BUFFER,
+#   CHOICE_PUBLIC_URL, CHOICE_TLS_CERT, CHOICE_TLS_KEY, CHOICE_TRUST_FORWARDED,
+#   CHOICE_HTTP_COMPRESS, CHOICE_IMAGE_TRANSCODE, CHOICE_IMAGE_FORMAT, CHOICE_IMAGE_MAX_EDGE,
+#   CHOICE_IMAGE_QUALITY, CHOICE_IMAGE_MIN_BYTES, CHOICE_IMAGE_MIN_EDGE, CHOICE_IMAGE_HW_ACCEL
 
 # [client]
 # buffer = 30
@@ -46,6 +49,27 @@ exclude = ["keep/**", "reject/**"]
 sort_right = "keep"
 sort_left = "reject"
 # sort_up = "unsure"
+
+# [network]
+# host = "127.0.0.1"
+# port = 8741
+# base_path = ""
+# public_url = "https://choice.example.com"
+# tls_cert = "/path/to/fullchain.pem"
+# tls_key = "/path/to/privkey.pem"
+# trust_forwarded = true
+
+# [http]
+# compress = "gzip"  # off | gzip | brotli | both
+
+# [images]
+# transcode = false
+# format = "original"  # webp | avif | jxl when codecs installed
+# max_edge = 2048
+# quality = 85
+# min_bytes = 512000
+# min_edge = 1280
+# hw_accel = "auto"  # off | pillow | ffmpeg | vips
 # sort_mode = "filename"
 # file_types = ["image"]
 # include_folders = ["inbox"]

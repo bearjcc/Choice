@@ -56,6 +56,8 @@ _STATIC = {
     "action_icons.js": "text/javascript; charset=utf-8",
     "mdi.js": "text/javascript; charset=utf-8",
     "filter_panel.js": "text/javascript; charset=utf-8",
+    "server_admin.js": "text/javascript; charset=utf-8",
+    "config_ui.js": "text/javascript; charset=utf-8",
     "design-tokens.css": "text/css; charset=utf-8",
     "MDI-ATTRIBUTION.txt": "text/plain; charset=utf-8",
     "app.css": "text/css; charset=utf-8",
@@ -89,6 +91,15 @@ class ChoiceSite(ThreadingHTTPServer):
                 self.client_buffer_size = buffer_size_from_env()
         else:
             self.client_buffer_size = buffer_size_from_env()
+        import time
+
+        from choice.sessions import SessionRegistry
+
+        self.sessions = SessionRegistry()
+        self.started_at = time.time()
+        self.bind_host = address[0]
+        self.bind_port = address[1]
+        self.restart_argv: list[str] = []
         super().__init__(address, Handler)
         _boot_work_queue(self)
 
@@ -160,6 +171,21 @@ class Handler(BaseHTTPRequestHandler):
             return self._feed(parse_qs(parsed.query))
         if parts == ["api", "config"]:
             return self._config_get(parse_qs(parsed.query))
+        if parts == ["api", "admin", "config-schema"]:
+            self._touch_session(self._requested_user(parse_qs(parsed.query), None))
+            from choice.admin_http import admin_config_schema_get
+
+            return admin_config_schema_get(self, parse_qs(parsed.query))
+        if parts == ["api", "admin", "server"]:
+            self._touch_session(self._requested_user(parse_qs(parsed.query), None))
+            from choice.admin_http import admin_server_get
+
+            return admin_server_get(self, parse_qs(parsed.query))
+        if parts == ["api", "admin", "sessions"]:
+            self._touch_session(self._requested_user(parse_qs(parsed.query), None))
+            from choice.admin_http import admin_sessions_get
+
+            return admin_sessions_get(self, parse_qs(parsed.query))
         if parts == ["api", "reload"]:
             return self._reload_library()
         if parts == ["api", "source-types"]:
@@ -194,6 +220,31 @@ class Handler(BaseHTTPRequestHandler):
             return self._reload_library()
         if parts == ["api", "config"]:
             return self._config_save(body)
+        if parts == ["api", "admin", "server"]:
+            self._touch_session(self._requested_user(None, body))
+            from choice.admin_http import admin_server_patch
+
+            return admin_server_patch(self, body)
+        if parts == ["api", "admin", "sessions", "revoke"]:
+            self._touch_session(self._requested_user(None, body))
+            from choice.admin_http import admin_sessions_revoke
+
+            return admin_sessions_revoke(self, body)
+        if parts == ["api", "admin", "restart"]:
+            self._touch_session(self._requested_user(None, body))
+            from choice.admin_http import admin_restart
+
+            return admin_restart(self, body)
+        if parts == ["api", "admin", "transcode-preview"]:
+            self._touch_session(self._requested_user(None, body))
+            from choice.admin_http import admin_transcode_preview
+
+            return admin_transcode_preview(self, body)
+        if parts == ["api", "admin", "users"]:
+            self._touch_session(self._requested_user(None, body))
+            from choice.admin_http import admin_users_patch
+
+            return admin_users_patch(self, body)
         if parts == ["api", "secrets"]:
             return self._secret_save(body)
         if parts == ["api", "sources", "test"] and isinstance(body.get("source"), dict):
@@ -477,13 +528,25 @@ class Handler(BaseHTTPRequestHandler):
         source = _media_source(item, side_key, image_index)
         if source is None or not source.is_file():
             return self._json(404, {"ok": False, "message": "No such image."})
-        served = prepare_file(
+        profile = self._image_delivery_profile(deck)
+        from choice.image_delivery import serve_with_delivery
+
+        served = serve_with_delivery(
             source.resolve(),
             cache_dir,
+            profile,
             full=full,
             width=width,
             etag_version=version,
         )
+        if served.path is None:
+            served = prepare_file(
+                source.resolve(),
+                cache_dir,
+                full=full,
+                width=width,
+                etag_version=version,
+            )
         cache = cache_dir
         if served.path is not None:
             path = served.path.resolve()
@@ -978,14 +1041,65 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(400, {"ok": False, "message": str(exc)})
         return self._json(200, {"ok": True, "name": name, "secrets_file": str(secret_path)})
 
+    def _compress_mode(self) -> str:
+        path = self.server.config_path
+        if path is None or not path.is_file():
+            return "gzip"
+        try:
+            cfg = load_config(path)
+            if cfg.server:
+                return cfg.server.http.compress
+        except ConfigProblem:
+            pass
+        return "gzip"
+
+    def _session_from_cookie(self) -> str | None:
+        raw = self.headers.get("Cookie") or ""
+        for part in raw.split(";"):
+            part = part.strip()
+            if part.startswith("choice_session="):
+                return part.split("=", 1)[1].strip()
+        return None
+
+    def _touch_session(self, user_id: str | None) -> None:
+        sid = self._session_from_cookie()
+        if sid and self.server.sessions.is_revoked(sid):
+            sid = None
+        uid = user_id if user_id is not None else ""
+        new_sid = self.server.sessions.touch(sid, uid, self.headers.get("User-Agent", ""))
+        self._pending_session_cookie = new_sid
+
+    def _image_delivery_profile(self, deck):
+        from choice.server_settings import ImageDeliverySettings, deck_image_override
+
+        path = self.server.config_path
+        base = ImageDeliverySettings()
+        if path and path.is_file():
+            try:
+                cfg = load_config(path)
+                if cfg.server:
+                    base = cfg.server.images
+                for spec in cfg.decks:
+                    if spec.id == deck.id:
+                        override = deck_image_override(spec.options)
+                        if override:
+                            return override
+                        break
+            except ConfigProblem:
+                pass
+        return base
+
     def _json(self, code, payload):
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        encoding = self.headers.get("Accept-Encoding", "")
-        if "gzip" in encoding and len(data) > 280:
-            data = gzip.compress(data)
-            extra = [("Content-Encoding", "gzip")]
-        else:
-            extra = []
+        from choice.response_compress import compress_body
+
+        data, enc = compress_body(data, self._compress_mode(), self.headers.get("Accept-Encoding", ""))
+        extra = []
+        if enc:
+            extra.append(("Content-Encoding", enc))
+        cookie = getattr(self, "_pending_session_cookie", None)
+        if cookie:
+            extra.append(("Set-Cookie", f"choice_session={cookie}; Path=/; HttpOnly; SameSite=Lax"))
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
@@ -1205,6 +1319,7 @@ def serve(
     base_path: str = "",
     app_title: str = DEFAULT_APP_TITLE,
     client_buffer_size: int | None = None,
+    restart_argv: list[str] | None = None,
 ) -> None:
     ChoiceSite.allow_reuse_address = True
     try:
@@ -1216,6 +1331,8 @@ def serve(
             app_title=app_title,
             client_buffer_size=client_buffer_size,
         )
+        if restart_argv:
+            server.restart_argv = list(restart_argv)
     except OSError as exc:
         raise SystemExit(f"Cannot listen on {host}:{port} ({exc.strerror or exc}).") from exc
     try:
