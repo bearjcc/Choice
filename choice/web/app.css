@@ -631,6 +631,14 @@ button.danger {
   min-height: var(--tap-min);
 }
 
+.field-help {
+  display: block;
+  font-size: var(--text-sm);
+  color: var(--muted);
+  margin: var(--space-1) 0 var(--space-2);
+  line-height: 1.35;
+}
+
 .admin-preview {
   font-size: var(--text-sm);
   white-space: pre-wrap;

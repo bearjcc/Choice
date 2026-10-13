@@ -57,6 +57,7 @@ _STATIC = {
     "mdi.js": "text/javascript; charset=utf-8",
     "filter_panel.js": "text/javascript; charset=utf-8",
     "server_admin.js": "text/javascript; charset=utf-8",
+    "config_ui.js": "text/javascript; charset=utf-8",
     "design-tokens.css": "text/css; charset=utf-8",
     "MDI-ATTRIBUTION.txt": "text/plain; charset=utf-8",
     "app.css": "text/css; charset=utf-8",
@@ -170,6 +171,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._feed(parse_qs(parsed.query))
         if parts == ["api", "config"]:
             return self._config_get(parse_qs(parsed.query))
+        if parts == ["api", "admin", "config-schema"]:
+            self._touch_session(self._requested_user(parse_qs(parsed.query), None))
+            from choice.admin_http import admin_config_schema_get
+
+            return admin_config_schema_get(self, parse_qs(parsed.query))
         if parts == ["api", "admin", "server"]:
             self._touch_session(self._requested_user(parse_qs(parsed.query), None))
             from choice.admin_http import admin_server_get

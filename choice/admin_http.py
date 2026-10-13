@@ -15,7 +15,48 @@ from choice.hw_probe import probe_codecs, probe_hw_accel
 from choice.image_delivery import preview_transcode
 from choice.load import DeckProblem
 from choice.people import load_roster, parse_users, roster_path, save_roster
+from choice.config import _expand
+from choice.config_schema import schema_for_api
 from choice.server_settings import merge_server_patch, network_restart_required
+
+
+def apply_admin_settings(cfg, patch: dict) -> None:
+    """Merge admin UI patch into AppConfig (not yet saved)."""
+    title = patch.get("title")
+    if title is not None and str(title).strip():
+        cfg.app_title = str(title).strip()
+    state = patch.get("state")
+    if isinstance(state, dict):
+        if state.get("dir"):
+            cfg.state_dir = _expand(str(state["dir"]), cfg.path.parent)
+        if state.get("secrets_file"):
+            cfg.secrets_file = _expand(str(state["secrets_file"]), cfg.path.parent)
+        elif "secrets_file" in state and not state.get("secrets_file"):
+            cfg.secrets_file = None
+        if state.get("users_file"):
+            cfg.roster_path = _expand(str(state["users_file"]), cfg.path.parent)
+        elif "users_file" in state and not state.get("users_file"):
+            cfg.roster_path = None
+    client = patch.get("client")
+    if isinstance(client, dict) and client.get("buffer"):
+        cfg.client_buffer = max(1, int(client["buffer"]))
+    server_bits = {
+        k: patch[k]
+        for k in ("network", "http", "images")
+        if isinstance(patch.get(k), dict)
+    }
+    if server_bits:
+        cfg.server = merge_server_patch(cfg.server, server_bits)
+
+
+def admin_config_schema_get(handler: "Handler", query) -> None:
+    user_id = handler._requested_user(query, None)
+    if not handler._config_admin_allowed(user_id):
+        handler._json(403, {"ok": False, "message": "Only the server owner can use Server admin."})
+        return
+    payload = schema_for_api()
+    payload["ok"] = True
+    handler._json(200, payload)
 
 if TYPE_CHECKING:
     from choice.httpd import Handler
@@ -58,6 +99,11 @@ def admin_server_get(handler: "Handler", query) -> None:
             "version": __version__,
             "uptime_sec": max(0, int(time.time() - handler.server.started_at)),
             "settings": cfg.server.public_dict() if cfg.server else {},
+            "app_title": cfg.app_title,
+            "state_dir": str(cfg.state_dir),
+            "secrets_file": str(cfg.secrets_file) if cfg.secrets_file else "",
+            "users_file": str(cfg.roster_path) if cfg.roster_path else "",
+            "client_buffer": cfg.client_buffer,
             "codecs": codecs,
             "hw_accel": hw.public(),
             "running": {
@@ -82,14 +128,18 @@ def admin_server_patch(handler: "Handler", body: dict) -> None:
         handler._json(400, {"ok": False, "message": "Send settings object."})
         return
     try:
+        before = load_config(path)
         cfg = load_config(path)
-        merged = merge_server_patch(cfg.server, patch)
+        apply_admin_settings(cfg, patch)
+        merged = cfg.server
         restart = network_restart_required(
             merged.network,
             handler.server.bind_host,
             handler.server.bind_port,
             handler.server.base_path,
         )
+        if str(before.state_dir) != str(cfg.state_dir):
+            restart = True
         if restart and not confirm:
             handler._json(
                 409,
@@ -100,7 +150,6 @@ def admin_server_patch(handler: "Handler", body: dict) -> None:
                 },
             )
             return
-        cfg.server = merged
         sources = [
             {"id": s.id, "type": s.type, **s.options} for s in cfg.sources
         ]

@@ -153,3 +153,13 @@ mount = "filtered_list"
             body = json.loads(resp.read().decode())
         self.assertTrue(body["ok"])
         self.assertIn("settings", body)
+
+    def test_owner_config_schema(self):
+        with self._get("/api/admin/config-schema?user=alice") as resp:
+            body = json.loads(resp.read().decode())
+        self.assertTrue(body["ok"])
+        self.assertIn("fields", body)
+        self.assertIn("not_exposed", body)
+        keys = {f["key"] for f in body["fields"]}
+        self.assertIn("network.host", keys)
+        self.assertIn("decks.mount", keys)
