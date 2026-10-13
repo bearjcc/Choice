@@ -31,6 +31,7 @@ _COUNTS_NAME = "list_counts.json"
 _list_locks: LruDict[str, threading.RLock] = LruDict(128)
 _guard = threading.Lock()
 _index: LruDict[str, tuple[float, _Snapshot]] = LruDict(128)
+_list_generation: LruDict[str, int] = LruDict(128)
 _warm_scheduled: set[str] = set()
 _counts_refresh_scheduled: set[str] = set()
 
@@ -63,7 +64,15 @@ def record_items(deck: Deck, items: list[Item]) -> None:
     snap = _Snapshot(ids=ids, plugin_decided=plugin_decided, order=order, items=items)
     with _guard:
         _index.set(key, (time.monotonic() + _INDEX_TTL, snap))
+        gen = _list_generation.get(key) or 0
+        _list_generation.set(key, gen + 1)
     _persist_counts(deck, snap)
+
+
+def list_generation(deck: Deck) -> int:
+    key = snapshot_cache_key(deck)
+    with _guard:
+        return int(_list_generation.get(key) or 0)
 
 
 def snapshot(deck: Deck) -> _Snapshot | None:
@@ -87,6 +96,7 @@ def clear_index(deck: Deck) -> None:
         for key, _ in _index.items():
             if key == legacy or key.startswith(prefix):
                 _index.pop(key)
+                _list_generation.pop(key)
 
 
 def clear_warm_scheduled(deck: Deck) -> None:

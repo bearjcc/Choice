@@ -1134,12 +1134,32 @@ def _find(items: list[Item], item_id: str) -> Item | None:
     return None
 
 
+def _item_from_cached_lists(deck: Deck, item_id: str) -> Item | None:
+    from choice.deck_index import snapshot
+    from choice.served_items import last_served_items
+
+    snap = snapshot(deck)
+    if snap is not None and snap.items:
+        hit = _find(snap.items, item_id)
+        if hit is not None:
+            return hit
+    served = last_served_items(deck)
+    if served:
+        hit = _find(served, item_id)
+        if hit is not None:
+            return hit
+    return None
+
+
 def item_by_id(deck: Deck, item_id: str) -> Item | None:
     """Resolve one card without loading the full pile."""
     if deck.folder_scan is not None:
         from choice.folder_index import item_for_id
 
         return item_for_id(deck, item_id)
+    hit = _item_from_cached_lists(deck, item_id)
+    if hit is not None:
+        return hit
     flow = view(deck)
     return _find(flow.items, item_id)
 
@@ -1151,6 +1171,9 @@ def _item_for_decide(deck: Deck, item_id: str) -> Item | None:
         if not admit_if_on_disk(deck, item_id):
             return None
         return item_for_id(deck, item_id)
+    hit = _item_from_cached_lists(deck, item_id)
+    if hit is not None:
+        return hit
     flow = view(deck)
     return _find(flow.items, item_id)
 

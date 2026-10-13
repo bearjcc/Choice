@@ -274,11 +274,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200 if result.get("ok") else 400, result)
         if kind not in {"decide", "undo"}:
             return self._json(404, {"ok": False, "message": "No such page."})
-        deck = self._opened(parts[2], self._requested_user(parse_qs(parsed.query), body))
+        query = parse_qs(parsed.query)
+        deck = self._opened(parts[2], self._requested_user(query, body))
         if isinstance(deck, dict):
             return self._reply(deck)
         if kind == "undo":
-            result = undo(deck)
+            with self._plugin_filter_scope(deck, query):
+                result = undo(deck)
         else:
             item_id = str(body.get("item") or "")
             body_deck = str(body.get("deck_id") or body.get("deck") or "").strip()
@@ -294,12 +296,13 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 self._json(409, result)
                 return
-            result = decide(
-                deck,
-                item_id,
-                str(body.get("direction") or ""),
-                body.get("note"),
-            )
+            with self._plugin_filter_scope(deck, query):
+                result = decide(
+                    deck,
+                    item_id,
+                    str(body.get("direction") or ""),
+                    body.get("note"),
+                )
         code = 200 if result.get("ok") else 400
         self._json(code, result)
 
@@ -445,6 +448,9 @@ class Handler(BaseHTTPRequestHandler):
         buf_cap = getattr(self.server, "client_buffer_size", 30)
         held = parse_held((query.get("held") or [""])[0], limit=buf_cap)
         with self._plugin_filter_scope(deck, query):
+            from choice.deck_index import snapshot as deck_snapshot
+            from choice.served_items import record_served_items
+
             snap = progress(
                 deck,
                 pending=pending,
@@ -453,6 +459,9 @@ class Handler(BaseHTTPRequestHandler):
                 after=after,
                 held=held or None,
             )
+            snap_obj = deck_snapshot(deck)
+            if snap_obj is not None and snap_obj.items:
+                record_served_items(deck, snap_obj.items)
         if (
             limit > 0
             and snap.get("ok")
@@ -496,64 +505,65 @@ class Handler(BaseHTTPRequestHandler):
         image_index = int(n_raw) if str(n_raw).isdigit() else None
         full, width = self._media_options(query)
         cache_dir = (deck.state_dir / "media_cache").resolve()
-        try:
-            item = item_by_id(deck, item_id)
-        except DeckProblem as exc:
-            return self._json(404, {"ok": False, "message": str(exc)})
-        plugin = deck.plugin
-        if plugin is not None and callable(getattr(plugin, "media_bytes", None)):
-            if item is None:
+        with self._plugin_filter_scope(deck, query):
+            try:
+                item = item_by_id(deck, item_id)
+            except DeckProblem as exc:
+                return self._json(404, {"ok": False, "message": str(exc)})
+            plugin = deck.plugin
+            if plugin is not None and callable(getattr(plugin, "media_bytes", None)):
+                if item is None:
+                    return self._json(404, {"ok": False, "message": "No such image."})
+                row = item.plugin_row
+                blob = plugin.media_bytes(
+                    item_id,
+                    item=row,
+                    index=image_index,
+                    side=side_key or None,
+                )
+                if blob:
+                    data, ctype = blob[0], blob[1]
+                    identity = self._media_cache_identity(
+                        deck.id, item_id, side_key, image_index, version
+                    )
+                    served = prepare_bytes(
+                        data,
+                        ctype,
+                        cache_dir,
+                        identity,
+                        full=full,
+                        width=width,
+                        etag_version=version,
+                    )
+                    return self._send_media(served)
+            source = _media_source(item, side_key, image_index)
+            if source is None or not source.is_file():
                 return self._json(404, {"ok": False, "message": "No such image."})
-            row = item.plugin_row
-            blob = plugin.media_bytes(
-                item_id,
-                item=row,
-                index=image_index,
-                side=side_key or None,
-            )
-            if blob:
-                data, ctype = blob[0], blob[1]
-                identity = self._media_cache_identity(
-                    deck.id, item_id, side_key, image_index, version
-                )
-                served = prepare_bytes(
-                    data,
-                    ctype,
-                    cache_dir,
-                    identity,
-                    full=full,
-                    width=width,
-                    etag_version=version,
-                )
-                return self._send_media(served)
-        source = _media_source(item, side_key, image_index)
-        if source is None or not source.is_file():
-            return self._json(404, {"ok": False, "message": "No such image."})
-        profile = self._image_delivery_profile(deck)
-        from choice.image_delivery import serve_with_delivery
+            profile = self._image_delivery_profile(deck)
+            from choice.image_delivery import serve_with_delivery
 
-        served = serve_with_delivery(
-            source.resolve(),
-            cache_dir,
-            profile,
-            full=full,
-            width=width,
-            etag_version=version,
-        )
-        if served.path is None:
-            served = prepare_file(
+            served = serve_with_delivery(
                 source.resolve(),
                 cache_dir,
+                profile,
                 full=full,
                 width=width,
                 etag_version=version,
             )
-        cache = cache_dir
-        if served.path is not None:
-            path = served.path.resolve()
-            if path != source.resolve() and cache not in path.parents:
-                served = prepare_file(source.resolve(), cache_dir, full=True, etag_version=version)
-        return self._send_media(served)
+            if served.path is None:
+                served = prepare_file(
+                    source.resolve(),
+                    cache_dir,
+                    full=full,
+                    width=width,
+                    etag_version=version,
+                )
+            cache = cache_dir
+            if served.path is not None:
+                path = served.path.resolve()
+                if path != source.resolve() and cache not in path.parents:
+                    served = prepare_file(source.resolve(), cache_dir, full=True, etag_version=version)
+            return self._send_media(served)
 
     def _media_options(self, query) -> tuple[bool, int | None]:
         full = (query.get("full") or ["0"])[0].lower() in {"1", "true", "yes"}
