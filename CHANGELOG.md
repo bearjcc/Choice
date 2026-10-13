@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.2 (2026-10-13)
+
+### Fixed
+
+- Filter flyout panel respects light/dark theme: panel, inputs, combobox listbox, multi-select rows, and footer buttons use shared design tokens (no hard-coded white backgrounds or invisible option text in dark mode).
+
+### Tests
+
+- CSS regression test for filter panel theme tokens; dark-mode Playwright screenshots for combobox and multi-select filters.
+
 ## 0.6.1 (2026-10-13)
 
 ### Changed
@@ -11,16 +21,10 @@
 - Plugin item snapshots in `deck_index` are keyed by the active filter (same as `deck_cache.load_items`), so switching filters no longer shows the previous filter’s cards until the TTL expires.
 - `load_swipe_plugin_items` no longer substitutes the last good list when `list_items` returns an empty result; fallback is only used after plugin errors.
 
-### Fixed
-
-- Plugin item snapshots in `deck_index` are keyed by the active filter (same as `deck_cache.load_items`), so switching filters no longer shows the previous filter’s cards until the TTL expires.
-- `load_swipe_plugin_items` no longer substitutes the last good list when `list_items` returns an empty result; fallback is only used after plugin errors.
-
 ### Tests
 
 - Node unit tests for filter helper semantics; Playwright combobox + search at 390×844 and 1440×900.
 - Regression tests for per-filter snapshots and empty filtered plugin lists.
-<<<<<<< HEAD
 
 ## 0.6.0 (2026-10-13)
 
@@ -32,8 +36,6 @@
 ### Tests
 
 - Server settings TOML round-trip, image variant cache keys, admin API owner enforcement.
-=======
->>>>>>> 2b59a51 (Fix plugin filter snapshot staleness and empty-list fallback)
 
 ## 0.5.8 (2026-10-13)
 
