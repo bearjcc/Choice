@@ -23,6 +23,8 @@ class Deck:
             ]
             items.append({"id": "m-3", "title": "Three"})
             return items
+        if mode == "empty":
+            return []
         return [{"id": "solo", "title": "Only"}]
 
     def handle(self, item_id, direction, note=None):

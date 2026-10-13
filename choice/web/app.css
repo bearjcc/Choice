@@ -278,6 +278,100 @@ button:disabled:active { transform: none; }
   color: inherit;
 }
 
+.filter-panel-option-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  max-height: min(40vh, 320px);
+  overflow-y: auto;
+}
+
+.filter-option-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--tap-min);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line, rgba(0, 0, 0, 0.1));
+  cursor: pointer;
+  font: inherit;
+}
+
+.filter-option-row.on {
+  border-color: var(--accent, #2a5);
+  background: color-mix(in srgb, var(--accent, #2a5) 10%, transparent);
+}
+
+.filter-option-label {
+  flex: 1;
+  text-align: left;
+}
+
+.filter-panel-empty {
+  margin: var(--space-2) 0;
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.filter-combobox {
+  position: relative;
+}
+
+.filter-combobox-input-row {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.filter-combobox-input-row .filter-combobox-input {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+.filter-combobox-clear {
+  flex-shrink: 0;
+  min-width: var(--tap-min);
+  min-height: var(--tap-min);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line, rgba(0, 0, 0, 0.15));
+  background: var(--surface, transparent);
+  font: inherit;
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.filter-combobox-listbox {
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  right: 0;
+  max-height: min(36vh, 280px);
+  overflow-y: auto;
+  margin: 0;
+  padding: var(--space-1);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line, rgba(0, 0, 0, 0.12));
+  background: var(--bg, #fff);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+.filter-combobox-option {
+  padding: var(--space-2) var(--space-3);
+  min-height: var(--tap-min);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.filter-combobox-option.active,
+.filter-combobox-option:hover {
+  background: color-mix(in srgb, var(--accent, #2a5) 12%, transparent);
+}
+
 .filter-panel-chips {
   max-height: none;
 }

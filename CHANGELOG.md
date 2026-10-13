@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.6.1 (2026-10-13)
+
+### Changed
+
+- Filter flyout: single-select filters (`multi: false` or `mode: "single"`) use a searchable combobox (ARIA combobox, keyboard navigation, clear). Multi-select filters always show type-to-search with checkbox rows.
+
+### Fixed
+
+- Plugin item snapshots in `deck_index` are keyed by the active filter (same as `deck_cache.load_items`), so switching filters no longer shows the previous filter’s cards until the TTL expires.
+- `load_swipe_plugin_items` no longer substitutes the last good list when `list_items` returns an empty result; fallback is only used after plugin errors.
+
+### Fixed
+
+- Plugin item snapshots in `deck_index` are keyed by the active filter (same as `deck_cache.load_items`), so switching filters no longer shows the previous filter’s cards until the TTL expires.
+- `load_swipe_plugin_items` no longer substitutes the last good list when `list_items` returns an empty result; fallback is only used after plugin errors.
+
+### Tests
+
+- Node unit tests for filter helper semantics; Playwright combobox + search at 390×844 and 1440×900.
+- Regression tests for per-filter snapshots and empty filtered plugin lists.
+<<<<<<< HEAD
+
 ## 0.6.0 (2026-10-13)
 
 ### Added
@@ -10,6 +32,8 @@
 ### Tests
 
 - Server settings TOML round-trip, image variant cache keys, admin API owner enforcement.
+=======
+>>>>>>> 2b59a51 (Fix plugin filter snapshot staleness and empty-list fallback)
 
 ## 0.5.8 (2026-10-13)
 

@@ -104,11 +104,5 @@ def load_swipe_plugin_items(
         return [], ["plugin list_items failed and no cached list is available"]
 
     items, warnings = convert_plugin_rows(deck, rows, folder, plugin, converter)
-    if items:
-        record_items(deck, items)
-        return items, warnings
-
-    fb = fallback_items(deck, "using last good item list after empty or failed conversion")
-    if fb is not None:
-        return fb[0], warnings + [fb[1][0]]
+    record_items(deck, items)
     return items, warnings

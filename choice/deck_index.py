@@ -12,6 +12,19 @@ from dataclasses import dataclass
 from choice.bounded_cache import LruDict
 from choice.load import Deck, Item
 
+
+def _filter_key_from_context() -> str:
+    from choice.plugin_filters import get_request_filter, selection_to_plugin_filter
+
+    filt = selection_to_plugin_filter(get_request_filter())
+    return json.dumps(filt, sort_keys=True) if filt else ""
+
+
+def snapshot_cache_key(deck: Deck, filt_key: str | None = None) -> str:
+    """Cache key for in-memory item snapshots (matches deck_cache.load_items)."""
+    fk = filt_key if filt_key is not None else _filter_key_from_context()
+    return f"{deck.id}:{deck.state_dir}:{fk}"
+
 _INDEX_TTL = 45.0
 _COUNTS_STALE_SEC = 60.0
 _COUNTS_NAME = "list_counts.json"
@@ -46,7 +59,7 @@ def record_items(deck: Deck, items: list[Item]) -> None:
     plugin_decided = frozenset(
         item.id for item in items if item.plugin_decided or item.fields.get("plugin_decided")
     )
-    key = str(deck.state_dir)
+    key = snapshot_cache_key(deck)
     snap = _Snapshot(ids=ids, plugin_decided=plugin_decided, order=order, items=items)
     with _guard:
         _index.set(key, (time.monotonic() + _INDEX_TTL, snap))
@@ -54,7 +67,7 @@ def record_items(deck: Deck, items: list[Item]) -> None:
 
 
 def snapshot(deck: Deck) -> _Snapshot | None:
-    key = str(deck.state_dir)
+    key = snapshot_cache_key(deck)
     with _guard:
         hit = _index.get(key)
     if not hit:
@@ -68,8 +81,12 @@ def snapshot(deck: Deck) -> _Snapshot | None:
 
 
 def clear_index(deck: Deck) -> None:
+    legacy = str(deck.state_dir)
+    prefix = f"{deck.id}:{deck.state_dir}:"
     with _guard:
-        _index.pop(str(deck.state_dir))
+        for key, _ in _index.items():
+            if key == legacy or key.startswith(prefix):
+                _index.pop(key)
 
 
 def clear_warm_scheduled(deck: Deck) -> None:

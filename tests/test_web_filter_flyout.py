@@ -63,3 +63,11 @@ class WebFilterFlyoutTests(unittest.TestCase):
             env=os.environ.copy(),
         )
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+
+
+class FilterPanelHelperImportTests(unittest.TestCase):
+    def test_helpers_script_exists(self):
+        path = ROOT / "choice" / "web" / "filter_panel_helpers.js"
+        self.assertTrue(path.is_file())
+        text = path.read_text(encoding="utf-8")
+        self.assertIn("mode === \"single\"", text)
