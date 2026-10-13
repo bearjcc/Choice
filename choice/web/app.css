@@ -596,6 +596,47 @@ button.danger {
   gap: var(--space-2);
 }
 
+.server-admin-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-height: min(60vh, 520px);
+  overflow-y: auto;
+}
+
+.admin-section h3 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.admin-session-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.admin-session-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  justify-content: space-between;
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--line, rgba(0, 0, 0, 0.08));
+}
+
+.admin-session-row button {
+  min-height: var(--tap-min);
+}
+
+.admin-preview {
+  font-size: var(--text-sm);
+  white-space: pre-wrap;
+  margin: var(--space-2) 0 0;
+}
+
 .admin-locked {
   padding: 12px 14px;
   border-radius: var(--radius-md);

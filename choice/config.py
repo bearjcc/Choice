@@ -55,6 +55,7 @@ class AppConfig:
     roster_path: Path | None = None
     app_title: str = DEFAULT_APP_TITLE
     client_buffer: int = 30
+    server: Any = None  # choice.server_settings.ServerSettings, set in load_config
 
     def source(self, source_id: str) -> SourceSpec | None:
         for spec in self.sources:
@@ -135,6 +136,10 @@ def load_config(path: Path) -> AppConfig:
         app_title=app_title,
         client_buffer=client_buffer,
     )
+    from choice.server_settings import parse_server_settings
+
+    server = parse_server_settings(raw)
+    config.server = server
     from choice.env_config import apply_config_env
 
     apply_config_env(config)
@@ -185,6 +190,8 @@ def save_config(config: AppConfig, sources: list[dict], decks: list[dict]) -> No
             else:
                 lines.append(f'{key} = "{_toml_str(str(value))}"')
         lines.append("")
+    if config.client_buffer and config.client_buffer != 30:
+        lines.extend(["[client]", f"buffer = {config.client_buffer}", ""])
     for row in decks:
         lines.append("[[decks]]")
         for key, value in row.items():
@@ -192,9 +199,15 @@ def save_config(config: AppConfig, sources: list[dict], decks: list[dict]) -> No
                 lines.append("{} = {}".format(key, "true" if value else "false"))
             elif isinstance(value, (int, float)):
                 lines.append(f"{key} = {value}")
+            elif isinstance(value, dict):
+                lines.append(f"{key} = {_inline_table(value)}")
             else:
                 lines.append(f'{key} = "{_toml_str(str(value))}"')
         lines.append("")
+    if getattr(config, "server", None) is not None:
+        from choice.server_settings import server_toml_lines
+
+        lines.extend(server_toml_lines(config.server))
     config.path.parent.mkdir(parents=True, exist_ok=True)
     config.path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
 
@@ -297,3 +310,15 @@ def _is_secret_key(key: str) -> bool:
 
 def _toml_str(text: str) -> str:
     return text.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _inline_table(value: dict) -> str:
+    parts = []
+    for key, raw in value.items():
+        if isinstance(raw, bool):
+            parts.append(f"{key} = {'true' if raw else 'false'}")
+        elif isinstance(raw, (int, float)):
+            parts.append(f"{key} = {raw}")
+        else:
+            parts.append(f'{key} = "{_toml_str(str(raw))}"')
+    return "{ " + ", ".join(parts) + " }"

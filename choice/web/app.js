@@ -466,11 +466,18 @@ function buildLibraryToolbar(cfg) {
   }
   const spacer = el("span", "toolbar-spacer");
   bar.append(spacer);
-  const admin = el("button", null, "Server admin");
-  admin.type = "button";
-  admin.dataset.choiceModal = "server-admin";
-  admin.addEventListener("click", () => openAdminPanel(cfg));
-  bar.append(admin);
+  if (serverAdminAllowed(cfg)) {
+    const decksBtn = el("button", null, "Manage decks");
+    decksBtn.type = "button";
+    decksBtn.dataset.choiceModal = "deck-manager";
+    decksBtn.addEventListener("click", () => openDeckManager(cfg));
+    bar.append(decksBtn);
+    const admin = el("button", null, "Server admin");
+    admin.type = "button";
+    admin.dataset.choiceModal = "server-admin";
+    admin.addEventListener("click", () => openServerAdminPanel());
+    bar.append(admin);
+  }
   return bar;
 }
 
@@ -2429,10 +2436,7 @@ async function openClientSettings() {
   const adminBtn = el("button", null, "Server admin");
   adminBtn.type = "button";
   adminBtn.dataset.choiceModal = "server-admin";
-  adminBtn.addEventListener("click", async () => {
-    const cfg = await api("/api/config");
-    openAdminPanel(cfg);
-  });
+  adminBtn.addEventListener("click", () => openServerAdminPanel());
   adminRow.append(adminBtn);
   body.append(adminRow);
   const row = el("div", "sheet-actions");
@@ -2453,7 +2457,7 @@ async function openClientSettings() {
   ChoiceDialog.open();
 }
 
-async function openAdminPanel(cfg) {
+async function openDeckManager(cfg) {
   let config = cfg;
   if (!config) {
     try {
@@ -2465,7 +2469,7 @@ async function openAdminPanel(cfg) {
   }
   const body = $("dialog-body");
   body.replaceChildren();
-  body.append(el("h2", null, "Server admin"));
+  body.append(el("h2", null, "Manage decks"));
   if (!config.ok) {
     body.append(el("p", "problem", config.message || "Server config is not available."));
     ChoiceDialog.open();
@@ -2552,7 +2556,7 @@ async function deleteDeckFromAdmin(deckId, cfg) {
   setStatus("Deck deleted.");
   await refreshIndex();
   const fresh = await api("/api/config");
-  openAdminPanel(fresh);
+  openDeckManager(fresh);
 }
 
 async function openMenu() {
@@ -3113,7 +3117,8 @@ function installTestHooks() {
       if (cfg.ok && cfg.editable) showSetup(cfg);
     },
     openClientSettings,
-    openAdminPanel,
+    openDeckManager,
+    openServerAdminPanel,
     expectedModalTriggerIds() {
       return [
         "menu",
@@ -3121,6 +3126,7 @@ function installTestHooks() {
         "count-settings",
         "client-settings",
         "server-admin",
+        "deck-manager",
         "queue-failures",
         "add-deck",
         "deck-edit",

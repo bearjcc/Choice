@@ -40,3 +40,48 @@ def apply_config_env(config: AppConfig) -> None:
     from choice.client_buffer import buffer_size_from_env
 
     config.client_buffer = buffer_size_from_env(config.client_buffer)
+    if getattr(config, "server", None) is not None:
+        _apply_server_env(config.server)
+
+
+def _apply_server_env(server) -> None:
+    from choice.env_config import env_flag, env_int
+
+    host = os.environ.get("CHOICE_HOST")
+    if host is not None and str(host).strip():
+        server.network.host = str(host).strip()
+    port = os.environ.get("CHOICE_PORT")
+    if port is not None and str(port).strip():
+        try:
+            server.network.port = int(str(port).strip(), 10)
+        except ValueError:
+            pass
+    base = os.environ.get("CHOICE_BASE_PATH")
+    if base is not None:
+        server.network.base_path = str(base).strip()
+    pub = os.environ.get("CHOICE_PUBLIC_URL")
+    if pub is not None:
+        server.network.public_url = str(pub).strip()
+    cert = os.environ.get("CHOICE_TLS_CERT")
+    if cert is not None:
+        server.network.tls_cert = str(cert).strip()
+    key = os.environ.get("CHOICE_TLS_KEY")
+    if key is not None:
+        server.network.tls_key = str(key).strip()
+    if env_flag("CHOICE_TRUST_FORWARDED"):
+        server.network.trust_forwarded = True
+    compress = os.environ.get("CHOICE_HTTP_COMPRESS")
+    if compress is not None and str(compress).strip():
+        server.http.compress = str(compress).strip().lower()
+    if env_flag("CHOICE_IMAGE_TRANSCODE"):
+        server.images.transcode = True
+    fmt = os.environ.get("CHOICE_IMAGE_FORMAT")
+    if fmt is not None and str(fmt).strip():
+        server.images.format = str(fmt).strip().lower()
+    server.images.max_edge = env_int("CHOICE_IMAGE_MAX_EDGE", server.images.max_edge)
+    server.images.quality = env_int("CHOICE_IMAGE_QUALITY", server.images.quality)
+    server.images.min_bytes = env_int("CHOICE_IMAGE_MIN_BYTES", server.images.min_bytes)
+    server.images.min_edge = env_int("CHOICE_IMAGE_MIN_EDGE", server.images.min_edge)
+    hw = os.environ.get("CHOICE_IMAGE_HW_ACCEL")
+    if hw is not None and str(hw).strip():
+        server.images.hw_accel = str(hw).strip().lower()
