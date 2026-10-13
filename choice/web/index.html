@@ -20,6 +20,10 @@
     <h1 id="title">Choice</h1>
     <p id="count" class="count"></p>
     <button id="queue-badge" type="button" class="queue-badge" hidden aria-label="Background queue" data-choice-modal="queue-failures"></button>
+    <button id="filter-toggle" type="button" class="icon-btn filter-toggle" hidden aria-label="Filters" aria-expanded="false" aria-controls="filter-panel">
+      <span class="icon-slot" data-mdi="filter" data-mdi-class="nav-icon" aria-hidden="true"></span>
+      <span id="filter-badge" class="filter-badge" hidden aria-hidden="true"></span>
+    </button>
     <button id="client-settings" type="button" class="icon-btn" aria-label="Settings" hidden data-choice-modal="client-settings">
       <span class="icon-slot" data-mdi="settings" data-mdi-class="nav-icon" aria-hidden="true"></span>
     </button>
@@ -27,7 +31,7 @@
       <span class="icon-slot" data-mdi="menu" data-mdi-class="nav-icon" aria-hidden="true"></span>
     </button>
   </div>
-  <div id="filter-bar" class="filter-bar" hidden></div>
+  <button type="button" id="filter-summary" class="filter-summary" hidden></button>
   <div class="tools" id="tools" hidden aria-hidden="true">
     <button id="who" type="button">People</button>
     <button id="home" type="button">Decks</button>
@@ -46,7 +50,23 @@
     <div id="dialog-body" class="dialog-body"></div>
   </div>
 </dialog>
+<dialog id="filter-panel" class="filter-panel" aria-labelledby="filter-panel-title" aria-modal="true">
+  <div class="filter-panel-inner">
+    <header class="filter-panel-head">
+      <h2 id="filter-panel-title">Filters</h2>
+      <button type="button" id="filter-panel-close" class="icon-btn filter-panel-close" aria-label="Close filters">
+        <span class="icon-slot" data-mdi="close" data-mdi-class="nav-icon" aria-hidden="true"></span>
+      </button>
+    </header>
+    <div id="filter-panel-body" class="filter-panel-body"></div>
+    <footer class="filter-panel-foot">
+      <button type="button" id="filter-panel-clear" class="filter-panel-clear">Clear all</button>
+      <button type="button" id="filter-panel-apply" class="filter-panel-apply primary">Apply</button>
+    </footer>
+  </div>
+</dialog>
 <script src="dialog_ui.js"></script>
+<script src="filter_panel.js"></script>
 <script src="pile_nav.js"></script>
 <script src="swipe_ui.js"></script>
 <script src="mdi.js"></script>

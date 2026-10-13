@@ -1,0 +1,13 @@
+[state]
+dir = "state"
+
+[[sources]]
+id = "swipe"
+type = "swipe"
+path = "../plugin_host"
+
+[[decks]]
+id = "many"
+title = "Many filters"
+source = "swipe"
+mount = "many_filters"
