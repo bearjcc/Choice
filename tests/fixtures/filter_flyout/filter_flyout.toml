@@ -11,3 +11,9 @@ id = "many"
 title = "Many filters"
 source = "swipe"
 mount = "many_filters"
+
+[[decks]]
+id = "combo"
+title = "Combobox filters"
+source = "swipe"
+mount = "combobox_filters"

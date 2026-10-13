@@ -1,14 +1,31 @@
 /* Plugin filter flyout: draft selection, Apply/Clear, mobile sheet / desktop drawer. */
 
 const ChoiceFilterPanel = (function () {
-  const NARROW_MQ = "(max-width: 699px)";
-  const SEARCH_MIN_OPTIONS = 10;
+  const H = typeof ChoiceFilterHelpers !== "undefined" ? ChoiceFilterHelpers : null;
 
   let schema = null;
   let draft = null;
   let applyHandler = null;
   let previouslyFocused = null;
   let trapHandler = null;
+
+  function isMultiSelect(filterSpec) {
+    if (H) return H.isMultiSelect(filterSpec);
+    if (!filterSpec) return true;
+    if (filterSpec.mode === "single") return false;
+    return filterSpec.multi !== false;
+  }
+
+  function filterOptionsByQuery(options, query) {
+    if (H) return H.filterOptionsByQuery(options, query);
+    const q = (query || "").trim().toLowerCase();
+    if (!q) return options || [];
+    return (options || []).filter((opt) => {
+      const value = String(opt.value);
+      const label = opt.label != null ? String(opt.label) : value;
+      return label.toLowerCase().includes(q) || value.toLowerCase().includes(q);
+    });
+  }
 
   function $(id) {
     return document.getElementById(id);
@@ -117,6 +134,261 @@ const ChoiceFilterPanel = (function () {
     }
   }
 
+  function setDraftValues(filterSpec, values) {
+    const filterId = filterSpec.id;
+    draft = Object.assign({}, draft || {});
+    if (!values || !values.length) {
+      delete draft[filterId];
+    } else {
+      const row = { values: values.slice() };
+      if (filterSpec.match) row.match = (draft[filterId] && draft[filterId].match) || defaultMatchMode(filterSpec);
+      draft[filterId] = row;
+    }
+    if (selectionEmpty(draft)) draft = null;
+  }
+
+  function appendMatchToggle(section, filterSpec, sel) {
+    const modes = filterSpec.match;
+    const hasValues =
+      sel[filterSpec.id] && sel[filterSpec.id].values && sel[filterSpec.id].values.length;
+    if (!Array.isArray(modes) || modes.length <= 1 || !hasValues) return;
+    const toggle = el("div", "filter-match");
+    toggle.setAttribute("role", "group");
+    toggle.setAttribute("aria-label", (filterSpec.label || filterSpec.id) + " match");
+    modes.forEach((mode) => {
+      const btn = el(
+        "button",
+        "filter-match-btn" + (sel[filterSpec.id].match === mode ? " on" : ""),
+        mode
+      );
+      btn.type = "button";
+      btn.addEventListener("click", () => setDraftMatch(filterSpec.id, mode));
+      toggle.append(btn);
+    });
+    section.append(toggle);
+  }
+
+  function renderMultiFilter(section, filterSpec, sel, options) {
+    const searchInput = el("input", "filter-panel-search");
+    searchInput.type = "search";
+    searchInput.placeholder = "Search…";
+    searchInput.setAttribute("aria-label", "Search " + (filterSpec.label || filterSpec.id));
+    searchInput.autocomplete = "off";
+    section.append(searchInput);
+
+    const list = el("div", "filter-panel-option-list filter-panel-chips");
+    list.setAttribute("role", "group");
+    list.setAttribute("aria-label", filterSpec.label || filterSpec.id);
+
+    const renderList = (query) => {
+      list.replaceChildren();
+      const visible = filterOptionsByQuery(options, query);
+      visible.forEach((opt) => {
+        const value = String(opt.value);
+        const label = opt.label || value;
+        const active =
+          sel[filterSpec.id] &&
+          sel[filterSpec.id].values &&
+          sel[filterSpec.id].values.indexOf(value) !== -1;
+        const row = el("label", "filter-option-row" + (active ? " on" : ""));
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.checked = !!active;
+        cb.setAttribute("aria-label", label);
+        const text = el("span", "filter-option-label", label);
+        if (opt.count != null) text.title = String(opt.count);
+        row.append(cb, text);
+        row.addEventListener("click", (event) => {
+          if (event.target === cb) return;
+          event.preventDefault();
+          toggleDraftValue(filterSpec, value);
+        });
+        cb.addEventListener("change", () => toggleDraftValue(filterSpec, value));
+        list.append(row);
+      });
+      if (!visible.length) {
+        list.append(el("p", "filter-panel-empty", "No matches"));
+      }
+    };
+    renderList("");
+    searchInput.addEventListener("input", () => renderList(searchInput.value));
+    section.append(list);
+    appendMatchToggle(section, filterSpec, sel);
+  }
+
+  function renderSingleCombobox(section, filterSpec, sel, options) {
+    const filterId = filterSpec.id;
+    const listId = "filter-listbox-" + filterId;
+    const selectedVal =
+      sel[filterId] && sel[filterId].values && sel[filterId].values.length
+        ? String(sel[filterId].values[0])
+        : "";
+
+    const wrap = el("div", "filter-combobox");
+    const inputRow = el("div", "filter-combobox-input-row");
+
+    const input = el("input", "filter-combobox-input filter-panel-search");
+    input.type = "text";
+    input.setAttribute("role", "combobox");
+    input.setAttribute("aria-autocomplete", "list");
+    input.setAttribute("aria-expanded", "false");
+    input.setAttribute("aria-controls", listId);
+    input.placeholder = "Search or choose…";
+    input.setAttribute("aria-label", filterSpec.label || filterId);
+    input.autocomplete = "off";
+    if (selectedVal) input.value = optionLabel(filterSpec, selectedVal);
+
+    const clearBtn = el("button", "filter-combobox-clear");
+    clearBtn.type = "button";
+    clearBtn.setAttribute("aria-label", "Clear " + (filterSpec.label || filterId));
+    clearBtn.textContent = "×";
+    clearBtn.hidden = !selectedVal;
+
+    inputRow.append(input, clearBtn);
+    wrap.append(inputRow);
+
+    const listbox = el("div", "filter-combobox-listbox");
+    listbox.id = listId;
+    listbox.setAttribute("role", "listbox");
+    listbox.hidden = true;
+    wrap.append(listbox);
+    section.append(wrap);
+
+    let activeIndex = -1;
+    let queryOnFocus = "";
+
+    function currentSelection() {
+      const row = draft && draft[filterId];
+      return row && row.values && row.values.length ? String(row.values[0]) : "";
+    }
+
+    function openList() {
+      listbox.hidden = false;
+      input.setAttribute("aria-expanded", "true");
+    }
+
+    function closeList() {
+      listbox.hidden = true;
+      input.setAttribute("aria-expanded", "false");
+      activeIndex = -1;
+      input.removeAttribute("aria-activedescendant");
+    }
+
+    function renderOptions(query) {
+      const visible = filterOptionsByQuery(options, query);
+      listbox.replaceChildren();
+      activeIndex = visible.length ? Math.min(activeIndex, visible.length - 1) : -1;
+      visible.forEach((opt, idx) => {
+        const value = String(opt.value);
+        const label = opt.label || value;
+        const optEl = el("div", "filter-combobox-option");
+        optEl.id = listId + "-opt-" + idx;
+        optEl.setAttribute("role", "option");
+        optEl.setAttribute("aria-selected", value === currentSelection() ? "true" : "false");
+        optEl.textContent = label;
+        if (opt.count != null) optEl.title = String(opt.count);
+        if (idx === activeIndex) {
+          optEl.classList.add("active");
+          input.setAttribute("aria-activedescendant", optEl.id);
+        }
+        optEl.addEventListener("mousedown", (event) => {
+          event.preventDefault();
+        });
+        optEl.addEventListener("click", () => {
+          pickValue(value);
+        });
+        listbox.append(optEl);
+      });
+      if (!visible.length) {
+        listbox.append(el("p", "filter-panel-empty", "No matches"));
+      }
+      return visible;
+    }
+
+    function pickValue(value) {
+      setDraftValues(filterSpec, value ? [value] : []);
+      input.value = value ? optionLabel(filterSpec, value) : "";
+      clearBtn.hidden = !value;
+      closeList();
+      const oldMatch = section.querySelector(".filter-match");
+      if (oldMatch) oldMatch.remove();
+      appendMatchToggle(section, filterSpec, draft || {});
+    }
+
+    function syncFromDraft() {
+      const v = currentSelection();
+      clearBtn.hidden = !v;
+      if (document.activeElement !== input) {
+        input.value = v ? optionLabel(filterSpec, v) : "";
+      }
+    }
+
+    input.addEventListener("focus", () => {
+      queryOnFocus = input.value;
+      openList();
+      renderOptions(input.value);
+    });
+
+    input.addEventListener("input", () => {
+      openList();
+      activeIndex = 0;
+      renderOptions(input.value);
+    });
+
+    input.addEventListener("keydown", (event) => {
+      const visible = filterOptionsByQuery(options, input.value);
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        input.value = currentSelection() ? optionLabel(filterSpec, currentSelection()) : "";
+        closeList();
+        return;
+      }
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        if (listbox.hidden) openList();
+        activeIndex = visible.length ? Math.min(activeIndex + 1, visible.length - 1) : -1;
+        if (activeIndex < 0 && visible.length) activeIndex = 0;
+        renderOptions(input.value);
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        if (listbox.hidden) openList();
+        activeIndex = visible.length ? Math.max(activeIndex - 1, 0) : -1;
+        renderOptions(input.value);
+        return;
+      }
+      if (event.key === "Enter") {
+        if (listbox.hidden || activeIndex < 0 || !visible[activeIndex]) return;
+        event.preventDefault();
+        pickValue(String(visible[activeIndex].value));
+        return;
+      }
+    });
+
+    input.addEventListener("blur", () => {
+      window.setTimeout(() => {
+        if (!wrap.contains(document.activeElement)) {
+          closeList();
+          syncFromDraft();
+        }
+      }, 0);
+    });
+
+    clearBtn.addEventListener("click", () => {
+      setDraftValues(filterSpec, []);
+      input.value = "";
+      clearBtn.hidden = true;
+      closeList();
+      const matchEl = section.querySelector(".filter-match");
+      if (matchEl) matchEl.remove();
+      input.focus();
+    });
+
+    appendMatchToggle(section, filterSpec, sel);
+  }
+
   function renderBody() {
     const body = $("filter-panel-body");
     if (!body || !schema) return;
@@ -129,59 +401,10 @@ const ChoiceFilterPanel = (function () {
       section.append(el("h3", "filter-panel-section-title", filterSpec.label || filterSpec.id));
 
       const options = filterSpec.options || [];
-      let searchInput = null;
-      if (options.length > SEARCH_MIN_OPTIONS) {
-        searchInput = el("input", "filter-panel-search");
-        searchInput.type = "search";
-        searchInput.placeholder = "Search…";
-        searchInput.setAttribute("aria-label", "Search " + (filterSpec.label || filterSpec.id));
-        searchInput.autocomplete = "off";
-        section.append(searchInput);
-      }
-
-      const chips = el("div", "filter-chips filter-panel-chips");
-      const renderChips = (query) => {
-        const q = (query || "").trim().toLowerCase();
-        chips.replaceChildren();
-        options.forEach((opt) => {
-          const value = String(opt.value);
-          const label = opt.label || value;
-          if (q && !label.toLowerCase().includes(q) && !value.toLowerCase().includes(q)) return;
-          const active =
-            sel[filterSpec.id] &&
-            sel[filterSpec.id].values &&
-            sel[filterSpec.id].values.indexOf(value) !== -1;
-          const chip = el("button", "filter-chip" + (active ? " on" : ""), label);
-          chip.type = "button";
-          if (opt.count != null) chip.title = String(opt.count);
-          chip.addEventListener("click", () => toggleDraftValue(filterSpec, value));
-          chips.append(chip);
-        });
-      };
-      renderChips("");
-      if (searchInput) {
-        searchInput.addEventListener("input", () => renderChips(searchInput.value));
-      }
-      section.append(chips);
-
-      const modes = filterSpec.match;
-      const hasValues =
-        sel[filterSpec.id] && sel[filterSpec.id].values && sel[filterSpec.id].values.length;
-      if (Array.isArray(modes) && modes.length > 1 && hasValues) {
-        const toggle = el("div", "filter-match");
-        toggle.setAttribute("role", "group");
-        toggle.setAttribute("aria-label", (filterSpec.label || filterSpec.id) + " match");
-        modes.forEach((mode) => {
-          const btn = el(
-            "button",
-            "filter-match-btn" + (sel[filterSpec.id].match === mode ? " on" : ""),
-            mode
-          );
-          btn.type = "button";
-          btn.addEventListener("click", () => setDraftMatch(filterSpec.id, mode));
-          toggle.append(btn);
-        });
-        section.append(toggle);
+      if (isMultiSelect(filterSpec)) {
+        renderMultiFilter(section, filterSpec, sel, options);
+      } else {
+        renderSingleCombobox(section, filterSpec, sel, options);
       }
       body.append(section);
     });
@@ -217,7 +440,7 @@ const ChoiceFilterPanel = (function () {
     const filterId = filterSpec.id;
     draft = Object.assign({}, draft || {});
     const row = Object.assign({ values: [] }, draft[filterId] || {});
-    const multi = filterSpec.multi !== false;
+    const multi = isMultiSelect(filterSpec);
     const idx = row.values.indexOf(value);
     if (idx === -1) {
       row.values = multi ? row.values.concat(value) : [value];
@@ -377,7 +600,6 @@ const ChoiceFilterPanel = (function () {
     });
   }
 
-  /** Headless: panel body scrolls when many options. */
   function panelScrollMetrics() {
     const body = $("filter-panel-body");
     if (!body) return { ok: false, reason: "no-body" };
@@ -398,5 +620,6 @@ const ChoiceFilterPanel = (function () {
     buildSummary,
     activeValueCount,
     panelScrollMetrics,
+    _helpers: { isMultiSelect, filterOptionsByQuery },
   };
 })();

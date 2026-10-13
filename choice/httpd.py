@@ -55,6 +55,7 @@ _STATIC = {
     "swipe_ui.js": "text/javascript; charset=utf-8",
     "action_icons.js": "text/javascript; charset=utf-8",
     "mdi.js": "text/javascript; charset=utf-8",
+    "filter_panel_helpers.js": "text/javascript; charset=utf-8",
     "filter_panel.js": "text/javascript; charset=utf-8",
     "server_admin.js": "text/javascript; charset=utf-8",
     "config_ui.js": "text/javascript; charset=utf-8",

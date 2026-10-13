@@ -28,14 +28,14 @@ function launchBrowser() {
   return chromium.launch(opts).catch(() => chromium.launch({ headless: true, executablePath: chrome }));
 }
 
-async function openManyFiltersDeck(page) {
+async function openDeck(page, title) {
   await page.waitForFunction(() => window.ChoiceTestHooks);
   const people = page.locator(".people");
   if (await people.count()) {
     await page.locator("button.deck-link").filter({ hasText: "Bear" }).click();
   }
   await page.waitForSelector("ul.library button.deck-link, .empty", { timeout: 15_000 });
-  const deckBtn = page.locator("ul.library button.deck-link").filter({ hasText: "Many filters" });
+  const deckBtn = page.locator("ul.library button.deck-link").filter({ hasText: title });
   await deckBtn.first().click();
   await page.waitForSelector("#filter-toggle:not([hidden])", { timeout: 15_000 });
   await page.waitForSelector("article.card", { timeout: 15_000 });
@@ -57,7 +57,7 @@ async function maybeShot(page, vp, name) {
   });
 }
 
-async function exercisePanel(page, vpName) {
+async function exerciseManyFilters(page, vpName) {
   await page.locator("#filter-toggle").click();
   await page.waitForFunction(() => document.getElementById("filter-panel")?.open);
 
@@ -66,14 +66,53 @@ async function exercisePanel(page, vpName) {
     throw new Error(`${vpName}: filter panel should scroll: ${JSON.stringify(scroll)}`);
   }
 
-  await page.locator(".filter-panel-chips .filter-chip").first().click();
-  await page.locator(".filter-panel-chips .filter-chip").nth(1).click();
+  const search = page.locator(".filter-panel-search").first();
+  await search.fill("Face 1");
+  await page.locator(".filter-option-row").filter({ hasText: "Face 1" }).first().click();
+  await search.fill("");
+  await page.locator(".filter-option-row").filter({ hasText: "Tag 2" }).first().click();
   await page.locator("#filter-panel-apply").click();
   await page.waitForFunction(() => !document.getElementById("filter-panel")?.open);
 
   await assertCardVisible(page, vpName);
-  const summary = page.locator("#filter-summary:not([hidden])");
-  await summary.waitFor({ state: "visible" });
+  await page.locator("#filter-summary:not([hidden])").waitFor({ state: "visible" });
+}
+
+async function exerciseComboboxDeck(page, vpName) {
+  const comboInput = page.locator(".filter-combobox-input").first();
+  await comboInput.click();
+  await comboInput.fill("Rating 7");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  await expectComboboxValue(page, "Rating 7");
+
+  await page.locator(".filter-combobox-clear").first().click();
+  await expectComboboxValue(page, "");
+
+  await comboInput.click();
+  await comboInput.fill("Rating 3");
+  await page.locator(".filter-combobox-option").filter({ hasText: "Rating 3" }).click();
+  await expectComboboxValue(page, "Rating 3");
+
+  const tagSearch = page.locator(".filter-panel-section").filter({ hasText: "Tags" }).locator(".filter-panel-search");
+  await tagSearch.fill("Tag 5");
+  await page
+    .locator(".filter-panel-section")
+    .filter({ hasText: "Tags" })
+    .locator(".filter-option-row")
+    .filter({ hasText: "Tag 5" })
+    .click();
+
+  await page.locator("#filter-panel-apply").click();
+  await page.waitForFunction(() => !document.getElementById("filter-panel")?.open);
+  await assertCardVisible(page, vpName);
+}
+
+async function expectComboboxValue(page, text) {
+  const val = await page.locator(".filter-combobox-input").first().inputValue();
+  if (val !== text) {
+    throw new Error(`combobox expected "${text}" got "${val}"`);
+  }
 }
 
 async function main() {
@@ -88,11 +127,18 @@ async function main() {
     const page = await context.newPage();
     try {
       await page.goto(baseUrl, { waitUntil: "networkidle", timeout: 30_000 });
-      await openManyFiltersDeck(page);
+      await openDeck(page, "Many filters");
       await assertCardVisible(page, vp.name);
-      await maybeShot(page, vp, "card-visible");
-      await exercisePanel(page, vp.name);
-      await maybeShot(page, vp, "after-apply");
+      await maybeShot(page, vp, "many-card");
+      await exerciseManyFilters(page, vp.name);
+      await maybeShot(page, vp, "many-after-apply");
+
+      await page.goto(baseUrl, { waitUntil: "networkidle", timeout: 30_000 });
+      await openDeck(page, "Combobox filters");
+      await page.locator("#filter-toggle").click();
+      await page.waitForFunction(() => document.getElementById("filter-panel")?.open);
+      await exerciseComboboxDeck(page, vp.name);
+      await maybeShot(page, vp, "combo-after-apply");
     } finally {
       await browser.close();
     }
