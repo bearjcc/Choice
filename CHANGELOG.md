@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.8 (2026-10-13)
+
+### Fixed
+
+- Plugin filter UI: replace the inline chip strip with a header funnel control and flyout panel (bottom sheet on phones, side drawer on desktop). Selections apply on **Apply** (single buffer flush); active filters show as a one-line summary under the header.
+
+### Tests
+
+- Playwright: 98-option filter deck at 390×844 and 1440×900 — card stays visible and the panel scrolls.
+
 ## 0.5.7 (2026-10-12)
 
 ### Changed

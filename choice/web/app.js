@@ -379,6 +379,9 @@ async function boot() {
   $("menu").addEventListener("click", openMenu);
   $("queue-badge").addEventListener("click", openQueueFailures);
   ChoiceDialog.init();
+  if (typeof ChoiceFilterPanel !== "undefined") {
+    ChoiceFilterPanel.init({ onOpen: openFilterPanel });
+  }
   document.addEventListener("keydown", onKey);
   window.addEventListener("popstate", route);
   updateMediaWidth();
@@ -1181,12 +1184,6 @@ function statsApiPath() {
   return path;
 }
 
-function defaultMatchMode(filterSpec) {
-  const modes = filterSpec && filterSpec.match;
-  if (Array.isArray(modes) && modes.length) return modes[0];
-  return "any";
-}
-
 function filterSelectionEmpty() {
   const sel = state.filterSelection;
   if (!sel) return true;
@@ -1211,113 +1208,24 @@ async function applyFilterChange(nextSelection) {
   const ok = await loadItems();
   state.filterFlushing = false;
   if (ok) {
+    if (typeof ChoiceFilterPanel !== "undefined") {
+      ChoiceFilterPanel.updateChrome(state.filterSelection);
+    }
     refreshQueueBadge();
     renderDeck();
   }
 }
 
-function toggleFilterValue(filterId, value, filterSpec) {
-  const sel = Object.assign({}, state.filterSelection || {});
-  const row = Object.assign({ values: [] }, sel[filterId] || {});
-  const multi = filterSpec && filterSpec.multi !== false;
-  const idx = row.values.indexOf(value);
-  if (idx === -1) {
-    row.values = multi ? row.values.concat(value) : [value];
-    if (filterSpec && filterSpec.match && !row.match) row.match = defaultMatchMode(filterSpec);
-  } else {
-    row.values = row.values.filter((v) => v !== value);
-  }
-  if (!row.values.length) delete sel[filterId];
-  else sel[filterId] = row;
-  applyFilterChange(Object.keys(sel).length ? sel : null);
-}
-
-function setFilterMatch(filterId, mode) {
-  const sel = Object.assign({}, state.filterSelection || {});
-  const row = Object.assign({ values: [] }, sel[filterId] || {});
-  if (!row.values.length) return;
-  row.match = mode;
-  sel[filterId] = row;
-  applyFilterChange(sel);
-}
-
-function setFilterSort(value) {
-  const sel = Object.assign({}, state.filterSelection || {});
-  if (!value) delete sel._sort;
-  else sel._sort = value;
-  applyFilterChange(Object.keys(sel).length ? sel : null);
+function openFilterPanel() {
+  if (!state.payload || !state.payload.plugin_filters) return;
+  ChoiceFilterPanel.open(state.filterSelection, (next) => applyFilterChange(next));
 }
 
 function paintFilterBar(schema) {
-  const bar = $("filter-bar");
-  if (!bar) return;
-  if (!schema || !schema.filters || !schema.filters.length) {
-    bar.hidden = true;
-    bar.replaceChildren();
-    return;
-  }
-  bar.hidden = false;
-  bar.replaceChildren();
-  if (typeof ChoiceMdi !== "undefined") {
-    const icon = el("span", "filter-bar-icon");
-    icon.setAttribute("aria-hidden", "true");
-    icon.innerHTML = ChoiceMdi.svg("filter", "nav-icon");
-    bar.append(icon);
-  }
-  const sel = state.filterSelection || {};
-  schema.filters.forEach((filterSpec) => {
-    if (!filterSpec || filterSpec.type !== "tags" || !filterSpec.id) return;
-    const group = el("div", "filter-group");
-    group.append(el("span", "filter-label", filterSpec.label || filterSpec.id));
-    const chips = el("div", "filter-chips");
-    (filterSpec.options || []).forEach((opt) => {
-      const value = String(opt.value);
-      const active =
-        sel[filterSpec.id] &&
-        sel[filterSpec.id].values &&
-        sel[filterSpec.id].values.indexOf(value) !== -1;
-      const chip = el("button", "filter-chip" + (active ? " on" : ""), opt.label || value);
-      chip.type = "button";
-      if (opt.count != null) chip.title = String(opt.count);
-      chip.addEventListener("click", () => toggleFilterValue(filterSpec.id, value, filterSpec));
-      chips.append(chip);
-    });
-    group.append(chips);
-    const modes = filterSpec.match;
-    if (Array.isArray(modes) && modes.length > 1 && sel[filterSpec.id] && sel[filterSpec.id].values.length) {
-      const toggle = el("div", "filter-match");
-      modes.forEach((mode) => {
-        const btn = el(
-          "button",
-          "filter-match-btn" + (sel[filterSpec.id].match === mode ? " on" : ""),
-          mode
-        );
-        btn.type = "button";
-        btn.addEventListener("click", () => setFilterMatch(filterSpec.id, mode));
-        toggle.append(btn);
-      });
-      group.append(toggle);
-    }
-    bar.append(group);
-  });
-  if (schema.sort && schema.sort.length) {
-    const sortRow = el("div", "filter-group filter-sort");
-    sortRow.append(el("span", "filter-label", "Sort"));
-    const pick = el("select", "filter-sort");
-    const blank = document.createElement("option");
-    blank.value = "";
-    blank.textContent = "Default";
-    pick.append(blank);
-    schema.sort.forEach((row) => {
-      const opt = document.createElement("option");
-      opt.value = row.value;
-      opt.textContent = row.label || row.value;
-      if (sel._sort === row.value) opt.selected = true;
-      pick.append(opt);
-    });
-    pick.addEventListener("change", () => setFilterSort(pick.value));
-    sortRow.append(pick);
-    bar.append(sortRow);
+  state.filterSchema = schema && schema.filters && schema.filters.length ? schema : null;
+  if (typeof ChoiceFilterPanel !== "undefined") {
+    ChoiceFilterPanel.setSchema(state.filterSchema);
+    ChoiceFilterPanel.updateChrome(state.filterSelection);
   }
 }
 
@@ -2334,7 +2242,15 @@ async function act(direction) {
   const spec = specFor(direction);
   const item = current();
   const label = spec && item ? buttonLabel(spec, item) : null;
-  if (!spec || !item || !label || state.busy || state.filterFlushing || state.undoInFlight) {
+  if (
+    !spec ||
+    !item ||
+    !label ||
+    state.busy ||
+    state.filterFlushing ||
+    state.undoInFlight ||
+    (typeof ChoiceFilterPanel !== "undefined" && ChoiceFilterPanel.isOpen())
+  ) {
     return;
   }
   if (ChoiceDialog.isOpen()) ChoiceDialog.close();
@@ -2856,6 +2772,7 @@ function onKey(event) {
   if (event.target.closest("input, textarea")) return;
   if (!state.deckId || state.picking) return;
   if (ChoiceDialog.isOpen() && event.key === "Escape") return;
+  if (typeof ChoiceFilterPanel !== "undefined" && ChoiceFilterPanel.isOpen()) return;
   const map = { ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down" };
   if (map[event.key]) {
     event.preventDefault();
@@ -3208,7 +3125,32 @@ function installTestHooks() {
         "add-deck",
         "deck-edit",
         "assign",
+        "filter-toggle",
       ];
+    },
+    openFilterPanel,
+    filterPanelScrollMetrics() {
+      return typeof ChoiceFilterPanel !== "undefined"
+        ? ChoiceFilterPanel.panelScrollMetrics()
+        : { ok: false, reason: "no-panel" };
+    },
+    cardVisibleMetrics() {
+      const card = document.querySelector("article.card");
+      if (!card) return { ok: false, reason: "no-card" };
+      const r = card.getBoundingClientRect();
+      const vh = window.innerHeight;
+      const vw = window.innerWidth;
+      const visible =
+        r.width > 20 &&
+        r.height > 20 &&
+        r.bottom > 0 &&
+        r.top < vh &&
+        r.left < vw &&
+        r.right > 0;
+      const header = document.querySelector(".top");
+      const headerBottom = header ? header.getBoundingClientRect().bottom : 0;
+      const belowHeader = r.top >= headerBottom - 2;
+      return { ok: visible && belowHeader, top: r.top, height: r.height, headerBottom };
     },
     actionBarMetrics() {
       const bar = document.getElementById("actions");
