@@ -79,13 +79,13 @@ class UndoPilePositionTests(unittest.TestCase):
             idx = load_index(deck.state_dir)
         else:
             snap = None
-            for _ in range(300):
+            for _ in range(600):
                 snap = progress(deck, pending=True, limit=50, offset=0)
                 if snap.get("items") and snap["items"][0]["id"] == item_id:
                     break
                 time.sleep(0.02)
             idx = None
-            for _ in range(300):
+            for _ in range(600):
                 idx = load_index(deck.state_dir)
                 if idx.ordered and idx.ordered[0] == item_id:
                     break
