@@ -116,10 +116,13 @@ def save_index(state_dir: Path, idx: FolderIndex, *, save_meta: bool = False) ->
     key = str(state_dir.resolve())
     idx.updated_at = time.time()
     _mem.set(key, idx)
-    if not state_dir.is_dir():
-        return
     path = index_path(state_dir)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        if not state_dir.is_dir():
+            return
+        raise
     from choice.atomic_io import write_json_atomic
 
     try:
@@ -399,6 +402,8 @@ def _refresh_dir_mtimes(deck: Deck, idx: FolderIndex, rels: list[str]) -> None:
     for rel in rels:
         if rel:
             dirs.add(_dir_of(rel))
+    if dirs:
+        dirs.add(".")
     for dir_rel in dirs:
         path = root if dir_rel == "." else (root / dir_rel)
         try:
