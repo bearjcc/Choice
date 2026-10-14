@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.6 (2026-10-14)
+
+### Fixed
+
+- `save_index` no longer bails out before `mkdir` when the state directory does not exist yet (restores 0.6.4 behavior and fixes false “tree outdated” after sort decides).
+- `apply_move` refreshes the deck root directory mtime when child paths change so `_tree_dirs_changed` stays accurate after file moves.
+
 ## 0.6.5 (2026-10-14)
 
 ### Fixed

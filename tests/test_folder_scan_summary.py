@@ -10,8 +10,10 @@ from unittest.mock import patch
 
 from choice.act import decide, index_summary
 from choice.folder_index import (
+    FolderIndex,
     _tree_dirs_changed,
     load_index,
+    save_index,
     scan_incremental,
     summary,
 )
@@ -65,6 +67,13 @@ class FolderScanSummaryTests(unittest.TestCase):
         deck = resolve(self.tmp).decks[0]
         scan_incremental(deck)
         return deck
+
+    def test_save_index_creates_state_dir_when_missing(self):
+        deck = self._sort_deck()
+        fresh = self.tmp / "other-state"
+        self.assertFalse(fresh.is_dir())
+        save_index(fresh, FolderIndex(ordered=["x.jpg"]))
+        self.assertTrue((fresh / "folder_index.json").is_file())
 
     def test_decide_does_not_mark_tree_outdated_or_schedule_scan(self):
         deck = self._sort_deck()
