@@ -26,14 +26,16 @@ const state = {
   filterStats: null,
   filterFlushing: false,
   filterEpoch: 0,
-  decideHistory: [],
+  undoStack: [],
+  restorePin: null,
   mediaBlobs: [],
-  undoInFlight: false,
   undoEpoch: 0,
+  showSeq: 0,
 };
 
-const DECIDE_HISTORY_MAX = 10;
-const MEDIA_BLOB_MAX = 12;
+const MEDIA_BLOB_MAX = 30;
+
+let decideSaveTail = Promise.resolve();
 
 const $ = (id) => document.getElementById(id);
 
@@ -1213,10 +1215,12 @@ async function openDeck(id, push) {
   updateMediaWidth();
   state.deckId = id;
   state.pos = 0;
+  state.pending = true;
   state.filterStats = null;
   state.filterSelection = loadFilterSelectionForDeck(id);
-  state.decideHistory = [];
-  state.undoInFlight = false;
+  state.undoStack = [];
+  state.restorePin = null;
+  decideSaveTail = Promise.resolve();
   $("status").textContent = "";
   const stored = localStorage.getItem(blindKey(id));
   const deck = (state.index.decks || []).find((row) => row.id === id);
@@ -1470,7 +1474,8 @@ function mergeItemsFromServer(prevPayload, data, anchorId) {
   const prevItems = (prevPayload && prevPayload.items) || [];
   const incoming = data.items || [];
   const nav = pileNav();
-  const merged = nav ? nav.mergeReloadItems(prevItems, incoming, state.pos) : incoming;
+  const pin = state.restorePin;
+  const merged = nav ? nav.mergeReloadItems(prevItems, incoming, state.pos, pin) : incoming;
   return { ...data, items: merged };
 }
 
@@ -1869,19 +1874,41 @@ function resolvedMediaSrc(url) {
   return hit ? hit.objectUrl : url;
 }
 
-function pushDecideHistory(swipe) {
-  if (!swipe || !swipe.item) return;
-  state.decideHistory.push({
+function pushUndoStack(swipe) {
+  if (!swipe || !swipe.item) return null;
+  const entry = {
     item: deepCopyItem(swipe.item),
     direction: swipe.direction,
     later: !!swipe.later,
-  });
-  while (state.decideHistory.length > DECIDE_HISTORY_MAX) state.decideHistory.shift();
+    decisionId: swipe.decisionId || null,
+  };
+  state.undoStack.push(entry);
   prefetchItemMedia(swipe.item);
+  return entry;
 }
 
-function popDecideHistory() {
-  if (state.decideHistory.length) state.decideHistory.pop();
+function popUndoStack() {
+  if (state.undoStack.length) return state.undoStack.pop();
+  return null;
+}
+
+function peekUndoStack() {
+  const stack = state.undoStack;
+  return stack.length ? stack[stack.length - 1] : null;
+}
+
+function queueDecideSave(task) {
+  const run = decideSaveTail.then(() => task());
+  decideSaveTail = run.then(
+    () => {},
+    () => {},
+  );
+  return run;
+}
+
+function clientCanUndo() {
+  if (state.undoStack.length) return true;
+  return !!(state.payload && state.payload.can_undo);
 }
 
 function mediaSrc(item, side, imageIndex) {
@@ -2065,7 +2092,7 @@ function renderActions() {
     const undoSpec = { id: "undo", label: "Undo" };
     const undo = actionButton(undoSpec, "Undo", "undo");
     undo.classList.add("action-undo");
-    undo.disabled = !state.payload.can_undo || state.busy || state.undoInFlight;
+    undo.disabled = !clientCanUndo() || state.busy || state.filterFlushing;
     centerSlot.append(undo);
   }
   requestAnimationFrame(() => syncActionBarDisplay());
@@ -2241,13 +2268,13 @@ function itemFromUndoHint(hint) {
 }
 
 function buildUndoHint() {
-  const hist = state.decideHistory;
-  if (hist && hist.length) {
-    const top = hist[hist.length - 1];
+  const top = peekUndoStack();
+  if (top) {
     return {
       item: top.item.id,
       direction: top.direction,
       later: top.later,
+      decision_id: top.decisionId,
       card: top.item,
     };
   }
@@ -2270,29 +2297,23 @@ function applyOptimisticUndo(hint) {
   const items = state.payload.items || [];
   const nav = pileNav();
   state.anchorAfterLoad = restored.id;
-  const later = !!hint.later;
-  if (state.pending && !later) {
-    if (nav) {
-      const next = nav.restorePendingUndo(items, state.pos, restored);
-      state.payload.items = next.items;
-      state.pos = next.pos;
-    } else {
-      const idx = items.findIndex((row) => row.id === restored.id);
-      if (idx >= 0) items.splice(idx, 1);
-      items.unshift(restored);
-      state.pos = 0;
-    }
-  } else if (nav) {
-    state.pos = nav.syncPosToAnchor(items, state.pos, restored.id);
+  state.restorePin = { id: restored.id, item: restored, pos: state.pos };
+  if (nav) {
+    const next = nav.restoreUndoAtPos(items, state.pos, restored);
+    state.payload.items = next.items;
+    state.pos = next.pos;
   } else {
     const idx = items.findIndex((row) => row.id === restored.id);
-    state.pos = idx >= 0 ? idx : state.pos;
+    if (idx >= 0) items.splice(idx, 1);
+    const insertAt = Math.max(0, Math.min(state.pos, items.length));
+    items.splice(insertAt, 0, restored);
+    state.pos = insertAt;
   }
   if (typeof state.payload.decided === "number") {
     state.payload.decided = Math.max(0, state.payload.decided - 1);
   }
   if (typeof state.payload.left === "number") state.payload.left += 1;
-  state.payload.can_undo = false;
+  if (!state.undoStack.length) state.payload.can_undo = false;
 }
 
 function advanceAfterSwipe(itemId, later) {
@@ -2330,7 +2351,6 @@ async function act(direction) {
     !label ||
     state.busy ||
     state.filterFlushing ||
-    state.undoInFlight ||
     (typeof ChoiceFilterPanel !== "undefined" && ChoiceFilterPanel.isOpen())
   ) {
     return;
@@ -2345,44 +2365,51 @@ async function act(direction) {
   const itemId = item.id;
   const later = !!spec.later;
   state.lastSwipe = { item: deepCopyItem(item), direction, later };
-  pushDecideHistory(state.lastSwipe);
+  const stackEntry = pushUndoStack(state.lastSwipe);
   advanceAfterSwipe(itemId, later);
   if (!reduceMotion()) await wait(40);
   state.busy = false;
   renderDeck();
-  let data;
-  try {
-    let decidePath = "/api/decks/" + encodeURIComponent(state.deckId) + "/decide";
-    const f = encodeFilterParam(state.filterSelection);
-    if (f) decidePath += "?f=" + encodeURIComponent(f);
-    data = await api(decidePath, {
-      item: item.id,
-      direction: direction,
-      deck_id: state.deckId,
-    });
-  } catch (_err) {
-    data = { ok: false, message: "Could not reach Choice." };
-  }
-  if (!data.ok) {
-    state.payload = snapshot;
-    popDecideHistory();
-    const nav = pileNav();
-    const items = snapshot.items || [];
-    state.pos = nav
-      ? nav.syncPosToAnchor(items, state.pos, itemId)
-      : Math.max(0, items.findIndex((row) => row.id === itemId));
-    renderDeck();
-    setStatus(data.message || "Not saved");
-    return;
-  }
-  setStatus(data.message || label);
-  const anchorAtResponse = (current() && current().id) || itemId;
-  loadItems(undefined, { anchorId: anchorAtResponse }).then((ok) => {
-    if ((state.filterEpoch || 0) !== epochAtAct) return;
-    if (ok) {
-      refreshQueueBadge();
-      renderDeck();
+  void queueDecideSave(async () => {
+    let data;
+    try {
+      let decidePath = "/api/decks/" + encodeURIComponent(state.deckId) + "/decide";
+      const f = encodeFilterParam(state.filterSelection);
+      if (f) decidePath += "?f=" + encodeURIComponent(f);
+      data = await api(decidePath, {
+        item: item.id,
+        direction: direction,
+        deck_id: state.deckId,
+      });
+    } catch (_err) {
+      data = { ok: false, message: "Could not reach Choice." };
     }
+    if (!data.ok) {
+      state.payload = snapshot;
+      if (stackEntry && state.undoStack[state.undoStack.length - 1] === stackEntry) {
+        state.undoStack.pop();
+      }
+      const nav = pileNav();
+      const items = snapshot.items || [];
+      state.pos = nav
+        ? nav.syncPosToAnchor(items, state.pos, itemId)
+        : Math.max(0, items.findIndex((row) => row.id === itemId));
+      renderDeck();
+      setStatus(data.message || "Not saved");
+      return;
+    }
+    if (stackEntry && data.decision_id) stackEntry.decisionId = data.decision_id;
+    setStatus(data.message || label);
+    const anchorAtResponse = (current() && current().id) || itemId;
+    const showSeq = ++state.showSeq;
+    loadItems(undefined, { anchorId: anchorAtResponse }).then((ok) => {
+      if ((state.filterEpoch || 0) !== epochAtAct) return;
+      if (showSeq !== state.showSeq) return;
+      if (ok) {
+        refreshQueueBadge();
+        renderDeck();
+      }
+    });
   });
 }
 
@@ -2417,9 +2444,12 @@ async function runPluginAction(spec) {
 async function reconcileAfterUndo(anchorId, epoch) {
   if (!anchorId) return;
   const seq = ++state.itemsLoadSeq;
+  const showSeq = ++state.showSeq;
   const ok = await loadItems(undefined, { anchorId });
   if (epoch !== state.undoEpoch || seq !== state.itemsLoadSeq) return;
+  if (showSeq !== state.showSeq) return;
   if (!ok) return;
+  state.restorePin = null;
   const cur = current();
   if (cur && cur.id === anchorId) return;
   state.pos = pileNav()
@@ -2428,12 +2458,21 @@ async function reconcileAfterUndo(anchorId, epoch) {
 }
 
 async function undoLast() {
-  if (state.busy || state.undoInFlight || !undoEnabled() || !state.payload || !state.payload.can_undo) {
+  if (state.busy || !undoEnabled() || !state.payload || !clientCanUndo()) {
     return;
   }
   const hint = buildUndoHint();
   if (!hint || !hint.item) return;
   const direction = hint.direction || "right";
+  const popped = popUndoStack();
+  const stackEntry =
+    popped ||
+    {
+      item: itemFromUndoHint(hint),
+      direction: hint.direction,
+      later: !!hint.later,
+      decisionId: hint.decision_id || null,
+    };
   const snapshot = {
     payload: {
       ...state.payload,
@@ -2441,38 +2480,49 @@ async function undoLast() {
     },
     pos: state.pos,
     lastSwipe: state.lastSwipe,
-    decideHistory: state.decideHistory.slice(),
+    undoStack: state.undoStack.slice(),
+    restorePin: state.restorePin,
   };
   applyOptimisticUndo(hint);
   const anchorId = current() && current().id;
-  state.undoInFlight = true;
   const epoch = ++state.undoEpoch;
   renderActions();
   renderDeck();
   const card = document.querySelector(".card");
   unflingCard(card, direction);
-  let data;
-  try {
-    data = await api("/api/decks/" + encodeURIComponent(state.deckId) + "/undo", {});
-  } catch (_err) {
-    data = { ok: false, message: "Could not reach Choice." };
-  }
-  state.undoInFlight = false;
-  if (!data.ok) {
-    state.payload = snapshot.payload;
-    state.pos = snapshot.pos;
-    state.lastSwipe = snapshot.lastSwipe;
-    state.decideHistory = snapshot.decideHistory;
-    renderDeck();
-    setStatus(data.message || "Undo failed");
+  void queueDecideSave(async () => {
+    let data;
+    try {
+      let undoPath = "/api/decks/" + encodeURIComponent(state.deckId) + "/undo";
+      const f = encodeFilterParam(state.filterSelection);
+      if (f) undoPath += "?f=" + encodeURIComponent(f);
+      const body = {
+        item: stackEntry.item.id,
+        decision_id: stackEntry.decisionId || hint.decision_id || "",
+      };
+      data = await api(undoPath, body);
+    } catch (_err) {
+      data = { ok: false, message: "Could not reach Choice." };
+    }
+    if (!data.ok) {
+      state.payload = snapshot.payload;
+      state.pos = snapshot.pos;
+      state.lastSwipe = snapshot.lastSwipe;
+      state.undoStack = snapshot.undoStack;
+      state.restorePin = snapshot.restorePin;
+      state.undoStack.push(stackEntry);
+      state.restorePin = null;
+      renderDeck();
+      setStatus(data.message || "Undo failed");
+      renderActions();
+      return;
+    }
+    if (data.can_undo !== undefined) state.payload.can_undo = data.can_undo;
+    else state.payload.can_undo = clientCanUndo();
+    setStatus(data.message || "");
     renderActions();
-    return;
-  }
-  popDecideHistory();
-  if (data.can_undo !== undefined) state.payload.can_undo = data.can_undo;
-  setStatus(data.message || "");
-  renderActions();
-  void reconcileAfterUndo(anchorId, epoch);
+    void reconcileAfterUndo(anchorId, epoch);
+  });
 }
 
 async function openClientSettings() {

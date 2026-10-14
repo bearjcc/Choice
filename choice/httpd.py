@@ -280,7 +280,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._reply(deck)
         if kind == "undo":
             with self._plugin_filter_scope(deck, query):
-                result = undo(deck)
+                result = undo(
+                    deck,
+                    str(body.get("item") or "").strip() or None,
+                    str(body.get("decision_id") or "").strip() or None,
+                )
         else:
             item_id = str(body.get("item") or "")
             body_deck = str(body.get("deck_id") or body.get("deck") or "").strip()

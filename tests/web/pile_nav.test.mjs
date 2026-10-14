@@ -81,13 +81,14 @@ test("merge reload keeps client order then appends server tail", () => {
   assert.equal(merged.map((r) => r.id).join(","), "a,b,z");
 });
 
-test("undo pending: restored card is current", () => {
+test("undo: restored card at current position", () => {
   const items = [item("b"), item("c")];
   const pos = 0;
-  const next = nav.restorePendingUndo(items, pos, item("a"));
+  const next = nav.restoreUndoAtPos(items, pos, item("a"));
   const cur = nav.currentItem(next.items, next.pos);
   assert.ok(cur);
   assert.equal(cur.id, "a");
+  assert.equal(next.items.map((r) => r.id).join(","), "a,b,c");
 });
 
 test("undo pending: after swipe then optimistic restore shows undone card", () => {
@@ -95,16 +96,30 @@ test("undo pending: after swipe then optimistic restore shows undone card", () =
   let pos = 0;
   const afterSwipe = nav.removePendingSwipe(items, pos, "a");
   assert.equal(nav.currentItem(afterSwipe.items, afterSwipe.pos).id, "b");
-  const afterUndo = nav.restorePendingUndo(afterSwipe.items, afterSwipe.pos, item("a"));
+  const afterUndo = nav.restoreUndoAtPos(afterSwipe.items, afterSwipe.pos, item("a"));
   assert.equal(nav.currentItem(afterUndo.items, afterUndo.pos).id, "a");
 });
 
-test("undo pending: restored card is pinned to pile front", () => {
-  let items = [item("a"), item("b"), item("c")];
-  const pos = 1;
-  const afterSwipe = nav.removePendingSwipe(items, pos, "b");
-  const afterUndo = nav.restorePendingUndo(afterSwipe.items, afterSwipe.pos, item("b"));
-  assert.equal(afterUndo.pos, 0);
-  assert.equal(afterUndo.items[0].id, "b");
-  assert.equal(nav.currentItem(afterUndo.items, afterUndo.pos).id, "b");
+test("undo show-all: restored card at cursor not only anchor sync", () => {
+  let items = [item("a"), item("b"), item("c"), item("d")];
+  let pos = nav.advanceShowAllPos(items, 0, "a");
+  assert.equal(items[pos].id, "b");
+  const afterUndo = nav.restoreUndoAtPos(items, pos, item("a"));
+  assert.equal(afterUndo.pos, pos);
+  assert.equal(nav.currentItem(afterUndo.items, afterUndo.pos).id, "a");
+});
+
+test("merge reload keeps pinned restored card omitted by server", () => {
+  const prev = [item("a"), item("b"), item("c")];
+  const server = [item("b"), item("c")];
+  const merged = nav.mergeReloadItems(prev, server, 0, { id: "a", item: item("a"), pos: 0 });
+  assert.equal(merged[0].id, "a");
+  assert.equal(merged.map((r) => r.id).join(","), "a,b,c");
+});
+
+test("merge reload keeps restored card before server tail", () => {
+  const prev = [item("a"), item("b")];
+  const server = [item("z"), item("a"), item("b")];
+  const merged = nav.mergeReloadItems(prev, server, 0, { id: "a", item: item("a"), pos: 0 });
+  assert.equal(merged[0].id, "a");
 });

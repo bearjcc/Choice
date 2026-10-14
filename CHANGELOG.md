@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.6.4 (2026-10-14)
+
+### Changed
+
+- Undo overhaul: session undo stack (full card, direction, later, decision id); optimistic restore at the current pile position in pending and show-all modes; media blob cache ~30 cards with revoke; saves and undos on an ordered queue so `/undo` sends `{item, decision_id}` only after earlier decides settle; `showSeq` so the newest items reload wins.
+- `mergeReloadItems` pins a client-restored card when the server omits it or lists it later (stable undo across plugin `list_items` reorder).
+
+### Fixed
+
+- Show-all undo splices the card back instead of only re-anchoring; reconcile uses the restored card id.
+- `openDeck` resets `pending` to true.
+- Undo no longer posts `{}` while a decide is in flight.
+- Server: plugin undo `ok: false` on later / `plugin_noop` decisions is treated as success so the log entry is not stuck.
+
+### Tests
+
+- Regression: show-all restore, merge pin, client queue/`decision_id`, plugin noop undo, targeted `decision_id`, later/skip undo.
+
 ## 0.6.3 (2026-10-13)
 
 ### Fixed

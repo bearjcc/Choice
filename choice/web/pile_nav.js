@@ -30,21 +30,23 @@
     return (idx + 1) % items.length;
   }
 
-  function restorePendingUndo(items, pos, restoredItem) {
+  function restoreUndoAtPos(items, pos, restoredItem) {
     const list = items.slice();
     const id = restoredItem && restoredItem.id;
     if (!id) return { items: list, pos };
     const existing = list.findIndex((row) => row.id === id);
-    if (existing >= 0) {
-      const row = list.splice(existing, 1)[0];
-      list.unshift(row);
-      return { items: list, pos: 0 };
-    }
-    list.unshift(restoredItem);
-    return { items: list, pos: 0 };
+    if (existing >= 0) list.splice(existing, 1);
+    const insertAt = Math.max(0, Math.min(pos, list.length));
+    list.splice(insertAt, 0, restoredItem);
+    return { items: list, pos: insertAt };
   }
 
-  function mergeReloadItems(prevItems, serverItems, pos) {
+  /** @deprecated use restoreUndoAtPos */
+  function restorePendingUndo(items, pos, restoredItem) {
+    return restoreUndoAtPos(items, pos, restoredItem);
+  }
+
+  function mergeReloadItems(prevItems, serverItems, pos, pin) {
     const prev = prevItems || [];
     const incoming = serverItems || [];
     if (!prev.length) return incoming.slice();
@@ -56,12 +58,30 @@
       if (fresh) {
         out.push(fresh);
         seen.add(row.id);
+      } else if (pin && row.id === pin.id) {
+        out.push(pin.item || row);
+        seen.add(row.id);
       }
     }
     for (const row of incoming) {
       if (seen.has(row.id)) continue;
       out.push(row);
       seen.add(row.id);
+    }
+    if (pin && pin.id) {
+      const row = byId.get(pin.id) || pin.item;
+      if (row && !seen.has(pin.id)) {
+        const insertAt = Math.max(0, Math.min(typeof pin.pos === "number" ? pin.pos : pos, out.length));
+        out.splice(insertAt, 0, row);
+        seen.add(pin.id);
+      } else if (row) {
+        const idx = out.findIndex((r) => r.id === pin.id);
+        const want = Math.max(0, Math.min(typeof pin.pos === "number" ? pin.pos : pos, Math.max(0, out.length - 1)));
+        if (idx >= 0 && idx !== want) {
+          const [moved] = out.splice(idx, 1);
+          out.splice(Math.min(want, out.length), 0, moved);
+        }
+      }
     }
     if (!out.length) return incoming.slice();
     return out;
@@ -75,6 +95,7 @@
     syncPosToAnchor,
     removePendingSwipe,
     advanceShowAllPos,
+    restoreUndoAtPos,
     restorePendingUndo,
     mergeReloadItems,
     currentItem,
