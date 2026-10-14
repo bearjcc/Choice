@@ -30,3 +30,13 @@ class AtomicReplaceTests(unittest.TestCase):
                 atomic_replace(tmpf, dest)
             self.assertEqual(calls["n"], 3)
             self.assertTrue(dest.is_file())
+
+    def test_replace_missing_parent_unlinks_temp(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = Path(tmp) / "gone" / "out.json"
+            tmpf = Path(tmp) / "out.tmp"
+            tmpf.write_text("{}", encoding="utf-8")
+            with self.assertRaises(OSError) as ctx:
+                atomic_replace(tmpf, dest)
+            self.assertEqual(ctx.exception.errno, errno.ENOENT)
+            self.assertFalse(tmpf.is_file())

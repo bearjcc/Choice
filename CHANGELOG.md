@@ -5,6 +5,7 @@
 ### Fixed
 
 - CI: Immich mock HTTP server uses HTTP/1.0, `Connection: close`, and flushed bodies on a single-thread `HTTPServer` to avoid Windows `ConnectionAbortedError` (WinError 10053) during paged search tests.
+- Folder index perf test waits for background scans before teardown; `atomic_replace` handles a missing destination directory without leaving temp files; index saves ignore writes after state dir removal.
 
 ### Changed
 

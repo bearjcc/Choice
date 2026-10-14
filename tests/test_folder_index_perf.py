@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 
 from choice.act import index_summary, progress
-from choice.folder_index import scan_incremental
+from choice.folder_index import scan_incremental, wait_folder_index_idle
 from choice.open import open_config
 
 # Heavy timing test: skipped on default GITHUB_ACTIONS matrix; run via CI perf job.
@@ -49,6 +49,7 @@ class FolderIndexPerfTests(unittest.TestCase):
         for queue in self.tmp.rglob("work_queue.json"):
             wait_idle(queue.parent, timeout=90.0)
         if self._deck is not None:
+            wait_folder_index_idle(self._deck, timeout=90.0)
             wait_idle(self._deck.state_dir, timeout=90.0)
         time.sleep(0.75 if os.name == "nt" else 0.25)
         try:
@@ -116,6 +117,7 @@ recursive = true
             item_times.append(time.perf_counter() - t0)
         stop.set()
         thread.join(timeout=5.0)
+        wait_folder_index_idle(deck, timeout=90.0)
         index_p95 = statistics.quantiles(index_times, n=20)[-1]
         items_p95 = statistics.quantiles(item_times, n=20)[-1]
         index_cap = 0.15 if os.getenv("GITHUB_ACTIONS") else 0.10
