@@ -12,6 +12,10 @@ from choice.act import index_summary, progress
 from choice.folder_index import scan_incremental
 from choice.open import open_config
 
+# Heavy timing test: skipped on default GITHUB_ACTIONS matrix; run via CI perf job.
+_RUN_PERF = os.getenv("CHOICE_RUN_PERF") == "1"
+_SKIP_PERF_ON_CI = bool(os.getenv("GITHUB_ACTIONS")) and not _RUN_PERF
+
 
 def _build_tree(root: Path, file_count: int, dir_count: int) -> None:
     root.mkdir(parents=True, exist_ok=True)
@@ -53,6 +57,10 @@ class FolderIndexPerfTests(unittest.TestCase):
             time.sleep(1.0)
             self._tmp.cleanup()
 
+    @unittest.skipIf(
+        _SKIP_PERF_ON_CI,
+        "perf timing: run with CHOICE_RUN_PERF=1 (see .github/workflows/ci.yml perf job)",
+    )
     def test_large_deck_index_and_items_stay_fast_while_growing(self):
         tmp_path = self.tmp
         root = tmp_path / "lib"
