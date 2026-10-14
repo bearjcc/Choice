@@ -22,3 +22,6 @@ class Deck:
 
     def handle(self, item_id, direction, note=None):
         return {"ok": True, "noop": True}
+
+    def undo(self, item_id, undo_token=None):
+        return {"ok": False, "message": "plugin no-op undo"}

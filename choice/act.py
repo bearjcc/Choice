@@ -165,17 +165,22 @@ def decide(deck: Deck, item_id: str, direction: str, note: str | None) -> dict:
             "message": message,
             "can_undo": _has_undo(deck),
             "allow_undo": _undo_allowed(deck),
+            "decision_id": token,
         }
         if record.get("plugin_noop"):
             out["noop"] = True
         return out
 
 
-def undo(deck: Deck) -> dict:
+def undo(
+    deck: Deck,
+    item_id: str | None = None,
+    decision_id: str | None = None,
+) -> dict:
     if not _undo_allowed(deck):
         return _fail("Undo is disabled for this deck.")
     with _lock(deck):
-        latest = _latest_undoable(deck)
+        latest = _decision_for_undo(deck, item_id, decision_id)
         if latest is None:
             return _fail("Nothing to undo.")
         item = Item(
@@ -195,9 +200,19 @@ def undo(deck: Deck) -> dict:
                     latest.get("undo_token"),
                 )
                 if not result.get("ok", True):
-                    raise _OpError(
-                        _plugin_message(result.get("message")) or "Plugin undo failed."
-                    )
+                    noop_undo = bool(latest.get("plugin_noop") or latest.get("later"))
+                    if noop_undo:
+                        import logging
+
+                        logging.getLogger(__name__).info(
+                            "Plugin undo treated as success (no-op) for %s: %s",
+                            latest.get("item"),
+                            _plugin_message(result.get("message")) or "ok: false",
+                        )
+                    else:
+                        raise _OpError(
+                            _plugin_message(result.get("message")) or "Plugin undo failed."
+                        )
             elif latest.get("file_op"):
                 enqueue_file_op(
                     deck,
@@ -218,7 +233,7 @@ def undo(deck: Deck) -> dict:
             if deck.hook and deck.hook_required:
                 _run_hook(deck, _hook_body("undo", deck, item, latest))
         except _OpError as exc:
-            return _reject(deck, item_id, str(exc))
+            return _reject(deck, str(latest.get("item") or ""), str(exc))
         _append(deck, {"type": "undo", "ref": latest["id"], "item": latest["item"], "ts": _now()})
         bust_item_cache(deck, invalidate_folder=False)
         if deck.hook and not deck.hook_required:
@@ -835,6 +850,7 @@ def _undo_hint(deck: Deck) -> dict | None:
         "label": latest.get("label"),
         "file": latest.get("file"),
         "later": bool(latest.get("later")),
+        "decision_id": latest.get("id"),
     }
     if deck.folder_scan is not None and item_id:
         from choice.folder_index import item_for_id
@@ -862,6 +878,36 @@ def _latest_undoable(deck: Deck) -> dict | None:
         if record.get("type") == "decision" and record.get("id") not in dead:
             last = record
     return last
+
+
+def _decision_for_undo(
+    deck: Deck,
+    item_id: str | None,
+    decision_id: str | None,
+) -> dict | None:
+    if not decision_id and not item_id:
+        return _latest_undoable(deck)
+    records = _read_log(deck)
+    dead = {record.get("ref") for record in records if record.get("type") == "undo"}
+    token = str(decision_id or "").strip()
+    want_item = str(item_id or "").strip()
+    if token:
+        for record in records:
+            if record.get("type") != "decision" or record.get("id") != token:
+                continue
+            if token in dead:
+                return None
+            if want_item and str(record.get("item") or "") != want_item:
+                return None
+            return record
+        return None
+    if want_item:
+        choices = _choices(deck)
+        row = choices.get(want_item)
+        if row is None or row.get("id") in dead:
+            return None
+        return row
+    return _latest_undoable(deck)
 
 
 def _validate_transfer(deck: Deck, item: Item, does: str, into: str) -> None:

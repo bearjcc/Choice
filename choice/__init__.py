@@ -4,4 +4,4 @@ The package is the local server. The page lives in choice/web.
 How a deck is written is DECKS.md, next to this repo's README.
 """
 
-__version__ = "0.6.3"
+__version__ = "0.6.4"
