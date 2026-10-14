@@ -9,8 +9,12 @@ import unittest
 from pathlib import Path
 
 from choice.act import index_summary, progress
-from choice.folder_index import scan_incremental
+from choice.folder_index import scan_incremental, wait_folder_index_idle
 from choice.open import open_config
+
+# Heavy timing test: skipped on default GITHUB_ACTIONS matrix; run via CI perf job.
+_RUN_PERF = os.getenv("CHOICE_RUN_PERF") == "1"
+_SKIP_PERF_ON_CI = bool(os.getenv("GITHUB_ACTIONS")) and not _RUN_PERF
 
 
 def _build_tree(root: Path, file_count: int, dir_count: int) -> None:
@@ -45,6 +49,7 @@ class FolderIndexPerfTests(unittest.TestCase):
         for queue in self.tmp.rglob("work_queue.json"):
             wait_idle(queue.parent, timeout=90.0)
         if self._deck is not None:
+            wait_folder_index_idle(self._deck, timeout=90.0)
             wait_idle(self._deck.state_dir, timeout=90.0)
         time.sleep(0.75 if os.name == "nt" else 0.25)
         try:
@@ -53,6 +58,10 @@ class FolderIndexPerfTests(unittest.TestCase):
             time.sleep(1.0)
             self._tmp.cleanup()
 
+    @unittest.skipIf(
+        _SKIP_PERF_ON_CI,
+        "perf timing: run with CHOICE_RUN_PERF=1 (see .github/workflows/ci.yml perf job)",
+    )
     def test_large_deck_index_and_items_stay_fast_while_growing(self):
         tmp_path = self.tmp
         root = tmp_path / "lib"
@@ -108,6 +117,7 @@ recursive = true
             item_times.append(time.perf_counter() - t0)
         stop.set()
         thread.join(timeout=5.0)
+        wait_folder_index_idle(deck, timeout=90.0)
         index_p95 = statistics.quantiles(index_times, n=20)[-1]
         items_p95 = statistics.quantiles(item_times, n=20)[-1]
         index_cap = 0.15 if os.getenv("GITHUB_ACTIONS") else 0.10

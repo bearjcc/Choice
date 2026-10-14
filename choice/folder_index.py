@@ -116,16 +116,28 @@ def save_index(state_dir: Path, idx: FolderIndex, *, save_meta: bool = False) ->
     key = str(state_dir.resolve())
     idx.updated_at = time.time()
     _mem.set(key, idx)
+    if not state_dir.is_dir():
+        return
     path = index_path(state_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     from choice.atomic_io import write_json_atomic
 
-    write_json_atomic(path, idx.to_dict())
+    try:
+        write_json_atomic(path, idx.to_dict())
+    except OSError:
+        if not state_dir.is_dir():
+            return
+        raise
     if save_meta:
         _save_meta_file(state_dir, idx)
     from choice.count_prefs import write_folder_stats
 
-    write_folder_stats(state_dir, len(idx.ordered))
+    try:
+        write_folder_stats(state_dir, len(idx.ordered))
+    except OSError:
+        if not state_dir.is_dir():
+            return
+        raise
 
 
 def _load_meta_file(state_dir: Path, idx: FolderIndex) -> None:
@@ -420,13 +432,52 @@ def kick_background_scan(deck: Deck) -> None:
         return
 
     def _run() -> None:
-        scan_incremental(deck)
+        try:
+            scan_incremental(deck)
+        except OSError:
+            if not deck.state_dir.is_dir():
+                return
+            raise
 
     threading.Thread(
         target=_run,
         name=f"folder-scan-{deck.id}",
         daemon=True,
     ).start()
+
+
+def cancel_scheduled_scan(deck: Deck) -> None:
+    if deck.folder_scan is None:
+        return
+    key = str(deck.state_dir.resolve())
+    with _timer_lock:
+        old = _timers.pop(key, None)
+        if old:
+            old.cancel()
+        _scan_chain_start.pop(key, None)
+
+
+def wait_folder_index_idle(deck: Deck, *, timeout: float = 90.0) -> None:
+    """Wait for debounced/background folder scans and index writes to finish."""
+    if deck.folder_scan is None:
+        return
+    cancel_scheduled_scan(deck)
+    key = str(deck.state_dir.resolve())
+    lock = _scan_locks.get(key)
+    if lock is None:
+        lock = threading.Lock()
+        _scan_locks.set(key, lock)
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not deck.state_dir.is_dir():
+            return
+        if lock.acquire(blocking=False):
+            lock.release()
+            idx = load_index(deck.state_dir)
+            if not idx.scanning:
+                return
+        time.sleep(0.025)
+    scan_incremental(deck)
 
 
 def _purge_sorted_from_index(idx: FolderIndex, root: Path, skip_dirs: set[Path]) -> bool:

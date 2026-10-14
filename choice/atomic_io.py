@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import tempfile
@@ -12,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 _WIN_SHARING = {5, 13, 32}
+_MISSING_PATH = {2, 3}  # ENOENT / Windows ERROR_PATH_NOT_FOUND
 _path_locks: dict[str, threading.Lock] = {}
 _lock_guard = threading.Lock()
 
@@ -60,11 +62,26 @@ def write_json_atomic(
     write_text_atomic(path, text)
 
 
+def _unlink_tmp(tmp: Path) -> None:
+    if tmp.is_file():
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+
+
 def atomic_replace(tmp: Path, dest: Path, *, attempts: int = 12) -> None:
     delays = (0.001, 0.002, 0.005, 0.01, 0.02, 0.04, 0.08, 0.16, 0.32, 0.5, 0.5, 1.0)
     last: OSError | None = None
     for i in range(attempts):
         try:
+            if not dest.parent.is_dir():
+                _unlink_tmp(tmp)
+                raise OSError(
+                    errno.ENOENT,
+                    "Destination directory is missing",
+                    str(dest.parent),
+                )
             os.replace(tmp, dest)
             return
         except OSError as exc:
@@ -72,6 +89,9 @@ def atomic_replace(tmp: Path, dest: Path, *, attempts: int = 12) -> None:
             code = getattr(exc, "winerror", None)
             if code is None:
                 code = exc.errno
+            if code in _MISSING_PATH:
+                _unlink_tmp(tmp)
+                raise
             if code not in _WIN_SHARING:
                 raise
             time.sleep(delays[min(i, len(delays) - 1)])

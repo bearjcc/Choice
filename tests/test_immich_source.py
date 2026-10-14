@@ -5,7 +5,7 @@ import os
 import tempfile
 import threading
 import unittest
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -19,7 +19,53 @@ WEBP = (
 )
 
 
-class _ImmichMock(BaseHTTPRequestHandler):
+def _start_mock_server(handler):
+    server = HTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server, thread
+
+
+def _stop_mock_server(server, thread):
+    server.shutdown()
+    thread.join(timeout=10.0)
+    server.server_close()
+
+
+class _StableMockHandler(BaseHTTPRequestHandler):
+    """One-shot HTTP/1.0 responses; avoids Windows keep-alive aborts (WinError 10053)."""
+
+    protocol_version = "HTTP/1.0"
+
+    def handle_one_request(self):
+        try:
+            super().handle_one_request()
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+            pass
+
+    def _write_body(self, body: bytes) -> None:
+        self.wfile.write(body)
+        self.wfile.flush()
+
+    def _json(self, code: int, payload: dict):
+        body = json.dumps(payload).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self._write_body(body)
+
+    def _respond(self, code: int, content_type: str, body: bytes) -> None:
+        self.send_response(code)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self._write_body(body)
+
+
+class _ImmichMock(_StableMockHandler):
     album_id = "album-1"
     assets = [
         {
@@ -45,25 +91,12 @@ class _ImmichMock(BaseHTTPRequestHandler):
             return {}
         return json.loads(self.rfile.read(length).decode("utf-8"))
 
-    def _json(self, code: int, payload: dict):
-        body = json.dumps(payload).encode("utf-8")
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
     def do_GET(self):
         path = urlparse(self.path).path
         if path == "/api/server/ping":
             return self._json(200, {"res": "ok"})
         if path.startswith("/api/assets/") and path.endswith("/thumbnail"):
-            self.send_response(200)
-            self.send_header("Content-Type", "image/webp")
-            self.send_header("Content-Length", str(len(WEBP)))
-            self.end_headers()
-            self.wfile.write(WEBP)
-            return
+            return self._respond(200, "image/webp", WEBP)
         if path.startswith("/api/assets/"):
             aid = path.split("/")[-1]
             row = next((a for a in self.assets if a["id"] == aid), None)
@@ -121,9 +154,7 @@ class ImmichSourceTests(unittest.TestCase):
         os.environ["IMMICH_API_KEY"] = "test"
         self._tmp = tempfile.TemporaryDirectory()
         self.tmp = Path(self._tmp.name)
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), _ImmichMock)
-        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
-        self.thread.start()
+        self.server, self.thread = _start_mock_server(_ImmichMock)
         self.base = f"http://127.0.0.1:{self.server.server_port}"
         self.cfg = self.tmp / "choice.toml"
         self.cfg.write_text(
@@ -147,8 +178,7 @@ mount = "album:album-1"
         )
 
     def tearDown(self):
-        self.server.shutdown()
-        self.server.server_close()
+        _stop_mock_server(self.server, self.thread)
         self._tmp.cleanup()
 
     def test_album_lists_via_metadata_search(self):
@@ -263,9 +293,7 @@ class ImmichPagingTests(unittest.TestCase):
         os.environ["IMMICH_API_KEY"] = "test"
         self._tmp = tempfile.TemporaryDirectory()
         self.tmp = Path(self._tmp.name)
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), _PagingImmichMock)
-        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
-        self.thread.start()
+        self.server, self.thread = _start_mock_server(_PagingImmichMock)
         self.base = f"http://127.0.0.1:{self.server.server_port}"
         self.cfg = self.tmp / "choice.toml"
         self.cfg.write_text(
@@ -290,8 +318,7 @@ page_size = 5
         )
 
     def tearDown(self):
-        self.server.shutdown()
-        self.server.server_close()
+        _stop_mock_server(self.server, self.thread)
         self._tmp.cleanup()
 
     def test_search_pages_no_duplicate_ids(self):

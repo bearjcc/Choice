@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.5 (2026-10-14)
+
+### Fixed
+
+- CI: Immich mock HTTP server uses HTTP/1.0, `Connection: close`, and flushed bodies on a single-thread `HTTPServer` to avoid Windows `ConnectionAbortedError` (WinError 10053) during paged search tests.
+- Folder index perf test waits for background scans before teardown; `atomic_replace` handles a missing destination directory without leaving temp files; index saves ignore writes after state dir removal.
+
+### Changed
+
+- Folder index perf regression skips the default GitHub Actions matrix; same p95 assertions run in a dedicated `perf` CI job when `CHOICE_RUN_PERF=1`.
+
 ## 0.6.4 (2026-10-14)
 
 ### Changed
