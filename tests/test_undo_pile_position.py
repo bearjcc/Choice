@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 
 from choice.act import decide, progress, undo
-from choice.folder_index import load_index, scan_incremental
+from choice.folder_index import load_index, scan_incremental, wait_folder_index_idle
 from choice.load import resolve
 from choice.view_prefs import ViewPrefs, save_view_prefs
 from choice.work_queue import wait_idle
@@ -16,7 +16,7 @@ from choice.work_queue import wait_idle
 
 class UndoPilePositionTests(unittest.TestCase):
     def setUp(self):
-        self._tmp = tempfile.TemporaryDirectory()
+        self._tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.tmp = Path(self._tmp.name)
         self._prev_sync = os.environ.get("CHOICE_SYNC_WORK")
         os.environ["CHOICE_SYNC_WORK"] = "1"
@@ -26,7 +26,21 @@ class UndoPilePositionTests(unittest.TestCase):
             os.environ.pop("CHOICE_SYNC_WORK", None)
         else:
             os.environ["CHOICE_SYNC_WORK"] = self._prev_sync
-        self._tmp.cleanup()
+        for queue in self.tmp.rglob("work_queue.json"):
+            wait_idle(queue.parent, timeout=90.0)
+        if (self.tmp / "deck.json").is_file():
+            try:
+                deck = resolve(self.tmp).decks[0]
+                wait_folder_index_idle(deck, timeout=90.0)
+                wait_idle(deck.state_dir, timeout=90.0)
+            except Exception:
+                pass
+        time.sleep(0.75 if os.name == "nt" else 0.25)
+        try:
+            self._tmp.cleanup()
+        except OSError:
+            time.sleep(1.0)
+            self._tmp.cleanup()
 
     def _big_sort_deck(self, *, random_sort: bool = False):
         for name in ("keep", "reject", "like", "love"):
