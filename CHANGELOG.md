@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.7 (2026-10-16)
+
+### Changed
+
+- Plugin A/B cards: `text` and `image` aliases on `ab` sides; `sections` render as collapsible context blocks (shared above pair sides). Wide layout (~900px+) respects `pair_layout`; gallery photos swap in place with fixed aspect ratio, tap zones, and preload.
+- Plugin decks without valid `directions` get default No / Yes / Skip (server warning). Client always shows action bar and arrow-key shortcuts from deck directions with the same defaults.
+- Plugin `reveal` (e.g. voice_whichone answers) is stored server-side but omitted from `/items` until a card is decided; `/decide` returns `reveal` and the UI shows it only after decide (pair cards included).
+
+### Fixed
+
+- `paintPair` respects blind mode; top-level `body` is not duplicated when `ab` is present. Gallery chips no longer render twice.
+
 ## 0.6.6 (2026-10-14)
 
 ### Fixed

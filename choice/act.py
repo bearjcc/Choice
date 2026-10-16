@@ -30,7 +30,14 @@ from choice.deck_index import (
     snapshot,
 )
 from choice.flow import Flow, arrange, report_lines
-from choice.load import Deck, DeckProblem, Item, inside, swipe_item_public
+from choice.load import (
+    Deck,
+    DeckProblem,
+    Item,
+    inside,
+    reveal_public_rows,
+    swipe_item_public,
+)
 from choice.work_queue import (
     allocate_transfer_dest,
     cancel_for_decision,
@@ -166,7 +173,12 @@ def decide(deck: Deck, item_id: str, direction: str, note: str | None) -> dict:
             "can_undo": _has_undo(deck),
             "allow_undo": _undo_allowed(deck),
             "decision_id": token,
+            "choice": action.value,
+            "choice_label": action.label,
         }
+        reveal_rows = reveal_public_rows(item)
+        if reveal_rows:
+            out["reveal"] = reveal_rows
         if record.get("plugin_noop"):
             out["noop"] = True
         return out
@@ -460,7 +472,7 @@ def progress(
             decided += 1
             if pending:
                 continue
-        shown = swipe_item_public(deck, item, current)
+        shown = swipe_item_public(deck, item, current, choice_row=choice)
         if choice and choice.get("label"):
             shown["choice_label"] = choice.get("label")
         mark = flow.marks.get(item.id)
@@ -638,7 +650,7 @@ def _plugin_progress_page(
             continue
         choice = choices.get(rid)
         current = choice.get("value") if choice else None
-        shown = swipe_item_public(deck, item, current)
+        shown = swipe_item_public(deck, item, current, choice_row=choice)
         if choice and choice.get("label"):
             shown["choice_label"] = choice.get("label")
         visible.append(shown)
@@ -703,7 +715,7 @@ def _folder_progress(
             continue
         choice = choices.get(rid)
         current = choice.get("value") if choice else None
-        shown = swipe_item_public(deck, item, current)
+        shown = swipe_item_public(deck, item, current, choice_row=choice)
         if choice and choice.get("label"):
             shown["choice_label"] = choice.get("label")
         visible.append(shown)

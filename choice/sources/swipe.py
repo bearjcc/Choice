@@ -3,13 +3,14 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
 from choice.config import ConfigProblem
 from choice.deck_index import list_lock
 from choice.folder_deck import apply_sort_direction_labels
-from choice.load import Deck, Direction, _directions as _config_directions
+from choice.load import Deck, Direction, _directions as _config_directions, _yes_no
 from choice.plugin_items import load_swipe_plugin_items
 from choice.plugin_pool import get_plugin
 from choice.sources.base import PreviewItem, Source
@@ -79,6 +80,11 @@ class SwipeSource(Source):
             plugin.deck_id = deck_id
         directions, buttons = _plugin_directions(plugin)
         directions = _merge_deck_option_directions(directions, deck_options)
+        directions = ensure_swipe_directions(
+            directions,
+            deck_id=deck_id,
+            mount=mount,
+        )
         blind = bool(getattr(plugin.obj, "blind_default", False) or deck_options.get("blind"))
         folder = self._folder(mount)
         private_feed = bool(deck_options.get("private") or deck_options.get("notify") is False)
@@ -137,8 +143,43 @@ def _merge_deck_option_directions(
     return apply_sort_direction_labels(directions, deck_options)
 
 
+def ensure_swipe_directions(
+    directions: dict[str, Direction],
+    *,
+    deck_id: str,
+    mount: str,
+) -> dict[str, Direction]:
+    """Guarantee left/right (and skip) so the UI always has actions."""
+    defaults = _yes_no()
+    out = dict(directions)
+    warned = False
+    for key in ("left", "right"):
+        row = out.get(key)
+        if row is None or not str(row.label or "").strip():
+            if not warned:
+                logging.getLogger(__name__).warning(
+                    "Plugin deck %r (mount=%r) has missing or invalid directions; "
+                    "using default No / Yes / Skip",
+                    deck_id,
+                    mount,
+                )
+                warned = True
+            out[key] = defaults[key]
+    if "down" not in out and "down" in defaults:
+        out["down"] = defaults["down"]
+    return out
+
+
 def _plugin_directions(plugin: SwipePlugin) -> tuple[dict[str, Direction], list[Direction]]:
-    raw = getattr(plugin.obj, "directions", None) or {}
+    raw = getattr(plugin.obj, "directions", None)
+    if raw is not None and not isinstance(raw, dict):
+        logging.getLogger(__name__).warning(
+            "Plugin deck %r directions must be an object; ignoring",
+            getattr(plugin, "deck_id", "?"),
+        )
+        raw = {}
+    if not raw:
+        raw = {}
     directions: dict[str, Direction] = {}
     for key in _DIRS:
         if key not in raw:
