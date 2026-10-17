@@ -2,10 +2,7 @@
 
 const ChoiceConfigUi = (function () {
   function el(tag, cls, text) {
-    const node = document.createElement(tag);
-    if (cls) node.className = cls;
-    if (text != null) node.textContent = text;
-    return node;
+    return ChoiceDom.el(tag, cls, text);
   }
 
   function getByPath(obj, path) {
