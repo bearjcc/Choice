@@ -868,42 +868,6 @@ def _source_path(root: Path, rel: str) -> Path:
     return root / rel
 
 
-def _items_from_files(
-    root: Path, folder: Path, images_only: bool, recursive: bool
-) -> tuple[list[Item], list[str]]:
-    warnings = []
-    files = _list_files(folder, recursive=recursive)
-    items = []
-    for path in files:
-        if images_only and not _is_image(path):
-            continue
-        if path.is_symlink():
-            warnings.append(f"skipped symlink {path.name}")
-            continue
-        rel = _item_id(root, folder, path)
-        kind = "image" if _is_image(path) else "file"
-        title = path.name
-        body = ""
-        if kind == "file":
-            body = _size_text(path)
-        if path.suffix.lower() == ".heic":
-            kind = "file"
-            body = "HEIC photo. Choice will not preview it. A decision still applies to the file."
-        items.append(
-            Item(
-                id=rel,
-                kind=kind,
-                title=title,
-                body=body,
-                path=path.resolve(),
-                media_token=str(_mtime(path)),
-                fields={"file": rel},
-            )
-        )
-    items.sort(key=lambda item: item.id.lower())
-    return items, warnings
-
-
 def _item_id(root: Path, folder: Path, path: Path) -> str:
     try:
         return path.resolve().relative_to(root.resolve()).as_posix()

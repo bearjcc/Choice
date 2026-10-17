@@ -282,23 +282,9 @@ def items_from_folder_scan(root: Path, folder: Path, scan: FolderScanOptions) ->
             continue
         if _under_sort_dir(path, skip_dirs):
             continue
-        kind = "image" if _is_image(path) else "file"
-        title = path.name
-        body = _size_text(path) if kind == "file" else ""
-        if path.suffix.lower() == ".heic":
-            kind = "file"
-            body = "HEIC photo. Choice will not preview it. A decision still applies to the file."
-        items.append(
-            Item(
-                id=rel_posix,
-                kind=kind,
-                title=title,
-                body=body,
-                path=path.resolve(),
-                media_token=str(_mtime(path)),
-                fields={"file": rel_posix},
-            )
-        )
+        from choice.folder_items import folder_item_from_path
+
+        items.append(folder_item_from_path(rel_posix, path))
     from choice.natsort import natural_key
 
     items.sort(key=lambda item: natural_key(item.id))

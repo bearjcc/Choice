@@ -18,11 +18,12 @@ _cache: LruDict[str, tuple[float, tuple, list, list]] = LruDict(64)
 
 
 def load_items(deck: Deck) -> tuple[list, list]:
-    from choice.plugin_filters import get_request_filter, selection_to_plugin_filter
+    from choice.plugin_filters import plugin_filter_cache_key, selection_to_plugin_filter
+    from choice.plugin_filters import get_request_filter
 
     filt = selection_to_plugin_filter(get_request_filter())
     filt_key = json.dumps(filt, sort_keys=True) if filt else ""
-    key = f"{deck.id}:{deck.state_dir}:{filt_key}"
+    key = plugin_filter_cache_key(deck)
     stamp = _stamp(deck, filt_key)
     now = time.monotonic()
     hit = _cache.get(key)

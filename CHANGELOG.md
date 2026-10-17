@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.9 (2026-10-17)
+
+### Changed
+
+- Consolidation pass (no intentional behaviour changes): shared folder `Item` construction (`folder_items.py`), plugin filter cache keys, transfer validation in `act._transfer`, removed dead `load._items_from_files`.
+- Web: shared `dom.js`, `card_meta.js`, `config_deck.js`, and expanded `filter_panel_helpers.js`; `preloadMedia` reuses `mediaUrlsForItem`.
+
 ## 0.6.8 (2026-10-17)
 
 ### Changed
