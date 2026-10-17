@@ -278,10 +278,40 @@ function setStatus(text) {
   note.textContent = text;
 }
 
+const DEFAULT_DIRECTIONS = [
+  { id: "left", label: "No", value: "no", later: false },
+  { id: "right", label: "Yes", value: "yes", later: false },
+  { id: "up", label: "Up", value: "up", later: false },
+  { id: "down", label: "Skip", value: "skip", later: true },
+];
+
+function payloadDirections() {
+  const payload = state.payload;
+  if (!payload) return [];
+  const incoming = payload.directions || [];
+  const byId = new Map();
+  incoming.forEach((row) => {
+    if (row && row.id) byId.set(row.id, row);
+  });
+  const out = [];
+  ["left", "right", "up", "down"].forEach((id) => {
+    const row = byId.get(id);
+    const fallback = DEFAULT_DIRECTIONS.find((d) => d.id === id);
+    if (row && String(row.label || "").trim()) {
+      out.push(row);
+    } else if (id === "left" || id === "right") {
+      out.push(fallback || { id, label: id, value: id });
+    } else if (row) {
+      out.push({ ...fallback, ...row, label: row.label || fallback.label });
+    }
+  });
+  return out;
+}
+
 function specs() {
   const payload = state.payload;
   if (!payload) return [];
-  return (payload.directions || []).concat(payload.buttons || []);
+  return payloadDirections().concat(payload.buttons || []);
 }
 
 function specFor(id) {
@@ -289,11 +319,14 @@ function specFor(id) {
 }
 
 function buttonLabel(spec, item) {
+  if (!spec) return null;
   const offers = item && item.offers;
   if (offers && Object.prototype.hasOwnProperty.call(offers, spec.id)) {
-    return offers[spec.id] || null;
+    const offered = offers[spec.id];
+    if (offered != null && String(offered).trim() !== "") return offered;
   }
-  return spec.label;
+  const base = spec.label != null && String(spec.label).trim() !== "" ? spec.label : spec.id;
+  return base || null;
 }
 
 function callText(item) {
@@ -323,7 +356,7 @@ function reduceMotion() {
 }
 
 function isWide() {
-  return window.matchMedia("(min-width: 700px)").matches;
+  return window.matchMedia("(min-width: 900px)").matches;
 }
 
 function resolveSwipe(dx, dy, arm, threshold) {
@@ -1663,6 +1696,7 @@ function paintCard(card, item) {
     const call = callText(item);
     if (call) cap.append(el("p", "fine", "Your call: " + call));
     appendMark(cap, item);
+    appendReveal(cap, item);
     appendChips(cap, item);
     card.append(frame);
     if (cap.childNodes.length) card.append(cap);
@@ -1675,6 +1709,8 @@ function paintCard(card, item) {
     const call = callText(item);
     if (call) pad.append(el("p", "fine", "Your call: " + call));
     appendMark(pad, item);
+    appendSections(pad, item);
+    appendReveal(pad, item);
     card.append(pad);
   }
   appendChips(card, item);
@@ -1687,11 +1723,44 @@ function galleryIndex(item) {
   return at;
 }
 
-function setGalleryIndex(item, idx) {
+function setGalleryIndex(item, idx, options) {
   if (!item.images || !item.images.length) return;
   const n = ((idx % item.images.length) + item.images.length) % item.images.length;
   state.galleryAt[item.id] = n;
+  const inPlace = !options || options.inPlace !== false;
+  if (inPlace && refreshGalleryCard(item)) return;
   renderDeck();
+}
+
+function preloadGalleryNeighbors(item, at) {
+  if (!item.images || item.images.length < 2) return;
+  const total = item.images.length;
+  [at - 1, at + 1].forEach((raw) => {
+    const i = ((raw % total) + total) % total;
+    const slide = item.images[i];
+    void fetchMediaBlob(mediaSrc(item, null, slide.index), item.id);
+  });
+}
+
+function refreshGalleryCard(item) {
+  const card = document.querySelector("article.card.gallery-card");
+  if (!card || !current() || current().id !== item.id) return false;
+  const idx = galleryIndex(item);
+  const slide = item.images[idx];
+  const view = card.querySelector(".gallery-view");
+  const img = view && view.querySelector("img");
+  if (!view || !img) return false;
+  const url = mediaSrc(item, null, slide.index);
+  img.alt = slide.caption || cardLabel(item, "Photo");
+  img.src = resolvedMediaSrc(url);
+  if (img.decode) void img.decode().catch(() => {});
+  const caption = card.querySelector(".gallery-slide-caption");
+  if (caption) caption.textContent = slide.caption || "";
+  card.querySelectorAll(".gallery-dot").forEach((dot, i) => {
+    dot.classList.toggle("on", i === idx);
+  });
+  preloadGalleryNeighbors(item, idx);
+  return true;
 }
 
 function paintGallery(card, item) {
@@ -1700,9 +1769,40 @@ function paintGallery(card, item) {
   const frame = el("div", "frame gallery");
   const imgWrap = el("div", "gallery-view");
   imgWrap.addEventListener("pointerdown", (event) => event.stopPropagation());
+  imgWrap.addEventListener("click", (event) => event.stopPropagation());
   const slide = item.images[idx];
-  appendPhoto(imgWrap, mediaSrc(item, null, slide.index), slide.caption || cardLabel(item, "Photo"));
+  const img = el("img");
+  img.alt = slide.caption || cardLabel(item, "Photo");
+  img.draggable = false;
+  img.src = resolvedMediaSrc(mediaSrc(item, null, slide.index));
+  if (img.decode) void img.decode().catch(() => {});
+  imgWrap.append(img);
   if (item.images.length > 1) {
+    const taps = el("div", "gallery-taps");
+    taps.addEventListener("pointerdown", (event) => event.stopPropagation());
+    taps.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const rect = taps.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      if (x < rect.width / 3) setGalleryIndex(item, idx - 1);
+      else if (x > (rect.width * 2) / 3) setGalleryIndex(item, idx + 1);
+    });
+    imgWrap.append(taps);
+    const prev = el("button", "gallery-nav gallery-nav-prev", "‹");
+    prev.type = "button";
+    prev.setAttribute("aria-label", "Previous photo");
+    prev.addEventListener("click", (event) => {
+      event.stopPropagation();
+      setGalleryIndex(item, idx - 1);
+    });
+    const next = el("button", "gallery-nav gallery-nav-next", "›");
+    next.type = "button";
+    next.setAttribute("aria-label", "Next photo");
+    next.addEventListener("click", (event) => {
+      event.stopPropagation();
+      setGalleryIndex(item, idx + 1);
+    });
+    imgWrap.append(prev, next);
     const dots = el("div", "gallery-dots");
     dots.setAttribute("role", "tablist");
     item.images.forEach((row, i) => {
@@ -1719,17 +1819,23 @@ function paintGallery(card, item) {
   }
   frame.append(imgWrap);
   const cap = el("div", "cap");
-  const showTitle = hasCardTitle(item) && (!state.blind || !item.body);
+  const showTitle = hasCardTitle(item) && !state.blind;
   if (showTitle) cap.append(el("h2", null, item.title));
-  if (item.body) cap.append(el("p", "body", item.body));
-  if (slide.caption) cap.append(el("p", "fine", slide.caption));
+  if (!state.blind && item.body) cap.append(el("p", "body", item.body));
+  if (!state.blind && slide.caption) {
+    cap.append(el("p", "fine gallery-slide-caption", slide.caption));
+  }
   const call = callText(item);
-  if (call) cap.append(el("p", "fine", "Your call: " + call));
-  appendMark(cap, item);
-  appendChips(cap, item);
+  if (!state.blind && call) cap.append(el("p", "fine", "Your call: " + call));
+  if (!state.blind) {
+    appendMark(cap, item);
+    appendSections(cap, item);
+    appendReveal(cap, item);
+    appendChips(cap, item);
+  }
   if (cap.childNodes.length) frame.append(cap);
   card.append(frame);
-  appendChips(card, item);
+  preloadGalleryNeighbors(item, idx);
 }
 
 function pairLayoutMode() {
@@ -1742,18 +1848,35 @@ function pairLayoutMode() {
 function paintPair(card, item) {
   const media = item.sides.some((side) => side.media);
   const layout = pairLayoutMode();
+  const hasAb = !!(item.sides && item.sides.length);
   card.classList.add("pair");
   if (media) card.classList.add("has-media");
   if (layout === "stack") card.classList.add("pair-stack");
   if (layout === "side") card.classList.add("pair-side-by-side");
-  if (item.title || item.body || callText(item) || item.mark) {
-    const pad = el("div", "pad");
-    if (item.title) pad.append(el("h2", null, item.title));
-    if (item.body) pad.append(el("p", "body", item.body));
+  if (!state.blind) {
+    const shared = el("div", "pair-shared");
+    let hasShared = false;
+    if (item.title) {
+      shared.append(el("h2", null, item.title));
+      hasShared = true;
+    }
     const call = callText(item);
-    if (call) pad.append(el("p", "fine", "Your call: " + call));
-    appendMark(pad, item);
-    card.append(pad);
+    if (call) {
+      shared.append(el("p", "fine", "Your call: " + call));
+      hasShared = true;
+    }
+    appendMark(shared, item);
+    appendSections(shared, item);
+    appendReveal(shared, item);
+    if (shared.childNodes.length) {
+      card.append(shared);
+      hasShared = true;
+    }
+    if (!hasAb && item.body) {
+      const pad = el("div", "pad");
+      pad.append(el("p", "body", item.body));
+      card.append(pad);
+    }
   }
   const sides = el("div", media ? "sides media" : "sides");
   if (layout === "stack") sides.classList.add("stacked");
@@ -1770,20 +1893,22 @@ function paintPair(card, item) {
         act(pick);
       }
     });
-    if (side.media) {
-      const frame = el("div", "frame");
-      appendPhoto(frame, mediaSrc(item, side), sideLabel(side));
-      frame.append(el("h3", "side-label", sideLabel(side)));
-      pane.append(frame);
-      if (side.body) pane.append(el("p", "body side-note", side.body));
-    } else {
-      pane.append(el("h3", "side-label", sideLabel(side)));
-      if (side.body) pane.append(el("p", "body", side.body));
+    if (!state.blind) {
+      if (side.media) {
+        const frame = el("div", "frame");
+        appendPhoto(frame, mediaSrc(item, side), sideLabel(side));
+        frame.append(el("h3", "side-label", sideLabel(side)));
+        pane.append(frame);
+        if (side.body) pane.append(el("p", "body side-note", side.body));
+      } else {
+        pane.append(el("h3", "side-label", sideLabel(side)));
+        if (side.body) pane.append(el("p", "body", side.body));
+      }
     }
     sides.append(pane);
   });
   card.append(sides);
-  appendChips(card, item);
+  if (!state.blind) appendChips(card, item);
 }
 
 function appendMark(parent, item) {
@@ -1932,6 +2057,47 @@ function appendPhoto(frame, src, alt) {
   img.src = resolvedMediaSrc(src);
   img.draggable = false;
   frame.append(img);
+}
+
+function appendSections(parent, item) {
+  if (state.blind || !item.sections || !item.sections.length) return;
+  const wrap = el("div", "card-sections");
+  item.sections.forEach((sec) => {
+    const block = el("details", "section-block" + (sec.main ? " section-main" : ""));
+    block.open = !sec.collapsed;
+    block.append(el("summary", "section-title", sec.title || "Details"));
+    if (sec.text) block.append(el("p", "section-text body", sec.text));
+    wrap.append(block);
+  });
+  parent.append(wrap);
+}
+
+function itemDecided(item) {
+  if (!item) return false;
+  if (item.choice != null && String(item.choice) !== "") return true;
+  return !!(item.choice_label && String(item.choice_label).trim());
+}
+
+function appendReveal(parent, item) {
+  if (state.blind || !item || !item.reveal || !item.reveal.length) return;
+  if (!itemDecided(item)) return;
+  const row = el("div", "chips reveal-row");
+  item.reveal.forEach((chip) =>
+    row.append(el("span", "chip reveal-chip", chip.label + ": " + chip.text)),
+  );
+  parent.append(row);
+}
+
+function applyDecidePayload(itemId, data) {
+  if (!data || !state.payload) return;
+  const items = state.payload.items || [];
+  const idx = items.findIndex((row) => row.id === itemId);
+  if (idx < 0) return;
+  const next = { ...items[idx] };
+  if (data.reveal) next.reveal = data.reveal;
+  if (data.choice != null) next.choice = data.choice;
+  if (data.choice_label) next.choice_label = data.choice_label;
+  items[idx] = next;
 }
 
 function appendChips(parent, item) {
@@ -2399,6 +2565,12 @@ async function act(direction) {
       return;
     }
     if (stackEntry && data.decision_id) stackEntry.decisionId = data.decision_id;
+    if (data.reveal && state.lastSwipe && state.lastSwipe.item.id === itemId) {
+      state.lastSwipe.item.reveal = data.reveal;
+      if (data.choice != null) state.lastSwipe.item.choice = data.choice;
+      if (data.choice_label) state.lastSwipe.item.choice_label = data.choice_label;
+    }
+    applyDecidePayload(itemId, data);
     setStatus(data.message || label);
     const anchorAtResponse = (current() && current().id) || itemId;
     const showSeq = ++state.showSeq;

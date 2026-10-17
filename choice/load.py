@@ -129,7 +129,7 @@ class Side:
             "key": self.key,
             "label": self.label,
             "body": self.body,
-            "media": self.path is not None,
+            "media": self.path is not None or bool(self.media_token),
             "media_token": self.media_token,
         }
 
@@ -155,6 +155,7 @@ class Item:
     plugin_row: dict | None = None
     images: list[dict] = field(default_factory=list)
     plugin_media: bool = False
+    sections: list[dict] = field(default_factory=list)
 
     def public(self, choice: str | None) -> dict:
         has_file = self.path is not None and self.path.is_file()
@@ -185,14 +186,39 @@ class Item:
             out["plugin_decided"] = True
         if self.kind == "pair":
             out["sides"] = [side.public() for side in self.sides]
+        if self.sections:
+            out["sections"] = [dict(sec) for sec in self.sections]
         if self.offers is not None:
             out["offers"] = self.offers
         return out
 
 
-def swipe_item_public(deck: Deck, item: Item, choice: str | None) -> dict:
+def reveal_visible_in_api(
+    choice_row: dict | None,
+    choice_value: str | None = None,
+) -> bool:
+    if choice_row is not None:
+        if choice_row.get("later"):
+            return False
+        return True
+    return choice_value is not None
+
+
+def reveal_public_rows(item: Item) -> list[dict]:
+    return [{"label": k, "text": v} for k, v in item.reveal]
+
+
+def swipe_item_public(
+    deck: Deck,
+    item: Item,
+    choice: str | None,
+    *,
+    choice_row: dict | None = None,
+) -> dict:
     """Item JSON for the swipe UI; filenames hidden unless the deck opts in."""
     row = item.public(choice)
+    if not reveal_visible_in_api(choice_row, choice):
+        row.pop("reveal", None)
     if getattr(deck, "show_filename", False):
         return row
     fname = row.get("file")

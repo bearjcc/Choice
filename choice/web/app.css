@@ -1303,9 +1303,93 @@ dialog.app-dialog .order-filter-form {
   border-color: transparent;
 }
 
+.card-sections {
+  padding: 0 18px 12px;
+}
+
+.section-block {
+  margin-bottom: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+  background: var(--fill);
+}
+
+.section-title {
+  cursor: pointer;
+  font-weight: var(--font-weight-bold);
+}
+
+.section-text {
+  margin: 8px 0 0;
+}
+
+.pair-shared {
+  padding: 16px 18px 0;
+}
+
+.pair-shared h2 {
+  margin: 0 0 8px;
+}
+
+.reveal-row .reveal-chip {
+  border-color: var(--ink);
+}
+
 .gallery-view {
   position: relative;
   touch-action: pan-y;
+  aspect-ratio: 4 / 5;
+  min-height: 240px;
+  max-height: min(72vh, 720px);
+  background: var(--photo);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.gallery-view img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.gallery-taps {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+}
+
+.gallery-nav {
+  display: none;
+  position: absolute;
+  top: 50%;
+  z-index: 3;
+  transform: translateY(-50%);
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--card) 92%, transparent);
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.gallery-nav-prev {
+  left: 8px;
+}
+
+.gallery-nav-next {
+  right: 8px;
+}
+
+@media (min-width: 900px) {
+  .gallery-nav {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
 }
 
 .gallery-dots {
@@ -1879,36 +1963,34 @@ main.library-view > .fine {
   }
 }
 
-@media (min-width: 960px) {
-  .card.pair {
+@media (min-width: 900px) {
+  .card.pair.pair-side-by-side {
     overflow: hidden;
-  }
-
-  .card.pair,
-  .stack.wide {
     width: min(980px, 100%);
   }
 
-  .card.pair.has-media,
-  .stack.wide.has-media {
-    width: min(1400px, 100%);
+  .card.pair.pair-side-by-side.has-media {
+    width: min(1200px, 100%);
   }
 
-  .sides {
+  .card.pair.pair-side-by-side .sides {
     flex: 1 1 0;
     min-height: 0;
     flex-direction: row;
     align-items: stretch;
   }
 
-  .sides.media { gap: 16px; }
+  .card.pair.pair-side-by-side .sides.media {
+    gap: 16px;
+  }
 
-  .side:not(.has-media) {
+  .card.pair.pair-side-by-side .side:not(.has-media) {
     flex: 1 1 0;
+    max-height: min(60vh, 640px);
     overflow: auto;
   }
 
-  .sides:not(.media) .side + .side {
+  .card.pair.pair-side-by-side .sides:not(.media) .side + .side {
     border-top: 0;
     margin-top: 0;
     padding-top: 0;
@@ -1917,9 +1999,13 @@ main.library-view > .fine {
     padding-left: 22px;
   }
 
-  .side.has-media { flex: 1 1 0; }
+  .card.pair.pair-side-by-side .side.has-media {
+    flex: 1 1 0;
+  }
 
-  .side.has-media .frame { min-height: 0; }
+  .card.pair.pair-side-by-side .side.has-media .frame {
+    min-height: 0;
+  }
 }
 
 @media (hover: hover) {

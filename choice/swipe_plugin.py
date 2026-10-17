@@ -145,6 +145,61 @@ def load_swipe_class(deck_py: Path, folder_id: str) -> Any:
     raise RuntimeError(f"No Deck class in {deck_py}")
 
 
+def _parse_reveal(row: dict) -> list[tuple[str, str]]:
+    raw = row.get("reveal")
+    if raw is None:
+        return []
+    if isinstance(raw, dict):
+        out: list[tuple[str, str]] = []
+        for key, value in raw.items():
+            if value is None or value == "":
+                continue
+            out.append((str(key), str(value)))
+        return out
+    if isinstance(raw, list):
+        out = []
+        for entry in raw:
+            if isinstance(entry, dict):
+                label = str(entry.get("label") or entry.get("key") or "Answer")
+                text = str(entry.get("text") or entry.get("value") or "")
+                if text:
+                    out.append((label, text))
+            elif isinstance(entry, (list, tuple)) and len(entry) >= 2:
+                out.append((str(entry[0]), str(entry[1])))
+        return out
+    return []
+
+
+def _parse_sections(row: dict) -> list[dict]:
+    out: list[dict] = []
+    raw = row.get("sections")
+    if not isinstance(raw, list):
+        return out
+    for sec in raw:
+        if not isinstance(sec, dict):
+            continue
+        out.append(
+            {
+                "title": str(sec.get("title") or ""),
+                "text": str(sec.get("text") or ""),
+                "collapsed": bool(sec.get("collapsed")),
+                "main": bool(sec.get("main")),
+            }
+        )
+    return out
+
+
+def _ab_side_body(side: dict) -> str:
+    return str(side.get("body") or side.get("text") or "")
+
+
+def _ab_side_image_ref(side: dict) -> str | None:
+    ref = side.get("image_path") or side.get("image")
+    if ref is None or ref == "":
+        return None
+    return str(ref)
+
+
 def swipe_item_to_choice(row: dict, folder: Path, plugin: SwipePlugin) -> tuple[Item, list[str]]:
     kind = str(row.get("kind") or "card")
     item_id = str(row.get("id") or "")
@@ -228,21 +283,41 @@ def swipe_item_to_choice(row: dict, folder: Path, plugin: SwipePlugin) -> tuple[
     if len(images) > 1 or kind == "profile":
         kind = "gallery"
     sides: list[Side] = []
+    sections = _parse_sections(row)
     if kind == "pair" or row.get("ab"):
         ab = row.get("ab") or {}
         for key in ("a", "b"):
             side = ab.get(key) or {}
+            side_body = _ab_side_body(side)
+            img_ref = _ab_side_image_ref(side)
+            side_path: Path | None = None
+            side_token = ""
+            if img_ref:
+                keep, ref, file_path, warn = _resolve_plugin_image_ref(
+                    folder, img_ref, item_id, -1, plugin_serves
+                )
+                if warn:
+                    notes.append(warn)
+                if keep:
+                    side_token = ref
+                    if file_path is not None:
+                        side_path = file_path
+                    elif plugin_serves:
+                        side_path = None
+                        side_token = ref or img_ref
             sides.append(
                 Side(
                     key=key,
                     label=str(side.get("label") or key.upper()),
-                    body=str(side.get("body") or ""),
-                    path=Path(str(side["image_path"])) if side.get("image_path") else None,
+                    body=side_body,
+                    path=side_path,
+                    media_token=side_token,
                 )
             )
         kind = "pair"
     if kind == "profile":
         fields["profile"] = True
+    reveal = _parse_reveal(row)
     return (
         Item(
             id=item_id,
@@ -250,7 +325,7 @@ def swipe_item_to_choice(row: dict, folder: Path, plugin: SwipePlugin) -> tuple[
             title=title,
             body=body,
             chips=chips,
-            reveal=[],
+            reveal=reveal,
             path=path,
             media_token=media_token or item_id,
             fields=fields,
@@ -259,6 +334,7 @@ def swipe_item_to_choice(row: dict, folder: Path, plugin: SwipePlugin) -> tuple[
             plugin_row=dict(row),
             images=images,
             plugin_media=plugin_media,
+            sections=sections,
         ),
         notes,
     )
