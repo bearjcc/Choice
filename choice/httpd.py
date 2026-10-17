@@ -12,7 +12,9 @@ import contextlib
 import gzip
 import html
 import json
+import os
 import re
+import socket
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -51,6 +53,7 @@ _ID = re.compile(r"[a-z0-9_-]+")
 _STATIC = {
     "app.js": "text/javascript; charset=utf-8",
     "dialog_ui.js": "text/javascript; charset=utf-8",
+    "viewport_sync.js": "text/javascript; charset=utf-8",
     "pile_nav.js": "text/javascript; charset=utf-8",
     "swipe_ui.js": "text/javascript; charset=utf-8",
     "action_icons.js": "text/javascript; charset=utf-8",
@@ -67,6 +70,13 @@ _STATIC = {
 
 
 class ChoiceSite(ThreadingHTTPServer):
+    request_queue_size = 128
+
+    def server_bind(self):
+        if os.name == "nt" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
     def __init__(
         self,
         address,
@@ -101,7 +111,23 @@ class ChoiceSite(ThreadingHTTPServer):
         self.bind_host = address[0]
         self.bind_port = address[1]
         self.restart_argv: list[str] = []
-        super().__init__(address, Handler)
+        queue_size = 128
+        if config_path is not None and config_path.is_file():
+            try:
+                cfg = load_config(config_path)
+                queue_size = max(8, int(cfg.server.http.request_queue_size))
+            except ConfigProblem:
+                pass
+        from choice.env_config import env_int
+
+        queue_size = max(8, env_int("CHOICE_HTTP_REQUEST_QUEUE_SIZE", queue_size))
+        prev_queue = type(self).request_queue_size
+        type(self).request_queue_size = queue_size
+        try:
+            super().__init__(address, Handler)
+        finally:
+            type(self).request_queue_size = prev_queue
+        self.request_queue_size = queue_size
         _boot_work_queue(self)
 
 
@@ -118,15 +144,17 @@ class Handler(BaseHTTPRequestHandler):
     def _guard(self, fn):
         try:
             fn()
-        except Exception:
+        except Exception as exc:
+            tb = traceback.format_exc()
             traceback.print_exc()
+            from choice.error_log import log_traceback, user_detail_hint
+
+            log_traceback("request", tb)
             self._json(
                 500,
                 {
                     "ok": False,
-                    "message": (
-                        "Choice hit an error. The detail is in the terminal that started it."
-                    ),
+                    "message": f"Choice hit an error. {user_detail_hint()}",
                 },
             )
 
@@ -1307,6 +1335,9 @@ def _boot_work_queue(server: ChoiceSite) -> None:
         if server.config_path is not None and server.config_path.is_file():
             try:
                 cfg = load_config(server.config_path)
+                from choice.error_log import configure
+
+                configure(cfg.state_dir)
                 resume_workers(cfg.state_dir)
             except ConfigProblem:
                 pass
@@ -1336,7 +1367,7 @@ def serve(
     client_buffer_size: int | None = None,
     restart_argv: list[str] | None = None,
 ) -> None:
-    ChoiceSite.allow_reuse_address = True
+    ChoiceSite.allow_reuse_address = False
     try:
         server = ChoiceSite(
             (host, port),
@@ -1349,7 +1380,10 @@ def serve(
         if restart_argv:
             server.restart_argv = list(restart_argv)
     except OSError as exc:
-        raise SystemExit(f"Cannot listen on {host}:{port} ({exc.strerror or exc}).") from exc
+        raise SystemExit(
+            f"Cannot listen on {host}:{port} — another Choice (or other process) may already "
+            f"be using that port ({exc.strerror or exc})."
+        ) from exc
     try:
         server.serve_forever()
     except KeyboardInterrupt:

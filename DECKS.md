@@ -279,6 +279,8 @@ The home page does not call `list_items` for plugin decks until you open that de
 
 `media_bytes` receives the full item dict from `list_items` (same as Swipe). Optional query `n` selects an image index when the hook accepts `n`. A hook that only accepts an item id string still works.
 
+Optional `filters()` returns tag/sort schema for the filter sheet. When present, Choice calls `list_items(filter=…)` and `stats(filter=…)` with the active selection. Hooks that take `**kwargs` are treated as accepting `filter` (so thin wrappers that forward `**kwargs` to an inner `list_items` still receive filters).
+
 Rows may set `"decided": true` so Choice treats them as finished: hidden from the pending pile and counted as decided.
 
 Profile cards may set `"kind": "profile"` or an `images` list. Each entry is either a path string or an object with `path` / `file` and optional `caption`. Relative paths must stay inside the plugin folder; absolute paths may point anywhere on disk (plugins are trusted code). Tokens such as `immich:<id>` are fine when the plugin implements `media_bytes`. The first resolved image is the card's main photo when `image_path` is omitted. Bad relative paths are reported in deck warnings. The UI shows a tappable photo strip that does not steal the card's left/right swipe.

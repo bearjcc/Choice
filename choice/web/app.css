@@ -438,14 +438,60 @@ button:disabled:active { transform: none; }
 }
 
 @media (max-width: 699px) {
+  .filter-panel {
+    inset: auto;
+    left: 0;
+    right: 0;
+    width: 100%;
+    max-height: none;
+  }
+
   .filter-panel-inner {
     position: fixed;
     left: 0;
     right: 0;
-    bottom: 0;
     width: 100%;
-    max-height: min(88vh, 720px);
+    top: calc(var(--vv-top, 0px) + var(--safe-top, 0px));
+    bottom: auto;
+    height: calc(var(--vv-h, 100vh) - var(--safe-top, 0px) - var(--safe-bottom, 0px));
+    max-height: calc(var(--vv-h, 100vh) - var(--safe-top, 0px) - var(--safe-bottom, 0px));
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    min-height: 0;
+  }
+
+  .filter-panel-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .filter-panel-search,
+  .filter-combobox-input-row {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--card);
+  }
+
+  .filter-panel-option-list,
+  .filter-panel-option-list.filter-panel-scroll {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .filter-combobox-listbox {
+    position: static;
+    max-height: none;
+    overflow: visible;
+    box-shadow: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .filter-panel-foot {
+    flex-shrink: 0;
   }
 }
 

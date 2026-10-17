@@ -38,9 +38,13 @@ class NetworkSettings:
 @dataclass
 class HttpSettings:
     compress: str = "gzip"
+    request_queue_size: int = 128
 
     def public_dict(self) -> dict[str, Any]:
-        return {"compress": self.compress}
+        return {
+            "compress": self.compress,
+            "request_queue_size": self.request_queue_size,
+        }
 
 
 @dataclass
@@ -109,7 +113,8 @@ def _parse_http(block: dict) -> HttpSettings:
     compress = str(block.get("compress") or "gzip").strip().lower()
     if compress not in VALID_COMPRESS:
         raise ConfigProblem(f"[http].compress must be one of {sorted(VALID_COMPRESS)}.")
-    return HttpSettings(compress=compress)
+    queue = _int(block.get("request_queue_size"), 128, 8, 10_000)
+    return HttpSettings(compress=compress, request_queue_size=queue)
 
 
 def _parse_images(block: dict) -> ImageDeliverySettings:

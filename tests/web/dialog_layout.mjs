@@ -37,7 +37,8 @@ export function dialogPhoneLayout(metrics, viewportWidth, slack = 2) {
   const shellMidX = (metrics.left + metrics.right) / 2;
   const centered = Math.abs(shellMidX - vvMidX) <= 28;
   const bottomAnchored = metrics.bottom >= metrics.vvBottom - 48;
-  if (metrics.narrow) return centered || bottomAnchored;
+  const topAnchored = metrics.top <= metrics.vvTop + 48;
+  if (metrics.narrow) return centered && (topAnchored || bottomAnchored);
   return centered;
 }
 

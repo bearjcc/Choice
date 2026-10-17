@@ -73,6 +73,10 @@ def _apply_server_env(server) -> None:
     compress = os.environ.get("CHOICE_HTTP_COMPRESS")
     if compress is not None and str(compress).strip():
         server.http.compress = str(compress).strip().lower()
+    server.http.request_queue_size = env_int(
+        "CHOICE_HTTP_REQUEST_QUEUE_SIZE",
+        server.http.request_queue_size,
+    )
     if env_flag("CHOICE_IMAGE_TRANSCODE"):
         server.images.transcode = True
     fmt = os.environ.get("CHOICE_IMAGE_FORMAT")

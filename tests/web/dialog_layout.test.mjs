@@ -44,21 +44,21 @@ test("dialogFitsViewport accepts internal scroll when clipped", () => {
   );
 });
 
-test("dialogPhoneLayout accepts wide bottom sheet", () => {
+test("dialogPhoneLayout accepts top-anchored full-width sheet", () => {
   assert.equal(
     dialogPhoneLayout(
       {
-        top: 400,
+        top: 12,
         left: 20,
         right: 340,
-        bottom: 630,
+        bottom: 430,
         width: 320,
         vvTop: 0,
         vvLeft: 0,
         vvWidth: 360,
-        vvHeight: 640,
+        vvHeight: 450,
         vvRight: 360,
-        vvBottom: 640,
+        vvBottom: 450,
         scrollHeight: 400,
         clientHeight: 400,
         narrow: true,
