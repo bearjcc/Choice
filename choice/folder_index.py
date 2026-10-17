@@ -681,21 +681,9 @@ def item_for_id(deck: Deck, rel_id: str) -> Item | None:
     path = (deck.root / rel_id).resolve()
     if not path.is_file() or not inside(deck.root, path):
         return None
-    kind = "image" if _is_image(path) else "file"
-    title = path.name
-    body = _size_text(path) if kind == "file" else ""
-    if path.suffix.lower() == ".heic":
-        kind = "file"
-        body = "HEIC photo. Choice will not preview it. A decision still applies to the file."
-    return Item(
-        id=rel_id,
-        kind=kind,
-        title=title,
-        body=body,
-        path=path,
-        media_token=str(_mtime(path)),
-        fields={"file": rel_id},
-    )
+    from choice.folder_items import folder_item_from_path
+
+    return folder_item_from_path(rel_id, path)
 
 
 def load_deck_items(deck: Deck) -> tuple[list[Item], list[str]]:

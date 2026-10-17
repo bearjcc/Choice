@@ -968,19 +968,9 @@ def patch_decision_file_op(deck: Deck, decision_id: str, file_op: dict) -> None:
 
 
 def _transfer(deck: Deck, item: Item, does: str, into: str) -> dict:
-    if item.path is None:
-        raise _OpError(f"This card has no file to {does}.")
-    if not item.path.is_file():
-        raise _OpError(f"File is already gone: {item.title}")
-    if not inside(deck.root, item.path):
-        raise _OpError(f"Choice will not {does} a file outside the deck folder.")
+    _validate_transfer(deck, item, does, into)
+    rel = item.path.resolve().relative_to(deck.root.resolve())
     dest_root = (deck.root / into).resolve()
-    if not inside(deck.root, dest_root):
-        raise _OpError("into leaves the deck folder.")
-    try:
-        rel = item.path.resolve().relative_to(deck.root.resolve())
-    except ValueError as exc:
-        raise _OpError(f"Choice will not {does} a file outside the deck folder.") from exc
     into_norm = into.replace("\\", "/")
     if "/" in into_norm or into_norm.startswith("."):
         dest = (dest_root / rel).resolve()
