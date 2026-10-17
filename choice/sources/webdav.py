@@ -49,9 +49,10 @@ class WebDavSource(Source):
         except Exception:
             return []
         out: list[PreviewItem] = []
+        from choice.sources.remote_items import webdav_preview_item
+
         for href in paths[:limit]:
-            name = href.rstrip("/").split("/")[-1]
-            out.append(PreviewItem(id=_id_from_href(href), title=name, kind="image"))
+            out.append(webdav_preview_item(href))
         return out
 
     def open_deck(
@@ -73,18 +74,10 @@ class WebDavSource(Source):
         def _load():
             paths = _list_images(self, mount)
             items = []
+            from choice.sources.remote_items import webdav_deck_item
+
             for href in paths:
-                name = href.rstrip("/").split("/")[-1]
-                items.append(
-                    Item(
-                        id=_id_from_href(href),
-                        kind="image",
-                        title=name,
-                        body="",
-                        media_token=href,
-                        fields={"href": href},
-                    )
-                )
+                items.append(webdav_deck_item(href))
             return items, []
 
         deck = Deck(
@@ -168,5 +161,3 @@ def _propfind(url: str, auth: str, depth: str) -> bytes:
     return data
 
 
-def _id_from_href(href: str) -> str:
-    return href.strip("/").replace("/", "__") or "root"

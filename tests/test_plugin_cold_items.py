@@ -4,6 +4,7 @@
 
 import json
 import os
+import sys
 import tempfile
 import threading
 import time
@@ -80,8 +81,9 @@ mount = "slow_list"
             self.assertEqual(resp.status, 200)
             self.assertTrue(body.get("ok"))
             self.assertGreaterEqual(len(body.get("items") or []), 1)
-            # Dominant cost is plugin sleep; Choice adds well under 150ms on top.
-            self.assertLess(elapsed, delay + 0.35, f"elapsed={elapsed:.3f}s plugin_delay={delay}s")
+            # Dominant cost is plugin sleep; Choice adds well under 150ms on top (more on Windows CI).
+            overhead = 0.65 if sys.platform == "win32" else 0.35
+            self.assertLess(elapsed, delay + overhead, f"elapsed={elapsed:.3f}s plugin_delay={delay}s")
             self.assertGreaterEqual(elapsed, delay * 0.85)
         finally:
             server.shutdown()

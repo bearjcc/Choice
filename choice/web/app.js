@@ -2862,9 +2862,6 @@ function splitCsv(text) {
 
 async function openCountSettings() {
   const countsInfo = (state.payload && state.payload.counts) || {};
-  const body = $("dialog-body");
-  body.replaceChildren();
-  body.append(el("h2", null, "Count display"));
   const countsSel = el("select", "setup-input");
   [
     ["auto", "Auto (hide for large or special decks)"],
@@ -2877,33 +2874,37 @@ async function openCountSettings() {
     if ((countsInfo.mode || "auto") === value) opt.selected = true;
     countsSel.append(opt);
   });
-  body.append(el("label", "setup-label", "Show counts"));
-  body.append(countsSel);
-  const row = el("div", "sheet-actions");
-  const save = el("button", null, "Save");
-  save.addEventListener("click", async () => {
-    let data;
-    try {
-      data = await api("/api/decks/" + encodeURIComponent(state.deckId) + "/counts", {
-        mode: countsSel.value,
-      });
-    } catch (_err) {
-      data = { ok: false };
-    }
-    ChoiceDialog.close();
-    if (!data.ok) {
-      setStatus(data.message || "Could not save.");
-      return;
-    }
-    if (data.counts) state.payload.counts = data.counts;
-    if (await loadItems()) renderDeck();
+  const form = el("div", "setup-form");
+  form.append(el("label", "setup-label", "Show counts"));
+  form.append(countsSel);
+  ChoiceDialog.openSheet({
+    title: "Count display",
+    children: [form],
+    actions: [
+      {
+        label: "Save",
+        primary: true,
+        onClick: async () => {
+          let data;
+          try {
+            data = await api("/api/decks/" + encodeURIComponent(state.deckId) + "/counts", {
+              mode: countsSel.value,
+            });
+          } catch (_err) {
+            data = { ok: false };
+          }
+          ChoiceDialog.close();
+          if (!data.ok) {
+            setStatus(data.message || "Could not save.");
+            return;
+          }
+          if (data.counts) state.payload.counts = data.counts;
+          if (await loadItems()) renderDeck();
+        },
+      },
+      { label: "Cancel", onClick: () => ChoiceDialog.close() },
+    ],
   });
-  row.append(save);
-  const close = el("button", null, "Cancel");
-  close.addEventListener("click", () => ChoiceDialog.close());
-  row.append(close);
-  body.append(row);
-  ChoiceDialog.open();
 }
 
 async function openOrderSettings() {
@@ -2913,9 +2914,6 @@ async function openOrderSettings() {
     return;
   }
   const prefs = view.prefs || {};
-  const body = $("dialog-body");
-  body.replaceChildren();
-  body.append(el("h2", null, "Order and filter"));
   const form = el("form", "order-filter-form setup-form");
   form.addEventListener("submit", (event) => event.preventDefault());
   const sort = el("select", "setup-input");
@@ -2961,61 +2959,63 @@ async function openOrderSettings() {
   exc.placeholder = "Comma-separated folder names";
   exc.value = (prefs.exclude_folders || []).join(", ");
   appendSetupField(form, "Exclude folders", exc);
-  body.append(form);
-  const row = el("div", "sheet-actions");
-  const save = el("button", null, "Save");
-  save.addEventListener("click", async () => {
-    state.anchorAfterLoad = current() ? current().id : null;
-    const payload = {
-      sort_mode: sort.value,
-      random_seed: seed.value,
-      file_types: splitCsv(types.value),
-      include_folders: splitCsv(inc.value),
-      exclude_folders: splitCsv(exc.value),
-    };
-    let data;
-    try {
-      data = await api("/api/decks/" + encodeURIComponent(state.deckId) + "/view", payload);
-    } catch (_err) {
-      data = { ok: false };
-    }
-    ChoiceDialog.close();
-    if (!data.ok) {
-      setStatus(data.message || "Could not save.");
-      return;
-    }
-    if (data.view) state.payload.view = data.view;
-    if (await loadItems()) renderDeck();
+  ChoiceDialog.openSheet({
+    title: "Order and filter",
+    children: [form],
+    actions: [
+      {
+        label: "Save",
+        primary: true,
+        onClick: async () => {
+          state.anchorAfterLoad = current() ? current().id : null;
+          const payload = {
+            sort_mode: sort.value,
+            random_seed: seed.value,
+            file_types: splitCsv(types.value),
+            include_folders: splitCsv(inc.value),
+            exclude_folders: splitCsv(exc.value),
+          };
+          let data;
+          try {
+            data = await api("/api/decks/" + encodeURIComponent(state.deckId) + "/view", payload);
+          } catch (_err) {
+            data = { ok: false };
+          }
+          ChoiceDialog.close();
+          if (!data.ok) {
+            setStatus(data.message || "Could not save.");
+            return;
+          }
+          if (data.view) state.payload.view = data.view;
+          if (await loadItems()) renderDeck();
+        },
+      },
+      { label: "Cancel", onClick: () => ChoiceDialog.close() },
+    ],
   });
-  row.append(save);
-  const close = el("button", null, "Cancel");
-  close.addEventListener("click", () => ChoiceDialog.close());
-  row.append(close);
-  body.append(row);
-  ChoiceDialog.open();
 }
 
 function openCounts() {
   const data = state.payload;
   if (!data) return;
-  const body = $("dialog-body");
-  body.replaceChildren();
+  const children = [];
   if (data.report) {
-    appendReport(body, data.report);
+    const box = el("div");
+    appendReport(box, data.report);
+    children.push(box);
   } else if (data.counts_hidden || data.meter === false) {
-    body.append(el("h2", null, "Counts"));
-    if (data.count_label) body.append(el("p", null, data.count_label));
-    else body.append(el("p", null, "Pile totals are hidden for this deck."));
+    if (data.count_label) children.push(el("p", null, data.count_label));
+    else children.push(el("p", null, "Pile totals are hidden for this deck."));
+    ChoiceDialog.openSheet({ title: "Counts", children, closeLabel: "Close" });
+    return;
   } else {
-    body.append(el("h2", null, "Counts"));
-    body.append(el("p", null, data.decided + " decided, " + data.left + " left, " + data.total + " in the pile."));
-    (data.tally || []).forEach((row) => body.append(el("p", null, row.label + ": " + row.n)));
-    if (!data.tally || !data.tally.length) body.append(el("p", null, "No decisions yet."));
+    children.push(
+      el("p", null, data.decided + " decided, " + data.left + " left, " + data.total + " in the pile."),
+    );
+    (data.tally || []).forEach((row) => children.push(el("p", null, row.label + ": " + row.n)));
+    if (!data.tally || !data.tally.length) children.push(el("p", null, "No decisions yet."));
   }
-  const close = el("button", null, "Close");
-  close.addEventListener("click", () => ChoiceDialog.close());
-  body.append(close);
-  ChoiceDialog.open();
+  ChoiceDialog.openSheet({ title: data.report ? null : "Counts", children, closeLabel: "Close" });
 }
 
 function togglePending() {
@@ -3243,10 +3243,6 @@ async function addPerson(name) {
 }
 
 function openAssign(user) {
-  const body = $("dialog-body");
-  body.replaceChildren();
-  body.append(el("h2", null, "Assign"));
-  body.append(el("p", null, user.name));
   const decks = allDecks();
   const selected = new Set(user.decks === "*" ? decks.map((deck) => deck.id) : (user.decks || []));
   const list = el("ul", "assign-list");
@@ -3261,22 +3257,19 @@ function openAssign(user) {
     item.append(label);
     list.append(item);
   });
-  if (decks.length) body.append(list);
-  else body.append(el("p", null, "No decks to assign."));
-  body.append(el("p", "fine", "Tick every deck to include decks you add later."));
-  const row = el("div", "sheet-actions");
-  const save = el("button", null, "Save");
-  save.type = "button";
-  save.addEventListener("click", () => saveAssign(user, list));
-  const remove = el("button", null, "Remove " + user.name);
-  remove.type = "button";
-  remove.addEventListener("click", () => removePerson(user));
-  const close = el("button", null, "Close");
-  close.type = "button";
-  close.addEventListener("click", () => ChoiceDialog.close());
-  row.append(save, remove, close);
-  body.append(row);
-  ChoiceDialog.open();
+  const children = [el("p", null, user.name)];
+  if (decks.length) children.push(list);
+  else children.push(el("p", null, "No decks to assign."));
+  children.push(el("p", "fine", "Tick every deck to include decks you add later."));
+  ChoiceDialog.openSheet({
+    title: "Assign",
+    children,
+    actions: [
+      { label: "Save", primary: true, onClick: () => saveAssign(user, list) },
+      { label: "Remove " + user.name, danger: true, onClick: () => removePerson(user) },
+      { label: "Close", onClick: () => ChoiceDialog.close() },
+    ],
+  });
 }
 
 async function saveAssign(user, list) {

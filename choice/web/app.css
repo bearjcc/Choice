@@ -9,7 +9,10 @@
   --line: var(--color-border);
   --fill: var(--color-fill);
   --accent: var(--color-accent);
-  --on-accent: var(--color-on-yes);
+  --on-accent: var(--color-on-accent);
+  --on-photo: var(--color-on-photo);
+  --photo-caption: var(--color-photo-caption);
+  --backdrop: var(--color-backdrop);
   --yes: var(--color-yes);
   --on-yes: var(--color-on-yes);
   --no: var(--color-no);
@@ -168,8 +171,8 @@ button:disabled:active { transform: none; }
   height: 1.1rem;
   padding: 0 0.25rem;
   border-radius: var(--radius-pill);
-  background: var(--accent, #2a5);
-  color: var(--on-accent, #fff);
+  background: var(--accent);
+  color: var(--on-accent);
   font-size: 0.65rem;
   font-weight: var(--font-weight-bold);
   line-height: 1.1rem;
@@ -595,7 +598,7 @@ button:disabled:active { transform: none; }
 }
 
 .queue-badge.has-failed {
-  color: var(--drag-no, #b42318);
+  color: var(--drag-no);
 }
 
 .tools {
@@ -709,7 +712,7 @@ main.library-view > .warn {
 
 button.primary {
   background: var(--focus);
-  color: #fff;
+  color: var(--on-accent);
   border-color: transparent;
 }
 
@@ -1124,13 +1127,13 @@ dialog.app-dialog .order-filter-form {
   top: 12px;
   left: 14px;
   margin: 0;
-  color: #fff;
-  text-shadow: 0 1px 2px #000000b0;
+  color: var(--on-photo);
+  text-shadow: var(--shadow-on-photo);
 }
 
 .side.has-media > .body {
   margin: 8px 10px 10px;
-  color: #e7e7e2;
+  color: var(--photo-caption);
   font-size: 0.9rem;
 }
 
@@ -1734,7 +1737,7 @@ button.primary {
   max-width: 100%;
   padding: 10px 12px;
   border-color: transparent;
-  color: #fff;
+  color: var(--on-photo);
 }
 
 .actions.deck-bar .action-slot-left .action-btn,
@@ -1916,7 +1919,7 @@ dialog.app-dialog .dialog-body {
   flex-shrink: 0;
 }
 
-dialog::backdrop { background: #0000008c; }
+dialog::backdrop { background: var(--backdrop); }
 
 dialog h2 {
   margin: 0 0 12px;

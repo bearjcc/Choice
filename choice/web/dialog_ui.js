@@ -228,6 +228,48 @@ const ChoiceDialog = (function () {
     });
   }
 
+  function openSheet(spec) {
+    const opts = spec || {};
+    const body = bodyEl();
+    if (!body) return;
+    body.replaceChildren();
+    if (opts.title != null) {
+      if (opts.title instanceof Node) body.append(opts.title);
+      else {
+        const h = document.createElement("h2");
+        h.textContent = String(opts.title);
+        body.append(h);
+      }
+    }
+    (opts.children || []).forEach((node) => {
+      if (node) body.append(node);
+    });
+    if (opts.actions && opts.actions.length) {
+      const row = document.createElement("div");
+      row.className = "sheet-actions";
+      opts.actions.forEach((act) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.textContent = act.label != null ? act.label : "OK";
+        if (act.primary) btn.classList.add("primary");
+        if (act.danger) btn.classList.add("danger");
+        btn.addEventListener("click", () => {
+          if (act.onClick) act.onClick();
+        });
+        row.append(btn);
+      });
+      body.append(row);
+    }
+    if (opts.closeLabel) {
+      const closeBtn = document.createElement("button");
+      closeBtn.type = "button";
+      closeBtn.textContent = opts.closeLabel;
+      closeBtn.addEventListener("click", () => close());
+      body.append(closeBtn);
+    }
+    open();
+  }
+
   function confirm(message, options) {
     const opts = options || {};
     const title = opts.title != null ? opts.title : "Confirm";
@@ -299,6 +341,7 @@ const ChoiceDialog = (function () {
     open,
     close,
     isOpen,
+    openSheet,
     confirm,
     layoutMetrics,
     syncViewport,
