@@ -119,7 +119,7 @@ def main(argv=None) -> int:
         base_path=base_path,
         app_title=app_title,
         client_buffer_size=client_buffer,
-        restart_argv=[sys.executable, "-m", "choice", *sys.argv[1:]],
+        restart_argv=list(getattr(sys, "orig_argv", None) or [sys.executable, "-m", "choice", *sys.argv[1:]]),
     )
     return 0
 

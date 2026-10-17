@@ -382,6 +382,12 @@ def _resolve_plugin_image_ref(
 
 def _accepts(fn, name: str) -> bool:
     try:
-        return name in inspect.signature(fn).parameters
+        sig = inspect.signature(fn)
     except (TypeError, ValueError):
         return False
+    for param in sig.parameters.values():
+        if param.name == name:
+            return True
+        if param.kind == inspect.Parameter.VAR_KEYWORD:
+            return True
+    return False

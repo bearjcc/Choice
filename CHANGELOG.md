@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.6.8 (2026-10-17)
+
+### Changed
+
+- Filter sheet on narrow screens uses shared `visualViewport` CSS variables (`--vv-top`, `--vv-h`) while open; sheet anchors to the top of the visible viewport with search/combobox inputs sticky and a single scrolling body (keyboard-safe on Android Chrome).
+- `ChoiceSite` HTTP accept queue defaults to 128 and is configurable via `[http] request_queue_size` or `CHOICE_HTTP_REQUEST_QUEUE_SIZE`.
+- Admin restart re-execs using `sys.orig_argv` when available.
+
+### Fixed
+
+- `serve()` no longer sets `SO_REUSEADDR`; on Windows binds with `SO_EXCLUSIVEADDRUSE` and fails with a clear message when the port is taken.
+- Plugin hooks that take `**kwargs` are treated as accepting `filter` so wrapper plugins forward filter selections.
+- Request and plugin errors append the path to a rotating `choice-errors.log` in the state directory (full tracebacks on disk).
+
 ## 0.6.7 (2026-10-16)
 
 ### Changed

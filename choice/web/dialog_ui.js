@@ -7,7 +7,7 @@ const ChoiceDialog = (function () {
   const SHELL_H_MARGIN = 24;
 
   let scrollY = 0;
-  let vvDetach = null;
+  let vvUnsub = null;
   let bodyObserver = null;
 
   function dialogEl() {
@@ -86,10 +86,14 @@ const ChoiceDialog = (function () {
     const pad = PAD;
     const narrow = window.matchMedia(NARROW_MQ).matches;
 
-    const vTop = vv ? vv.offsetTop : 0;
-    const vLeft = vv ? vv.offsetLeft : 0;
-    const vWidth = vv ? vv.width : window.innerWidth;
-    const vHeight = vv ? vv.height : window.innerHeight;
+    const box =
+      typeof ChoiceVisualViewport !== "undefined"
+        ? ChoiceVisualViewport.readBox()
+        : null;
+    const vTop = box ? box.top : vv ? vv.offsetTop : 0;
+    const vLeft = box ? box.left : vv ? vv.offsetLeft : 0;
+    const vWidth = box ? box.width : vv ? vv.width : window.innerWidth;
+    const vHeight = box ? box.height : vv ? vv.height : window.innerHeight;
 
     const availW = vWidth - SHELL_H_MARGIN - inset.left - inset.right;
     const shellW = Math.max(0, Math.min(SHELL_MAX_W, availW));
@@ -111,9 +115,11 @@ const ChoiceDialog = (function () {
       const maxTop = vTop + vHeight - inset.bottom - pad - boxH;
       let top;
       if (narrow) {
-        const bottomGap = vTop + vHeight - (inset.bottom + pad);
-        top = bottomGap - boxH;
-        if (top < minTop) top = minTop;
+        top = minTop;
+        const shellH = Math.max(120, maxH);
+        shell.style.height = shellH + "px";
+        shell.style.maxHeight = shellH + "px";
+        d.style.height = shellH + "px";
         const left = vLeft + (vWidth - boxW) / 2;
         d.style.left = Math.max(vLeft + inset.left + pad, left) + "px";
       } else {
@@ -138,23 +144,19 @@ const ChoiceDialog = (function () {
   }
 
   function attachViewport() {
-    syncViewport();
-    const vv = window.visualViewport;
-    if (!vv) return;
-    const onChange = () => syncViewport();
-    vv.addEventListener("resize", onChange);
-    vv.addEventListener("scroll", onChange);
-    window.addEventListener("resize", onChange);
-    vvDetach = () => {
-      vv.removeEventListener("resize", onChange);
-      vv.removeEventListener("scroll", onChange);
-      window.removeEventListener("resize", onChange);
-      vvDetach = null;
-    };
+    if (typeof ChoiceVisualViewport !== "undefined") {
+      if (vvUnsub) vvUnsub();
+      vvUnsub = ChoiceVisualViewport.attach(() => syncViewport());
+    } else {
+      syncViewport();
+    }
   }
 
   function detachViewport() {
-    if (vvDetach) vvDetach();
+    if (vvUnsub) {
+      vvUnsub();
+      vvUnsub = null;
+    }
     clearPosition();
   }
 

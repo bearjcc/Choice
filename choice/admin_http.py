@@ -191,7 +191,11 @@ def admin_restart(handler: "Handler", body: dict) -> None:
     if not body.get("confirm"):
         handler._json(400, {"ok": False, "message": "Send confirm: true to restart."})
         return
-    argv = getattr(handler.server, "restart_argv", None) or [sys.executable, "-m", "choice"]
+    argv = (
+        getattr(handler.server, "restart_argv", None)
+        or getattr(sys, "orig_argv", None)
+        or [sys.executable, "-m", "choice"]
+    )
     handler._json(200, {"ok": True, "restarting": True})
     handler.wfile.flush()
     try:

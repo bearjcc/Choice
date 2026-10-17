@@ -8,6 +8,7 @@ const ChoiceFilterPanel = (function () {
   let applyHandler = null;
   let previouslyFocused = null;
   let trapHandler = null;
+  let vvUnsub = null;
 
   function isMultiSelect(filterSpec) {
     if (H) return H.isMultiSelect(filterSpec);
@@ -176,7 +177,7 @@ const ChoiceFilterPanel = (function () {
     searchInput.autocomplete = "off";
     section.append(searchInput);
 
-    const list = el("div", "filter-panel-option-list filter-panel-chips");
+    const list = el("div", "filter-panel-option-list filter-panel-chips filter-panel-scroll");
     list.setAttribute("role", "group");
     list.setAttribute("aria-label", filterSpec.label || filterSpec.id);
 
@@ -212,7 +213,7 @@ const ChoiceFilterPanel = (function () {
     };
     renderList("");
     searchInput.addEventListener("input", () => renderList(searchInput.value));
-    section.append(list);
+    section.append(searchInput, list);
     appendMatchToggle(section, filterSpec, sel);
   }
 
@@ -264,11 +265,16 @@ const ChoiceFilterPanel = (function () {
 
     function openList() {
       listbox.hidden = false;
+      wrap.classList.add("is-open");
       input.setAttribute("aria-expanded", "true");
+      if (typeof ChoiceVisualViewport !== "undefined") {
+        ChoiceVisualViewport.apply();
+      }
     }
 
     function closeList() {
       listbox.hidden = true;
+      wrap.classList.remove("is-open");
       input.setAttribute("aria-expanded", "false");
       activeIndex = -1;
       input.removeAttribute("aria-activedescendant");
@@ -507,6 +513,11 @@ const ChoiceFilterPanel = (function () {
     previouslyFocused = document.activeElement;
     renderBody();
     if (!panel.open) panel.showModal();
+    if (typeof ChoiceVisualViewport !== "undefined") {
+      if (vvUnsub) vvUnsub();
+      vvUnsub = ChoiceVisualViewport.attach(() => {});
+      requestAnimationFrame(() => ChoiceVisualViewport.apply());
+    }
     attachFocusTrap(panel);
     const toggle = $("filter-toggle");
     if (toggle) toggle.setAttribute("aria-expanded", "true");
@@ -517,6 +528,7 @@ const ChoiceFilterPanel = (function () {
   function close(discard) {
     const panel = $("filter-panel");
     if (!panel || !panel.open) return;
+    detachFilterViewport();
     panel.close();
     detachFocusTrap();
     draft = null;
@@ -592,12 +604,73 @@ const ChoiceFilterPanel = (function () {
     }
 
     panel.addEventListener("close", () => {
+      detachFilterViewport();
       detachFocusTrap();
       draft = null;
       applyHandler = null;
       const t = $("filter-toggle");
       if (t) t.setAttribute("aria-expanded", "false");
     });
+  }
+
+  function detachFilterViewport() {
+    if (vvUnsub) {
+      vvUnsub();
+      vvUnsub = null;
+    }
+  }
+
+  function keyboardLayoutMetrics() {
+    const panel = $("filter-panel");
+    const inner = panel && panel.querySelector(".filter-panel-inner");
+    const vv = window.visualViewport;
+    if (!panel || !panel.open || !inner || !vv) return null;
+
+    const root = getComputedStyle(document.documentElement);
+    const vvTopVar = parseFloat(root.getPropertyValue("--vv-top")) || vv.offsetTop;
+    const vvHVar = parseFloat(root.getPropertyValue("--vv-h")) || vv.height;
+    const vvBottom = vvTopVar + vvHVar;
+
+    const innerRect = inner.getBoundingClientRect();
+    const search = panel.querySelector(".filter-panel-search");
+    const apply = document.getElementById("filter-panel-apply");
+    const options = [...panel.querySelectorAll(".filter-option-row, .filter-combobox-option")].filter(
+      (node) => node.offsetParent !== null && !node.closest("[hidden]")
+    );
+
+    const visibleOptions = options.filter((node) => {
+      const r = node.getBoundingClientRect();
+      return r.bottom > vvTopVar + 1 && r.top < vvBottom - 1 && r.height > 0;
+    });
+
+    const searchRect = search ? search.getBoundingClientRect() : null;
+    const applyRect = apply ? apply.getBoundingClientRect() : null;
+    const body = $("filter-panel-body");
+    const bodyScrolls = body ? body.scrollHeight > body.clientHeight + 4 : false;
+
+    return {
+      narrow: window.matchMedia("(max-width: 699px)").matches,
+      vvTop: vvTopVar,
+      vvHeight: vvHVar,
+      vvBottom,
+      innerTop: innerRect.top,
+      innerBottom: innerRect.bottom,
+      innerHeight: innerRect.height,
+      cssVarsSet: root.getPropertyValue("--vv-h").trim() !== "",
+      searchVisible:
+        searchRect &&
+        searchRect.top >= vvTopVar - 2 &&
+        searchRect.bottom <= vvBottom + 2,
+      applyReachable:
+        applyRect && applyRect.top < vvBottom - 2 && applyRect.bottom <= vvBottom + 4,
+      visibleOptionCount: visibleOptions.length,
+      topAnchored: innerRect.top <= vvTopVar + 24,
+      heightFitsViewport: innerRect.height <= vvHVar + 4 && innerRect.height >= vvHVar * 0.75,
+      bodyScrolls,
+      nestedListScroll: [...panel.querySelectorAll(".filter-panel-option-list")].some(
+        (el) => el.scrollHeight > el.clientHeight + 4
+      ),
+    };
   }
 
   function panelScrollMetrics() {
@@ -620,6 +693,7 @@ const ChoiceFilterPanel = (function () {
     buildSummary,
     activeValueCount,
     panelScrollMetrics,
+    keyboardLayoutMetrics,
     _helpers: { isMultiSelect, filterOptionsByQuery },
   };
 })();

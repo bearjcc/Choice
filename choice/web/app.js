@@ -3440,6 +3440,11 @@ function installTestHooks() {
         ? ChoiceFilterPanel.panelScrollMetrics()
         : { ok: false, reason: "no-panel" };
     },
+    filterPanelKeyboardMetrics() {
+      return typeof ChoiceFilterPanel !== "undefined"
+        ? ChoiceFilterPanel.keyboardLayoutMetrics()
+        : null;
+    },
     cardVisibleMetrics() {
       const card = document.querySelector("article.card");
       if (!card) return { ok: false, reason: "no-card" };

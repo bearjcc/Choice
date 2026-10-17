@@ -1297,7 +1297,11 @@ def _plugin_message(raw) -> str:
 
 
 def _plugin_error_text(exc: BaseException) -> str:
-    return _plugin_message(exc) or "The plugin raised an error."
+    from choice.error_log import log_exception, user_detail_hint
+
+    log_exception("plugin", exc)
+    base = _plugin_message(exc) or "The plugin raised an error."
+    return f"{base} {user_detail_hint()}"
 
 
 def _plugin_undo(deck: Deck, item_id: str, token: str | None) -> dict:
