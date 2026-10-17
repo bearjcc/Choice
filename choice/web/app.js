@@ -175,10 +175,7 @@ function syncAppSearch() {
 }
 
 function el(tag, className, text) {
-  const node = document.createElement(tag);
-  if (className) node.className = className;
-  if (text != null) node.textContent = text;
-  return node;
+  return ChoiceDom.el(tag, className, text);
 }
 
 function withUser(path) {
@@ -1144,12 +1141,7 @@ async function removeSetupDeck(wizard) {
     { title: "Remove deck", confirmLabel: "Remove", cancelLabel: "Cancel" },
   );
   if (!okRemove) return;
-  const removed = (cfg.decks || []).find((d) => d.id === deckId);
-  const decks = (cfg.decks || []).filter((d) => d.id !== deckId);
-  const sources = (cfg.sources || []).filter((s) => {
-    if (!removed || s.id !== removed.source) return true;
-    return decks.some((d) => d.source === s.id);
-  });
+  const { decks, sources } = ChoiceConfigDeck.pruneAfterDeckRemoval(cfg, deckId);
   const res = await api("/api/config", { sources, decks });
   if (!res.ok) return setStatus(res.message || "Could not save.");
   setStatus("Deck removed.");
@@ -1304,13 +1296,9 @@ function statsApiPath() {
 }
 
 function filterSelectionEmpty() {
-  const sel = state.filterSelection;
-  if (!sel) return true;
-  return !Object.keys(sel).some((key) => {
-    if (key === "_sort") return !!sel[key];
-    const row = sel[key];
-    return row && row.values && row.values.length;
-  });
+  return typeof ChoiceFilterHelpers !== "undefined"
+    ? ChoiceFilterHelpers.selectionEmpty(state.filterSelection)
+    : !state.filterSelection;
 }
 
 async function applyFilterChange(nextSelection) {
@@ -1637,16 +1625,7 @@ function preloadMedia() {
   for (let i = 0; i < 3 && i < items.length; i++) {
     const row = items[(state.pos + i) % items.length];
     if (!row) continue;
-    if (row.kind === "gallery" && row.images) {
-      const gi = galleryIndex(row);
-      const slide = row.images[gi] || row.images[0];
-      if (slide) urls.push(mediaSrc(row, null, slide.index));
-    } else if (row.kind === "image" && row.media) urls.push(mediaSrc(row, null));
-    if (row.kind === "pair" && row.sides) {
-      row.sides.forEach((side) => {
-        if (side.media) urls.push(mediaSrc(row, side));
-      });
-    }
+    urls.push(...mediaUrlsForItem(row, { galleryCurrentSlide: true }));
   }
   urls.forEach((url) => {
     const img = new Image();
@@ -1912,10 +1891,7 @@ function paintPair(card, item) {
 }
 
 function appendMark(parent, item) {
-  if (!item.mark) return;
-  const word = item.mark === "right" ? "Correct" : "Missed";
-  const note = item.mark_note ? " (" + item.mark_note + ")" : "";
-  parent.append(el("p", "fine", word + note));
+  ChoiceCardMeta.appendMark(parent, item);
 }
 
 function sideLabel(side) {
@@ -1939,13 +1915,20 @@ function deepCopyItem(item) {
   return JSON.parse(JSON.stringify(item));
 }
 
-function mediaUrlsForItem(item) {
+function mediaUrlsForItem(item, opts) {
   const urls = [];
   if (!item) return urls;
+  const galleryCurrentSlide = opts && opts.galleryCurrentSlide;
   if (item.kind === "gallery" && item.images) {
-    item.images.forEach((slide) => {
+    if (galleryCurrentSlide) {
+      const gi = galleryIndex(item);
+      const slide = item.images[gi] || item.images[0];
       if (slide) urls.push(mediaSrc(item, null, slide.index));
-    });
+    } else {
+      item.images.forEach((slide) => {
+        if (slide) urls.push(mediaSrc(item, null, slide.index));
+      });
+    }
   } else if (item.kind === "image" && item.media) {
     urls.push(mediaSrc(item, null));
   }
@@ -2060,32 +2043,15 @@ function appendPhoto(frame, src, alt) {
 }
 
 function appendSections(parent, item) {
-  if (state.blind || !item.sections || !item.sections.length) return;
-  const wrap = el("div", "card-sections");
-  item.sections.forEach((sec) => {
-    const block = el("details", "section-block" + (sec.main ? " section-main" : ""));
-    block.open = !sec.collapsed;
-    block.append(el("summary", "section-title", sec.title || "Details"));
-    if (sec.text) block.append(el("p", "section-text body", sec.text));
-    wrap.append(block);
-  });
-  parent.append(wrap);
+  ChoiceCardMeta.appendSections(parent, item, state.blind);
 }
 
 function itemDecided(item) {
-  if (!item) return false;
-  if (item.choice != null && String(item.choice) !== "") return true;
-  return !!(item.choice_label && String(item.choice_label).trim());
+  return ChoiceCardMeta.itemDecided(item);
 }
 
 function appendReveal(parent, item) {
-  if (state.blind || !item || !item.reveal || !item.reveal.length) return;
-  if (!itemDecided(item)) return;
-  const row = el("div", "chips reveal-row");
-  item.reveal.forEach((chip) =>
-    row.append(el("span", "chip reveal-chip", chip.label + ": " + chip.text)),
-  );
-  parent.append(row);
+  ChoiceCardMeta.appendReveal(parent, item, state.blind);
 }
 
 function applyDecidePayload(itemId, data) {
@@ -2101,10 +2067,7 @@ function applyDecidePayload(itemId, data) {
 }
 
 function appendChips(parent, item) {
-  if (state.blind || !item.chips || !item.chips.length) return;
-  const row = el("div", "chips");
-  item.chips.forEach((chip) => row.append(el("span", "chip", chip.label + ": " + chip.text)));
-  parent.append(row);
+  ChoiceCardMeta.appendChips(parent, item, state.blind);
 }
 
 function clearScanRetry() {
@@ -2842,12 +2805,7 @@ async function deleteDeckFromAdmin(deckId, cfg) {
     { title: "Delete deck", confirmLabel: "Delete", cancelLabel: "Cancel" },
   );
   if (!okRemove) return;
-  const removed = (cfg.decks || []).find((d) => d.id === deckId);
-  const decks = (cfg.decks || []).filter((d) => d.id !== deckId);
-  const sources = (cfg.sources || []).filter((s) => {
-    if (!removed || s.id !== removed.source) return true;
-    return decks.some((d) => d.source === s.id);
-  });
+  const { decks, sources } = ChoiceConfigDeck.pruneAfterDeckRemoval(cfg, deckId);
   const res = await api("/api/config", { sources, decks });
   if (!res.ok) {
     setStatus(res.message || "Could not save.");

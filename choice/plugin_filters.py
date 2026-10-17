@@ -112,6 +112,13 @@ def decode_filter_param(raw: str | None) -> dict | None:
     return parsed if isinstance(parsed, dict) else None
 
 
+def plugin_filter_cache_key(deck) -> str:
+    """Deck list cache key including active plugin filter (matches deck_cache / deck_index)."""
+    from choice.deck_index import snapshot_cache_key
+
+    return snapshot_cache_key(deck)
+
+
 def encode_filter_param(selection: dict | None) -> str:
     if not selection:
         return ""

@@ -33,45 +33,19 @@ const ChoiceFilterPanel = (function () {
   }
 
   function el(tag, cls, text) {
-    const node = document.createElement(tag);
-    if (cls) node.className = cls;
-    if (text != null) node.textContent = text;
-    return node;
+    return ChoiceDom.el(tag, cls, text);
   }
 
   function deepCopySelection(sel) {
-    if (!sel) return null;
-    const out = {};
-    Object.keys(sel).forEach((key) => {
-      const row = sel[key];
-      if (key === "_sort") {
-        if (row) out._sort = row;
-        return;
-      }
-      if (!row || !row.values || !row.values.length) return;
-      out[key] = { values: row.values.slice(), match: row.match };
-    });
-    return Object.keys(out).length ? out : null;
+    return H ? H.deepCopySelection(sel) : null;
   }
 
   function selectionEmpty(sel) {
-    if (!sel) return true;
-    return !Object.keys(sel).some((key) => {
-      if (key === "_sort") return !!sel[key];
-      const row = sel[key];
-      return row && row.values && row.values.length;
-    });
+    return H ? H.selectionEmpty(sel) : true;
   }
 
   function activeValueCount(sel) {
-    if (!sel) return 0;
-    let n = 0;
-    Object.keys(sel).forEach((key) => {
-      if (key === "_sort") return;
-      const row = sel[key];
-      if (row && row.values) n += row.values.length;
-    });
-    return n;
+    return H ? H.activeValueCount(sel) : 0;
   }
 
   function defaultMatchMode(filterSpec) {
