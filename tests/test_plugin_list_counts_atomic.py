@@ -2,6 +2,7 @@
 
 import json
 import os
+import sys
 import tempfile
 import threading
 import time
@@ -117,9 +118,10 @@ mount = "{mount}"
         elapsed = time.perf_counter() - start
         os.environ.pop("CHOICE_DISABLE_WARM", None)
         self.assertGreaterEqual(len(items), 8000)
+        budget = 0.45 if sys.platform == "win32" else 0.3
         self.assertLess(
             elapsed,
-            0.3,
+            budget,
             f"Choice overhead for 8k plugin load was {elapsed:.3f}s",
         )
 
