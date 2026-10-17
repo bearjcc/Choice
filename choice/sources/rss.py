@@ -42,12 +42,10 @@ class RssSource(Source):
         except Exception:
             return []
         out: list[PreviewItem] = []
+        from choice.sources.remote_items import feed_entry_preview
+
         for entry in entries[:limit]:
-            out.append(
-                PreviewItem(
-                    id=entry["id"], title=entry["title"], kind="card", body=entry["body"][:200]
-                )
-            )
+            out.append(feed_entry_preview(entry))
         return out
 
     def open_deck(
@@ -67,16 +65,9 @@ class RssSource(Source):
 
         def _load():
             entries = _parse_feed(_fetch(url))
-            items = [
-                Item(
-                    id=entry["id"],
-                    kind="card",
-                    title=entry["title"],
-                    body=entry["body"],
-                    fields={"link": entry.get("link") or ""},
-                )
-                for entry in entries
-            ]
+            from choice.sources.remote_items import feed_entry_item
+
+            items = [feed_entry_item(entry) for entry in entries]
             return items, []
 
         return Deck(

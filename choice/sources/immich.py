@@ -43,7 +43,9 @@ class ImmichSource(Source):
             assets = _list_assets(self, mount, limit=limit)
         except Exception:
             return []
-        return [_preview_row(a) for a in assets]
+        from choice.sources.remote_items import immich_preview_item
+
+        return [immich_preview_item(a) for a in assets]
 
     def open_deck(
         self,
@@ -68,7 +70,9 @@ class ImmichSource(Source):
         def _load():
             page_size = int(deck_options.get("page_size") or _PAGE_SIZE)
             assets = _list_assets(self, mount, limit=page_size)
-            items = [_item_from_asset(asset) for asset in assets]
+            from choice.sources.remote_items import immich_deck_item
+
+            items = [immich_deck_item(asset) for asset in assets]
             return items, []
 
         deck = Deck(
@@ -192,35 +196,6 @@ class _ImmichAdapter:
             )
         except Exception:
             return None
-
-
-def _preview_row(asset: dict) -> PreviewItem:
-    aid = str(asset.get("id") or "")
-    return PreviewItem(
-        id=aid,
-        title=str(asset.get("originalFileName") or aid),
-        kind="image" if asset.get("type") != "VIDEO" else "video",
-    )
-
-
-def _item_from_asset(asset: dict) -> Item:
-    aid = str(asset.get("id") or "")
-    row = {
-        "id": aid,
-        "title": str(asset.get("originalFileName") or aid),
-        "kind": "image" if asset.get("type") != "VIDEO" else "video",
-        "image_path": f"immich:{aid}",
-    }
-    return Item(
-        id=aid,
-        kind=row["kind"],
-        title=row["title"],
-        body="",
-        media_token=aid,
-        fields={"immich_id": aid},
-        plugin_media=True,
-        plugin_row=row,
-    )
 
 
 def _list_assets(source: ImmichSource, mount: str, limit: int) -> list[dict]:

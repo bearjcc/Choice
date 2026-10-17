@@ -238,9 +238,9 @@ mount = "album:album-1"
         self.assertNotIn("up", deck.directions)
 
     def test_video_shows_media(self):
-        from choice.sources.immich import _item_from_asset
+        from choice.sources.remote_items import immich_deck_item
 
-        item = _item_from_asset({"id": "v1", "originalFileName": "clip.mov", "type": "VIDEO"})
+        item = immich_deck_item({"id": "v1", "originalFileName": "clip.mov", "type": "VIDEO"})
         self.assertTrue(item.public(None).get("media"))
 
 

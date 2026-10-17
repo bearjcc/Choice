@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.10 (2026-10-17)
+
+### Changed
+
+- Shared preview/load row builders for Immich, RSS/Atom, and WebDAV (`sources/remote_items.py`).
+- Web: `ChoiceDialog.openSheet` for simple modal sheets; counts, assign, and order/count settings use it where layout matches.
+- CSS: photo overlay, primary buttons, and dialog backdrop use design tokens instead of scattered literals.
+
 ## 0.6.9 (2026-10-17)
 
 ### Changed
