@@ -79,14 +79,19 @@ class PortBindTests(unittest.TestCase):
 
 
 class ErrorLogTests(unittest.TestCase):
+    def tearDown(self):
+        error_log.shutdown()
+
     def test_rotating_log_written(self):
         with tempfile.TemporaryDirectory() as tmp:
             state = Path(tmp)
             path = error_log.configure(state)
             error_log.log_exception("test", ValueError("boom"))
+            error_log.shutdown()
             self.assertTrue(path.is_file())
             text = path.read_text(encoding="utf-8")
             self.assertIn("boom", text)
+            error_log.configure(state)
             self.assertIn(str(path), error_log.user_detail_hint())
 
 
@@ -99,6 +104,9 @@ class AcceptsKwargsFilterTests(unittest.TestCase):
 
 
 class PluginErrorLogTests(unittest.TestCase):
+    def tearDown(self):
+        error_log.shutdown()
+
     def test_plugin_error_text_mentions_log(self):
         from choice.act import _plugin_error_text
 

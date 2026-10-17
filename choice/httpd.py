@@ -73,7 +73,11 @@ class ChoiceSite(ThreadingHTTPServer):
     request_queue_size = 128
 
     def server_bind(self):
-        if os.name == "nt" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+        if (
+            os.name == "nt"
+            and hasattr(socket, "SO_EXCLUSIVEADDRUSE")
+            and not self.allow_reuse_address
+        ):
             self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
         super().server_bind()
 

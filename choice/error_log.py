@@ -75,3 +75,14 @@ def user_detail_hint() -> str:
     if _LOG_PATH is not None:
         return f"Details are in {_LOG_PATH}."
     return "Details are in choice-errors.log in your state directory."
+
+
+def shutdown() -> None:
+    """Close log handlers (tests / shutdown)."""
+    global _LOG, _LOG_PATH
+    if _LOG is not None:
+        for handler in list(_LOG.handlers):
+            _LOG.removeHandler(handler)
+            handler.close()
+    _LOG = None
+    _LOG_PATH = None
