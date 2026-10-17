@@ -115,3 +115,4 @@ class PluginErrorLogTests(unittest.TestCase):
             msg = _plugin_error_text(RuntimeError("plugin blew up"))
             self.assertIn("choice-errors.log", msg)
             self.assertIn("plugin blew up", msg)
+            error_log.shutdown()
