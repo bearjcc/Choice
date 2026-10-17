@@ -7,6 +7,7 @@
 - Shared preview/load row builders for Immich, RSS/Atom, and WebDAV (`sources/remote_items.py`).
 - Web: `ChoiceDialog.openSheet` for simple modal sheets; counts, assign, and order/count settings use it where layout matches.
 - CSS: photo overlay, primary buttons, and dialog backdrop use design tokens instead of scattered literals.
+- Tests: slightly wider Windows CI timing budgets for plugin load overhead checks.
 
 ## 0.6.9 (2026-10-17)
 
