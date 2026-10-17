@@ -36,6 +36,7 @@ def configure(state_dir: Path) -> Path:
         maxBytes=_MAX_BYTES,
         backupCount=_BACKUP_COUNT,
         encoding="utf-8",
+        delay=True,
     )
     handler.setFormatter(
         logging.Formatter("%(asctime)s %(levelname)s %(message)s", datefmt="%Y-%m-%dT%H:%M:%S")

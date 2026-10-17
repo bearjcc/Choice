@@ -134,6 +134,12 @@ class ChoiceSite(ThreadingHTTPServer):
         self.request_queue_size = queue_size
         _boot_work_queue(self)
 
+    def server_close(self):
+        from choice.error_log import shutdown as shutdown_error_log
+
+        shutdown_error_log()
+        super().server_close()
+
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
